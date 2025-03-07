@@ -370,56 +370,56 @@ def _scale_injection_to_reach_bpms(SC, n_dim, last_bpm_ind, max_injection_pos_an
 # orbit BBA helper functions
 
 
-def _data_measurement_orb(SC, m_ord, bpm_ind, j_bpm, n_dim, par, cm_ords, cm_vec):
-    meas_dim = 1 - n_dim if par.skewness else n_dim
-    initial_z0 = SC.INJ.Z0.copy()
-    n_msteps = cm_vec[n_dim].shape[0]
-    orbits = np.full((n_msteps, len(par.magnet_strengths[n_dim, j_bpm]), len(SC.ORD.BPM)), np.nan)
-    bpm_pos = np.full((n_msteps, len(par.magnet_strengths[n_dim, j_bpm])), np.nan)
-    for n_q, setpoint_q in enumerate(par.magnet_strengths[n_dim, j_bpm]):
-        SC.set_magnet_setpoints(m_ord, setpoint_q, par.skewness, par.magnet_order, method=par.setpoint_method,
-                                dipole_compensation=par.dipole_compensation)
-        for step in range(n_msteps):
-            for n_d in range(2):
-                SC.set_cm_setpoints(cm_ords[n_d], cm_vec[n_d][step, :], bool(n_d), method=SETTING_ABS)
-            bpm_readings = bpm_reading(SC)[0]
-            bpm_pos[step, n_q] = bpm_readings[n_dim, bpm_ind]
-            orbits[step, n_q, :] = bpm_readings[meas_dim, :]
-
-    SC.INJ.Z0 = initial_z0
-    return bpm_pos, orbits
-
-
-def _get_orbit_bump(SC, cm_ord, bpm_ord, n_dim, par):  # TODO
-    tmpCMind = np.where(par.RMstruct.CMords[0] == cm_ord)[0]
-    if len(tmpCMind):
-        par.RMstruct.RM = np.delete(par.RMstruct.RM, tmpCMind, 1)  # TODO not nice
-        par.RMstruct.CMords[0] = np.delete(par.RMstruct.CMords[0], tmpCMind)
-    tmpBPMind = np.where(bpm_ord == par.RMstruct.BPMords)[0]
-
-    R0 = bpm_reading(SC) if par.use_bpm_reading_for_orbit_bump_ref else np.zeros((2, len(par.RMstruct.BPMords)))
-    R0[n_dim, tmpBPMind] += par.BBABPMtarget
-    cm_ords = par.RMstruct.CMords
-    W0 = np.ones((2, len(par.RMstruct.BPMords)))  # TODO weight for SCFedbackRun
-    W0[n_dim, max(1, tmpBPMind - par.orbBumpWindow):(tmpBPMind - 1)] = 0
-    W0[n_dim, (tmpBPMind + 1):min(len(par.RMstruct.BPMords), tmpBPMind + par.orbBumpWindow)] = 0
-
-    CUR = orbit_trajectory.correct(SC, par.RMstruct.RM, reference=R0, cm_ords=cm_ords, bpm_ords=par.RMstruct.BPMords, eps=1E-6,
-                  target=0, maxsteps=50, scaleDisp=par.RMstruct.scaleDisp, )
-    cm_vec = []
-    factor = np.linspace(-1, 1, par.n_steps)
-    for n_dim in range(2):
-        vec0 = SC.get_cm_setpoints(cm_ords[n_dim], skewness=bool(n_dim))
-        vec1 = CUR.get_cm_setpoints(cm_ords[n_dim], skewness=bool(n_dim))
-        cm_vec.append(vec0 + np.outer(factor, vec0 - vec1))
-
-    return cm_ords, cm_vec
-
-
-def _plot_bba_step(SC, ax, bpm_ind, n_dim):
-    s_pos = at_wrapper.findspos(SC.RING)
-    bpm_readings, all_elements_positions = all_elements_reading(SC)
-    ax.plot(s_pos[SC.ORD.BPM], 1E3 * bpm_readings[n_dim, :len(SC.ORD.BPM)], marker='o')
-    ax.plot(s_pos[SC.ORD.BPM[bpm_ind]], 1E3 * bpm_readings[n_dim, bpm_ind], marker='o', markersize=10, markerfacecolor='k')
-    ax.plot(s_pos, 1E3 * all_elements_positions[n_dim, 0, :, 0, 0], linestyle='-')
-    return ax
+# def _data_measurement_orb(SC, m_ord, bpm_ind, j_bpm, n_dim, par, cm_ords, cm_vec):
+#     meas_dim = 1 - n_dim if par.skewness else n_dim
+#     initial_z0 = SC.INJ.Z0.copy()
+#     n_msteps = cm_vec[n_dim].shape[0]
+#     orbits = np.full((n_msteps, len(par.magnet_strengths[n_dim, j_bpm]), len(SC.ORD.BPM)), np.nan)
+#     bpm_pos = np.full((n_msteps, len(par.magnet_strengths[n_dim, j_bpm])), np.nan)
+#     for n_q, setpoint_q in enumerate(par.magnet_strengths[n_dim, j_bpm]):
+#         SC.set_magnet_setpoints(m_ord, setpoint_q, par.skewness, par.magnet_order, method=par.setpoint_method,
+#                                 dipole_compensation=par.dipole_compensation)
+#         for step in range(n_msteps):
+#             for n_d in range(2):
+#                 SC.set_cm_setpoints(cm_ords[n_d], cm_vec[n_d][step, :], bool(n_d), method=SETTING_ABS)
+#             bpm_readings = bpm_reading(SC)[0]
+#             bpm_pos[step, n_q] = bpm_readings[n_dim, bpm_ind]
+#             orbits[step, n_q, :] = bpm_readings[meas_dim, :]
+# 
+#     SC.INJ.Z0 = initial_z0
+#     return bpm_pos, orbits
+# 
+# 
+# def _get_orbit_bump(SC, cm_ord, bpm_ord, n_dim, par):  # TODO
+#     tmpCMind = np.where(par.RMstruct.CMords[0] == cm_ord)[0]
+#     if len(tmpCMind):
+#         par.RMstruct.RM = np.delete(par.RMstruct.RM, tmpCMind, 1)  # TODO not nice
+#         par.RMstruct.CMords[0] = np.delete(par.RMstruct.CMords[0], tmpCMind)
+#     tmpBPMind = np.where(bpm_ord == par.RMstruct.BPMords)[0]
+# 
+#     R0 = bpm_reading(SC) if par.use_bpm_reading_for_orbit_bump_ref else np.zeros((2, len(par.RMstruct.BPMords)))
+#     R0[n_dim, tmpBPMind] += par.BBABPMtarget
+#     cm_ords = par.RMstruct.CMords
+#     W0 = np.ones((2, len(par.RMstruct.BPMords)))  # TODO weight for SCFedbackRun
+#     W0[n_dim, max(1, tmpBPMind - par.orbBumpWindow):(tmpBPMind - 1)] = 0
+#     W0[n_dim, (tmpBPMind + 1):min(len(par.RMstruct.BPMords), tmpBPMind + par.orbBumpWindow)] = 0
+# 
+#     CUR = orbit_trajectory.correct(SC, par.RMstruct.RM, reference=R0, cm_ords=cm_ords, bpm_ords=par.RMstruct.BPMords, eps=1E-6,
+#                   target=0, maxsteps=50, scaleDisp=par.RMstruct.scaleDisp, )
+#     cm_vec = []
+#     factor = np.linspace(-1, 1, par.n_steps)
+#     for n_dim in range(2):
+#         vec0 = SC.get_cm_setpoints(cm_ords[n_dim], skewness=bool(n_dim))
+#         vec1 = CUR.get_cm_setpoints(cm_ords[n_dim], skewness=bool(n_dim))
+#         cm_vec.append(vec0 + np.outer(factor, vec0 - vec1))
+# 
+#     return cm_ords, cm_vec
+# 
+# 
+# def _plot_bba_step(SC, ax, bpm_ind, n_dim):
+#     s_pos = at_wrapper.findspos(SC.RING)
+#     bpm_readings, all_elements_positions = all_elements_reading(SC)
+#     ax.plot(s_pos[SC.ORD.BPM], 1E3 * bpm_readings[n_dim, :len(SC.ORD.BPM)], marker='o')
+#     ax.plot(s_pos[SC.ORD.BPM[bpm_ind]], 1E3 * bpm_readings[n_dim, bpm_ind], marker='o', markersize=10, markerfacecolor='k')
+#     ax.plot(s_pos, 1E3 * all_elements_positions[n_dim, 0, :, 0, 0], linestyle='-')
+#     return ax

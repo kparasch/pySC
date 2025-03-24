@@ -12,9 +12,11 @@ from pySC.lattice_properties.response_model import SCgetModelRM
 LOGGER = logging_tools.get_logger(__name__)
 CONFIDENCE_LEVEL_SIGMAS = 2.5
 OUTLIER_LIMIT = 1.5e-3
+# TRAJECTORY_BBA_THRESHOLD_LEVEL = 700e-6
+# TRAJECTORY_BBA_THRESHOLD_GAIN = 0.5
 
 
-def trajectory_bba(SC, bpm_ords, mag_ords, **kwargs):
+def trajectory_bba(SC, bpm_ords, mag_ords, print_true_offset=True, **kwargs):
     par = DotDict(dict(n_steps=10, fit_order=1, magnet_order=1, skewness=False, setpoint_method=SETTING_REL,
                        q_ord_phase=np.array([], dtype=int), q_ord_setpoints=np.ones(1), magnet_strengths=np.array([0.95, 1.05]),
                        num_downstream_bpms=len(SC.ORD.BPM), max_injection_pos_angle=np.array([0.9E-3, 0.9E-3]),
@@ -28,30 +30,64 @@ def trajectory_bba(SC, bpm_ords, mag_ords, **kwargs):
     q0 = at_wrapper.atgetfieldvalues(SC.RING, par.q_ord_phase, "SetPointB", index=1)
     bba_offsets = np.full(bpm_ords.shape, np.nan)
     bba_offset_errors = np.full(bpm_ords.shape, np.nan)
+
+    if print_true_offset:
+        true_offsets = np.full(bpm_ords.shape, np.nan)
+
     for n_dim in range(bpm_ords.shape[0]):  # TODO currently assumes either horizontal or both planes
         last_bpm_ind = np.where(bpm_ords[n_dim, -1] == SC.ORD.BPM)[0][0]
         quads_strengths, scalings, bpm_ranges = _phase_advance_injection_scan(SC, n_dim, last_bpm_ind, par)
-        LOGGER.info(f"Scanned plane {n_dim}")
+        LOGGER.info(f'Scanned plane {n_dim}')
         for j_bpm in range(bpm_ords.shape[1]):  # j_bpm: Index of BPM adjacent to magnet for BBA
-            LOGGER.info(f"BPM number {j_bpm}")
-            bpm_ind = np.where(bpm_ords[n_dim, j_bpm] == SC.ORD.BPM)[0][0]
+            LOGGER.info(f'BPM number {j_bpm}')
+            bpm_index = np.where(bpm_ords[n_dim, j_bpm] == SC.ORD.BPM)[0][0]
             m_ord = mag_ords[n_dim, j_bpm]
-            set_ind = np.argmax(bpm_ranges[:, bpm_ind])
+            set_ind = np.argmax(bpm_ranges[:, bpm_index])
             SC.set_magnet_setpoints(par.q_ord_phase, quads_strengths[set_ind], False, 1, method=SETTING_REL, dipole_compensation=True)
-            bpm_pos, downstream_trajectories = _data_measurement_tbt(SC, m_ord, bpm_ind, j_bpm, n_dim, scalings[set_ind], par)
+            bpm_pos, downstream_trajectories = _data_measurement_tbt(SC, m_ord, bpm_index, j_bpm, n_dim, scalings[set_ind], par)
             if len(q0):
                 SC.set_magnet_setpoints(par.q_ord_phase, q0, False, 1, method=SETTING_ABS, dipole_compensation=True)
-            bba_offsets[n_dim, j_bpm], bba_offset_errors[n_dim, j_bpm] = _data_evaluation(SC, bpm_pos, downstream_trajectories, par.magnet_strengths[n_dim, j_bpm], n_dim, m_ord, par)
+                try:
+                    bba_offsets[n_dim, j_bpm], bba_offset_errors[n_dim, j_bpm] = _data_evaluation(SC, bpm_pos, downstream_trajectories, par.magnet_strengths[n_dim, j_bpm], n_dim, m_ord, par)
+                except Exception as e:
+                    LOGGER.info(f'BPM number {j_bpm} threw exception! {e}')
+                    bba_offsets[n_dim, j_bpm] = np.nan
+                    bba_offset_errors[n_dim, j_bpm] = np.nan
+                # if abs(bba_offsets[n_dim, j_bpm]) > TRAJECTORY_BBA_THRESHOLD_LEVEL:
+                #     bba_offsets[n_dim, j_bpm] *= TRAJECTORY_BBA_THRESHOLD_GAIN
+                #     LOGGER.info(f'Threshold exceeded, reducing offset to {bba_offsets[n_dim, j_bpm]*1e6:.1f}')
+                if is_bba_errored(bba_offsets[n_dim, j_bpm], bba_offset_errors[n_dim, j_bpm]): 
+                    LOGGER.info(f'BPM number {j_bpm} failed!')
+
+                bba_offset = bba_offsets[n_dim, j_bpm]
+                bpm_id = bpm_ords[n_dim, j_bpm]
+                true_offset = ( (SC.RING[m_ord].MagnetOffset[n_dim] + SC.RING[m_ord].SupportOffset[n_dim] ) 
+                               -(SC.RING[bpm_id].Offset[n_dim]      + SC.RING[bpm_id].SupportOffset[n_dim]) )  
+                true_offsets[n_dim, j_bpm] = true_offset
+                if print_true_offset:
+                    LOGGER.info(f'BPM number {j_bpm} (id: {bpm_index}), plane {n_dim}, Offsets: Estimated: {(bba_offset)*1e6:.1f} μm, '
+                                f'True: {true_offset*1e6:.1f} μm, Δ: {(bba_offset-true_offset)*1e6:.1f} μm')
+                else:
+                    LOGGER.info(f'BPM number {j_bpm} (id: {bpm_index}), plane {n_dim}, Estimated offset: {(bba_offset)*1e6:.1f} μm')
+        if print_true_offset:
+            failed = is_bba_errored(bba_offsets[n_dim], bba_offset_errors[n_dim])
+            bad_predictions = np.sum(np.abs(true_offsets[n_dim, :][~failed] - bba_offsets[n_dim, :][~failed]) > np.abs(true_offsets[n_dim, :][~failed]))
+            LOGGER.info(f'R.m.s. offsets before BBA, dim {n_dim}: {np.nanstd(true_offsets[n_dim, :][~failed]) * 1e6:.1f} μm')
+            LOGGER.info(f'R.m.s. offsets after BBA, dim {n_dim}: {np.nanstd(true_offsets[n_dim, :][~failed] - bba_offsets[n_dim, :][~failed]) * 1e6:.1f} μm')
+            LOGGER.info(f'Abs. max. error before BBA, dim {n_dim}: {np.max(np.abs(true_offsets[n_dim, :][~failed])) * 1e6:.1f} μm')
+            LOGGER.info(f'Abs. max. error after BBA, dim {n_dim}: {np.max(np.abs(true_offsets[n_dim, :][~failed] - bba_offsets[n_dim, :][~failed])) * 1e6:.1f} μm')
+            LOGGER.info(f'Number of BPMs with worse offset after BBA: {bad_predictions}')
     SC = apply_bpm_offsets(SC, bpm_ords, bba_offsets, bba_offset_errors)
     if par.plot_results:
         plot_bba_results(SC, bpm_ords, bba_offsets, bba_offset_errors)
     return SC, bba_offsets, bba_offset_errors
 
-def orbit_bba_one_bpm_one_plane(SC, bpm_id, magnet_id, n_dim, n_k1_steps=5, max_dk1=10e-6,
-                                n_k2_steps=2, max_dk2=5e-3, quad_is_skew=False, RM=None, print_true_offset=True):
+def orbit_bba_one_bpm_one_plane(SC, bpm_id, magnet_id, n_dim, n_k1_steps=5, max_dk1=10e-6, max_x=None,
+                                n_k2_steps=2, max_dk2=5e-3, quad_is_skew=False, RM=None, print_true_offset=True,
+                                use_bump=False):
     
     if RM is None:
-        raise NotImplementedError("RM is not provided.")
+        raise NotImplementedError('RM is not provided.')
 
     if quad_is_skew:
         meas_dim = 1 - n_dim #look for orbit modulation in the other plane when cycling a skew quadrupole
@@ -68,43 +104,61 @@ def orbit_bba_one_bpm_one_plane(SC, bpm_id, magnet_id, n_dim, n_k1_steps=5, max_
 
     # select corrector based on maximum effect from response matrix
     corrector_RMindex = np.argmax(np.abs(reduced_RM))
-    corrector_index = SC.ORD.CM[n_dim][corrector_RMindex]   
+    corrector_index = SC.ORD.CM[n_dim][corrector_RMindex]
 
+    if max_x is not None:
+        assert max_dk1 is None
+        max_dk1 = max_x/reduced_RM[corrector_RMindex]
+    else:
+        assert max_dk1 is not None
+
+    if not use_bump:
+        corrector_ids = np.array([corrector_index])
+
+
+    LOGGER.info(f'max kick: {max_dk1*1e6:.2f} μrad, expected max excursion: {max_dk1*reduced_RM[corrector_RMindex]*1e6:.1f} μm')
     cm_is_skew = False if n_dim == 0 else True
 
     # Get initial state
-    zero_kick = SC.get_cm_setpoints(corrector_index, skewness=cm_is_skew)
+    zero_kick = SC.get_cm_setpoints(corrector_ids, skewness=cm_is_skew)
     if quad_is_skew:
-        zero_quad = SC.RING[magnet_id].PolynomA[1]
+        zero_quad = SC.RING[magnet_id].SetPointA[1]
     else:
-        zero_quad = SC.RING[magnet_id].PolynomB[1]
+        zero_quad = SC.RING[magnet_id].SetPointB[1]
 
-    k0_steps = np.linspace(-max_dk1, max_dk1, n_k1_steps) + zero_kick
-    k1_steps = np.linspace(-max_dk2, max_dk2, n_k2_steps) + zero_quad
+    k1_steps = np.linspace(-max_dk1, max_dk1, n_k1_steps) + zero_kick
+    k2_steps = np.linspace(-max_dk2, max_dk2, n_k2_steps) + zero_quad
 
     orbits = np.full((n_k1_steps, n_k2_steps, len(SC.ORD.BPM)), np.nan)
     bpm_pos = np.full((n_k1_steps, n_k2_steps), np.nan)
 
-    for k0_step in range(n_k1_steps):
-        SC.set_cm_setpoints(corrector_index, k0_steps[k0_step], skewness=cm_is_skew, method='abs')
+    for k1_step in range(n_k1_steps):
+        SC.set_cm_setpoints(corrector_ids, k1_steps[k1_step], skewness=cm_is_skew, method='abs')
+        SC.set_magnet_setpoints(magnet_id, zero_quad, skewness=quad_is_skew, order=1, method='abs')
         reference_bpm_reading = bpm_reading(SC)[0]
-        for k1_step in range(n_k2_steps):
-            SC.set_magnet_setpoints(magnet_id, k1_steps[k1_step], skewness=quad_is_skew, order=1, method='abs') 
+        for k2_step in range(n_k2_steps):
+            SC.set_magnet_setpoints(magnet_id, k2_steps[k2_step], skewness=quad_is_skew, order=1, method='abs') 
             bpm_readings = bpm_reading(SC)[0]
-            bpm_pos[k0_step, k1_step] = bpm_readings[n_dim, bpm_index]
-            orbits[k0_step, k1_step, :] = bpm_readings[meas_dim, :] - reference_bpm_reading[meas_dim, :]
+            bpm_pos[k1_step, k2_step] = bpm_readings[n_dim, bpm_index]
+            orbits[k1_step, k2_step, :] = bpm_readings[meas_dim, :] - reference_bpm_reading[meas_dim, :]
+    LOGGER.info(f'Actual excursions: [{np.min(bpm_pos)*1e6:.1f}, {np.max(bpm_pos)*1e6:.1f}] μm, number of NaNs: {np.sum(np.isnan(bpm_pos))}')
 
     # revert to initial state
-    SC.set_cm_setpoints(corrector_index, zero_kick, skewness=cm_is_skew, method='abs')
+    SC.set_cm_setpoints(corrector_ids, zero_kick, skewness=cm_is_skew, method='abs')
     SC.set_magnet_setpoints(magnet_id, zero_quad, skewness=quad_is_skew, order=1, method='abs')
 
-    par = DotDict(dict(fit_order=1, magnet_strengths=k1_steps, dipole_compensation=True, 
+    SC.orbits.append(orbits)
+    SC.bps.append(bpm_pos)
+
+    par = DotDict(dict(fit_order=1,# magnet_strengths=k2_steps, 
+                       dipole_compensation=True, 
                        num_downstream_bpms=len(SC.ORD.BPM)))
-    bba_offset, bba_offset_error = _data_evaluation(SC, bpm_pos, orbits, k1_steps, None, None, par)
-    true_offset = SC.RING[magnet_id].MagnetOffset[n_dim] - SC.RING[bpm_id].Offset[n_dim]
+    bba_offset, bba_offset_error = _data_evaluation(SC, bpm_pos, orbits, k2_steps, None, None, par)
+    true_offset = ( (SC.RING[magnet_id].MagnetOffset[n_dim] + SC.RING[magnet_id].SupportOffset[n_dim] ) 
+                   -(SC.RING[bpm_id].Offset[n_dim]      + SC.RING[bpm_id].SupportOffset[n_dim]) )  
 
     if print_true_offset:
-        LOGGER.info(f'BPM id: {bpm_index}, plane {n_dim}, Offsets: Estimated: {(bba_offset)*1e6:.1f} μm,'
+        LOGGER.info(f'BPM id: {bpm_index}, plane {n_dim}, Offsets: Estimated: {(bba_offset)*1e6:.1f} μm, '
                     f'True: {true_offset*1e6:.1f} μm, Δ: {(bba_offset-true_offset)*1e6:.1f} μm')
     else:
         LOGGER.info(f'BPM id: {bpm_index}, plane {n_dim}, Estimated offset: {(bba_offset)*1e6:.1f} μm')
@@ -112,7 +166,7 @@ def orbit_bba_one_bpm_one_plane(SC, bpm_id, magnet_id, n_dim, n_k1_steps=5, max_
     return bba_offset, bba_offset_error
 
 def orbit_bba(SC, bpm_ords, mag_ords, quad_is_skew=False, n_k1_steps=5, max_dk1=10e-6, n_k2_steps=2, max_dk2=5e-3,
-              RM=None, plot_results=False):
+              RM=None, max_x=None, plot_results=False):
     if bpm_ords.shape != mag_ords.shape:  # both in shape 2 x N
         raise ValueError('Input arrays for BPMs and magnets must be same size.')
 
@@ -121,6 +175,9 @@ def orbit_bba(SC, bpm_ords, mag_ords, quad_is_skew=False, n_k1_steps=5, max_dk1=
                          'Please set: SC.INJ.trackMode to  "ORB" or "PORB".')
     bba_offsets = np.full(bpm_ords.shape, np.nan)
     bba_offset_errors = np.full(bpm_ords.shape, np.nan)
+
+    if max_x is not None and max_dk1 is not None:
+        raise Exception('Only one of max_x and max_dk1 can be provided.')
 
     if RM is None:
         LOGGER.info('Response matrix not given, calculating it now.')
@@ -131,8 +188,14 @@ def orbit_bba(SC, bpm_ords, mag_ords, quad_is_skew=False, n_k1_steps=5, max_dk1=
         for n_dim in [0, 1]:
             bpm_id = bpm_ords[n_dim, j_bpm]
             magnet_id = mag_ords[n_dim, j_bpm]
-            bba_offsets[j_bpm, n_dim], bba_offset_errors[j_bpm, n_dim] = orbit_bba_one_bpm_one_plane(SC, 
-                                bpm_id, magnet_id, n_dim, n_k1_steps, max_dk1, n_k2_steps, max_dk2, quad_is_skew, RM)
+            try:
+                bba_offsets[n_dim, j_bpm], bba_offset_errors[n_dim, j_bpm] = orbit_bba_one_bpm_one_plane(SC, 
+                                bpm_id, magnet_id, n_dim, n_k1_steps=n_k1_steps, max_dk1=max_dk1, max_x=max_x,
+                                n_k2_steps=n_k2_steps, max_dk2=max_dk2, quad_is_skew=quad_is_skew, RM=RM)
+            except Exception as e:
+                LOGGER.info(f'BPM number {j_bpm} failed! {e}')
+                bba_offsets[n_dim, j_bpm] = np.nan
+                bba_offset_errors[n_dim, j_bpm] = np.nan
 
     SC = apply_bpm_offsets(SC, bpm_ords, bba_offsets, bba_offset_errors)
     if plot_results:
@@ -223,6 +286,7 @@ def _data_evaluation(SC, bpm_pos, trajectories, mag_vec, n_dim, m_ord, par):
             p, pcov = np.polyfit(mag_vec[y_mask], y[y_mask], 1, w=np.ones(int(np.sum(y_mask))) / err, cov='unscaled')
             tmp_slope[i, j], tmp_slope_err[i, j] = p[0], pcov[0, 0]
 
+    slopes = np.full((new_tmp_tra.shape[2]), np.nan)
     for j in range(min(new_tmp_tra.shape[2], par.num_downstream_bpms)):
         y = tmp_slope[:, j]
         y_err = tmp_slope_err[:, j]
@@ -235,7 +299,13 @@ def _data_evaluation(SC, bpm_pos, trajectories, mag_vec, n_dim, m_ord, par):
             continue
         center[j] = -p[1] / (par.fit_order * p[0])  # zero-crossing if linear, minimum is quadratic
         center_err[j] = np.sqrt(center[j] ** 2 * (pcov[0,0]/p[0]**2 + pcov[1,1]/p[1]**2 - 2 * pcov[0, 1] / p[0] / p[1]))
+        slopes[j] = p[0]
     mask = ~np.isnan(center)
+    nn_b = np.sum(mask)
+    max_slope = sorted(abs(slopes))[-3]
+    mask = np.logical_and(mask, np.abs(slopes) > 0.1 * max_slope)
+    nn_a = np.sum(mask)
+    LOGGER.info(f'rejected {nn_b - nn_a} BPMs due to slope')
     offset_change = stats.weighted_mean(center[mask], center_err[mask])
     offset_change_error = stats.weighted_error(center[mask]-offset_change, center_err[mask]) / np.sqrt(stats.effective_sample_size(center[mask], stats.weights_from_errors(center_err[mask])))
     if not par.dipole_compensation and n_dim == 0 and SC.RING[m_ord].NomPolynomB[1] != 0:
@@ -317,6 +387,9 @@ def _data_measurement_tbt(SC, m_ord, bpm_ind, j_bpm, n_dim, scaling, par):
             bpm_readings = bpm_reading(SC)[0]
             bpm_pos[step, n_q] = bpm_readings[n_dim, bpm_ind]
             trajectories[step, n_q, :] = bpm_readings[meas_dim, bpm_ind:(bpm_ind + par.num_downstream_bpms)]
+        if par.setpoint_method == SETTING_ABS:
+            SC.set_magnet_setpoints(m_ord, init_setpoint, par.skewness, par.magnet_order,
+                                method=SETTING_ABS, dipole_compensation=par.dipole_compensation)
 
     SC.INJ.Z0 = initial_z0
     SC.set_magnet_setpoints(m_ord, init_setpoint, par.skewness, par.magnet_order,
@@ -332,8 +405,8 @@ def _phase_advance_injection_scan(SC, n_dim, last_bpm_ind, par):
     for i, q_scale in enumerate(par.q_ord_setpoints):
         SC.set_magnet_setpoints(par.q_ord_phase, q_scale, False, 1, method=SETTING_REL, dipole_compensation=True)
         scalings[i], bpm_ranges[i] = _scale_injection_to_reach_bpms(SC, n_dim, last_bpm_ind, par.max_injection_pos_angle)
-    if len(q0):
-        SC.set_magnet_setpoints(par.q_ord_phase, q0, False, 1, method=SETTING_ABS, dipole_compensation=True)
+        if len(q0):
+            SC.set_magnet_setpoints(par.q_ord_phase, q0, False, 1, method=SETTING_ABS, dipole_compensation=True)
     return par.q_ord_setpoints, scalings, bpm_ranges
 
 

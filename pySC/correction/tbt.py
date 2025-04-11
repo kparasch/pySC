@@ -26,6 +26,9 @@ def phase_advance_correction(ring, bpm_indices, elements_indices, dkick, cut, Px
     elemdata0, beamdata, elemdata = at.get_optics(ring, bpm_indices)
     mux0 = elemdata.mu[:, 0] / (2 * np.pi)
     muy0 = elemdata.mu[:, 1] / (2 * np.pi)
+
+    mux0_diff = np.append(np.diff(mux0), mux0[-1] - mux0[0])
+    muy0_diff = np.append(np.diff(muy0), muy0[-1] - muy0[0])
     Eta_x0 = elemdata.dispersion[:, 0]
 
     # Calculate Response Matrix if not provided
@@ -37,9 +40,14 @@ def phase_advance_correction(ring, bpm_indices, elements_indices, dkick, cut, Px
     elemdata0, beamdata, elemdata = at.get_optics(ring, bpm_indices)
     mux = elemdata.mu[:, 0] / (2 * np.pi)
     muy = elemdata.mu[:, 1] / (2 * np.pi)
+    mux_diff = np.append(np.diff(mux), mux[-1] - mux[0])
+    muy_diff = np.append(np.diff(muy), muy[-1] - muy[0])
+
+    mux1 = mux_diff - mux0_diff
+    muy1 = muy_diff - muy0_diff
     Eta_xx = elemdata.dispersion[:, 0]
     
-    measurement = np.concatenate((mux - mux0, muy - muy0, Eta_xx - Eta_x0), axis=0)
+    measurement = np.concatenate((mux1, muy1, Eta_xx - Eta_x0), axis=0)
     
     s = np.linalg.svd(response_matrix.T, compute_uv=False)
     system_solution = np.linalg.pinv(response_matrix.T, rcond=s[cut - 1] / s[0]) @ -measurement
@@ -57,6 +65,16 @@ def calculate_rm(dkick, ring, elements_indices, bpm_indices, mux0, muy0, Eta_x0)
     py =[] 
     etax = []
 
+    _, _, elemdata = at.get_optics(ring, bpm_indices)
+    
+    mux0 = elemdata.mu[:, 0] / (2 * np.pi)
+    muy0 = elemdata.mu[:, 1] / (2 * np.pi)
+
+    mux0_diff = np.append(np.diff(mux0), mux0[-1] - mux0[0])
+    muy0_diff = np.append(np.diff(muy0), muy0[-1] - muy0[0])
+
+    Eta_x0 = elemdata.dispersion[:, 0]
+
     for index in elements_indices:
         original_setting = ring[index].PolynomB[1]
         
@@ -66,9 +84,16 @@ def calculate_rm(dkick, ring, elements_indices, bpm_indices, mux0, muy0, Eta_x0)
         mux = elemdata.mu[:, 0] / (2 * np.pi)
         muy = elemdata.mu[:, 1] / (2 * np.pi)
         Eta_x = elemdata.dispersion[:, 0]
-        
-        px.append((mux - mux0) / dkick)
-        py.append((muy - muy0) / dkick)
+
+        mux_diff = np.append(np.diff(mux), mux[-1] - mux[0])
+        muy_diff = np.append(np.diff(muy), muy[-1] - muy[0])
+
+        mux1 = mux_diff - mux0_diff
+        muy1 = muy_diff - muy0_diff
+
+
+        px.append(mux1 / dkick)
+        py.append(muy1 / dkick)
         etax.append((Eta_x - Eta_x0) / dkick)
         
         ring[index].PolynomB[1] = original_setting
@@ -84,6 +109,29 @@ def apply_correction(ring, corrections, elements_indices):
     for i, index in enumerate(elements_indices):
         ring[index].PolynomB[1] += corrections[i]
     return ring
+
+
+
+
+"""
+
+Usage example for PETRA IV
+
+print('Phase matching iterations')
+numberOfIteration = 7
+_, _, twiss = at.get_optics(SC.IDEALRING, bpm_indices)
+
+for x in range(numberOfIteration):
+    print('Phase iteration ', x)
+    loco.analyze_ring(SC, twiss, bpm_indices, useIdealRing=False, makeplot=False)
+    phase_advance_correction(SC.RING, bpm_indices, quads_indices, 1e-4, 1100, Px=None, Py=None, Etax=None)
+    loco.analyze_ring(SC, twiss, bpm_indices, useIdealRing=False, makeplot=False)
+    
+"""
+
+
+
+
 
 def SCgetModelPhaseAdvanceRM(SC, BPMords, ELEMords, dkick=1e-5, skewness=False, order=1, useIdealRing=True):
     """
@@ -101,6 +149,10 @@ def SCgetModelPhaseAdvanceRM(SC, BPMords, ELEMords, dkick=1e-5, skewness=False, 
     _, _, elemdata0 = at.get_optics(ring, BPMords)
     mux0 = elemdata0.mu[:, 0] / (2 * np.pi)
     muy0 = elemdata0.mu[:, 1] / (2 * np.pi)
+
+    mux0_diff = np.append(np.diff(mux0), mux0[-1] - mux0[0])
+    muy0_diff = np.append(np.diff(muy0), muy0[-1] - muy0[0])
+
     Eta_x0 = elemdata0.dispersion[:, 0]
     Ta = np.hstack((mux0, muy0, Eta_x0))
 
@@ -115,13 +167,23 @@ def SCgetModelPhaseAdvanceRM(SC, BPMords, ELEMords, dkick=1e-5, skewness=False, 
         mux = elemdata.mu[:, 0] / (2 * np.pi)
         muy = elemdata.mu[:, 1] / (2 * np.pi)
         Eta_x = elemdata.dispersion[:, 0]
-        TdB = np.hstack((mux, muy, Eta_x))
+
+        mux_diff = np.append(np.diff(mux), mux[-1] - mux[0])
+        muy_diff = np.append(np.diff(muy), muy[-1] - muy[0])
+
+        mux1 = mux_diff - mux0_diff
+        muy1 = muy_diff - muy0_diff
+
+        
+        TdB = np.hstack((mux1, muy1, Eta_x))
 
         setattr(ring[ELEMord], f"Polynom{NUM_TO_AB[int(skewness)]}", PolynomNominal[:])
         dTdB = (TdB - Ta) / dkick
         RM[:, i] = dTdB
 
     return RM
+
+
 
 def phase_advance_correction2(SC, BPMords, ELEMords, dkick=1e-5, nturns=64, skewness=False,
                               order=1, dipole_compensation=True, alpha=1e-3, RM=None):

@@ -245,3 +245,104 @@ def phase_advance_correction2(SC, BPMords, ELEMords, dkick=1e-5, nturns=64, skew
     system_solution = -np.dot(inverse_RM, measurement*weights)
 
     return SC, system_solution
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def ORM_rdts(ring, dkick, skew_inds, used_bpm):
+
+    from RDT import get_rdts
+
+
+    """    
+    CD, CA, Etay: Response matrices for coupling RDTS and ver dispersion.
+    """
+
+    cd = []
+    ca = []
+    etay = []
+
+    [_, _, elemdata] = at.get_optics(ring, used_bpm)
+
+    for skew_ind in skew_inds:
+        a = ring[skew_ind].PolynomA[1]
+
+        ring[skew_ind].PolynomA[1] = dkick + a
+
+        [_, _, elemdata] = at.get_optics(ring, used_bpm)
+        Eta_y =  elemdata.dispersion[:,2]
+
+        F1001C, F1010C, f2000, f0020 = get_rdts(ring, used_bpm)
+
+        F1001R_c = np.real(F1001C)
+        F1001I_c = np.imag(F1001C)
+        F1010R_c = np.real(F1010C)
+        F1010I_c = np.imag(F1010C)
+        difference = np.array([F1001R_c, F1001I_c])
+        addit = np.array([F1010R_c, F1010I_c])
+
+        ring[skew_ind].PolynomA[1] = a
+
+        cd.append(difference.flatten())
+        ca.append(addit.flatten())
+        etay.append(Eta_y)
+
+    CD = np.squeeze(cd) / dkick
+    CA = np.squeeze(ca) / dkick
+
+    Etay = np.squeeze(etay) / dkick
+
+    return CD, CA, Etay
+
+
+def correct_coupling(ring, bpm_indices, skew_inds, dkick, cut, diff=None, add=None, Etay=None):
+
+    from RDT import get_rdts
+
+    print(" RDTs/ver dis corrections ..")
+
+    if diff is None or add is None or Etay is None:
+       diff, add, Etay = ORM_rdts(ring, dkick, skew_inds, bpm_indices)
+
+    response_matrix = np.hstack((diff, add, Etay))
+
+
+    F1001C, F1010C, f2000C, f0020C = get_rdts(ring, bpm_indices)
+    difference = np.array([F1001R_c, F1001I_c])
+    addit = np.array([F1010R_c, F1010I_c])
+
+    _, _, twiss = at.get_optics(ring, bpm_indices)
+    dy_c = twiss.dispersion[:, 2]
+    measured = np.concatenate((difference.flatten(), addit.flatten(), dy_c), axis=0)
+
+    u, s, vh = np.linalg.svd(response_matrix, full_matrices=False)
+
+    F1001C, F1010C, f2000C, f0020C = get_rdts(ring, bpm_indices)
+
+    difference = np.array([F1001R_c, F1001I_c])
+    addit = np.array([F1010R_c, F1010I_c])
+    _, _, twiss = at.get_optics(ring, bpm_indices)
+    dy_c = twiss.dispersion[:, 2]
+    measured = np.concatenate((difference.flatten(), addit.flatten(), (dy_c - dy_c0)), axis=0)
+
+    dcS = 0 + np.linalg.pinv(response_matrix.T, ring=s[cut_value - 1] / s[0]) @ measured
+
+
+    for count, ic in enumerate( skew_inds):
+        L = ring[ic].Length
+        if L == 0.0:
+            L = 1.0
+        a = ring[ic].PolynomA[1]
+        ring[ic].PolynomA[1] = a - dcS[count] 
+

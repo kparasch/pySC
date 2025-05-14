@@ -4,7 +4,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from numpy import ndarray, float64
 from at import Lattice
-from typing import Union
+from typing import Union, Optional
 
 from pySC.utils import at_wrapper, logging_tools
 
@@ -64,7 +64,7 @@ def ords_from_regex(ring: Lattice, regex: str) -> ndarray:
     return indices
 
 
-def pinv(matrix: ndarray, num_removed: int = 0, alpha: float = 0, damping: float = 1, plot: bool = False) -> ndarray:
+def pinv(matrix: ndarray, num_removed: int = 0, alpha: float = 0, damping: float = 1, svd_cutoff: Optional[float] = None, plot: bool = False) -> ndarray:
     """
     Computes the pseudo-inverse of a matrix using the Singular Value Decomposition (SVD) method.
 
@@ -88,6 +88,11 @@ def pinv(matrix: ndarray, num_removed: int = 0, alpha: float = 0, damping: float
     """
     u_mat, s_mat, vt_mat = np.linalg.svd(matrix, full_matrices=False)
     num_singular_values = s_mat.shape[0] - num_removed if num_removed > 0 else s_mat.shape[0]
+
+    if svd_cutoff is not None:
+        s0 = s_mat[0]
+        s_mat[s_mat < svd_cutoff * s0] = 0
+
     available = np.sum(s_mat > 0.)
     keep = min(num_singular_values, available)
     d_mat = np.zeros(s_mat.shape)

@@ -1,6 +1,6 @@
 import numpy as np
 from .beam import bpm_reading
-
+from ..utils import at_wrapper
 
 class BPMSystem:
     def __init__(self, SC, dual_plane=True):
@@ -28,8 +28,16 @@ class BPMSystem:
         self.offsets_x = np.array([SC.RING[index].Offset[0] for index in self.indices])
         self.offsets_y = np.array([SC.RING[index].Offset[1] for index in self.indices])
         self.rolls = np.array([SC.RING[index].Roll for index in self.indices])
-        
+        self.support_offsets_x = np.array([SC.RING[index].SupportOffset[0] for index in self.indices])
+        self.support_offsets_y = np.array([SC.RING[index].SupportOffset[1] for index in self.indices])
+        self.support_rolls = np.array([SC.RING[index].SupportRoll for index in self.indices])
 
+    def _capture_orbit(self):
+        orbit = at_wrapper.get_orbit(self.SC.RING)
+        self.SC.INJ.trackMode = 'ORB'
+        orbit, _ = bpm_reading(self.SC)
+        return orbit
+    
     def capture_orbit(self):
         self.SC.INJ.trackMode = 'ORB'
         orbit, _ = bpm_reading(self.SC)

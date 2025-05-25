@@ -16,8 +16,9 @@ Function ``get_value_refpts`` indexes elements as usual.
 
 import at
 from copy import deepcopy
+from typing import Optional
 
-from numpy import ndarray
+from numpy import ndarray, arange
 from at import Lattice
 
 
@@ -34,6 +35,12 @@ def atgetfieldvalues(ring: Lattice, refpts: ndarray, attrname: str, index: int =
 def findorbit6(ring: Lattice, refpts: ndarray = None, keep_lattice: bool = False, **kwargs):
     return at.find_orbit6(ring=ring.copy(), refpts=refpts, keep_lattice=keep_lattice, **kwargs)
 
+def get_orbit(ring: Lattice, indices: Optional[ndarray] = None):
+    if indices is None:
+        refpts = arange(len(ring) + 1)
+    else:
+        refpts = indices
+    return ring.find_orbit6(refpts=refpts)[1].T[[0,2]]
 
 def findorbit4(ring: Lattice, dp: float = 0.0, refpts: ndarray = None,  keep_lattice: bool = False, **kwargs):
     return at.find_orbit4(ring=ring.copy(), dp=dp, refpts=refpts, keep_lattice=keep_lattice, **kwargs)

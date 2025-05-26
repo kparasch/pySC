@@ -37,6 +37,12 @@ class BPMSystem:
         self.support_offsets_y = np.array([SC.RING[index].SupportOffset[1] for index in self.indices])
         self.support_rolls = np.array([SC.RING[index].SupportRoll for index in self.indices])
 
+        self.bba_offsets_x = np.zeros(len(self.indices))
+        self.bba_offsets_y = np.zeros(len(self.indices))
+
+        self.reference_x = np.zeros(len(self.indices))
+        self.reference_y = np.zeros(len(self.indices))
+
         self.update_offset_and_support()
 
     def update_offset_and_support(self):
@@ -45,7 +51,16 @@ class BPMSystem:
         self.total_rolls = self.rolls + self.support_rolls
         self.rot_matrices = _rotation_matrix(self.total_rolls)
 
-    def capture_orbit(self):
+    def capture_orbit(self, bba=True, subtract_reference=True):
+        '''
+        Simulates an orbit reading from the BPMs, applying calibration errors, offsets/rolls, and noise.
+        Args:
+            bba (bool): If True, corrects for the BBA offsets stored in the BPMSystem class.
+            subtract_reference (bool): If True, subtracts the reference orbit from the simulated orbit.
+        Returns:
+            fake_orbit_x: Simulated x-coordinates of the orbit at the BPMs.
+            fake_orbit_y: Simulated y-coordinates of the orbit at the BPMs.
+        '''
         orbit = at_wrapper.get_orbit(self.SC.RING, self.indices)
         rotated_orbit = np.einsum('ijk,jk->ik', self.rot_matrices, orbit)  # Rotate orbit according to bpm roll
 
@@ -55,7 +70,17 @@ class BPMSystem:
         fake_orbit_x = (rotated_orbit[0] - self.total_offsets_x) * (1 + self.calibration_errors_x) + noise_x
         fake_orbit_y = (rotated_orbit[1] - self.total_offsets_y) * (1 + self.calibration_errors_y) + noise_y
 
-        return np.array([fake_orbit_x, fake_orbit_y])
+        if bba:
+            # Apply BBA offsets
+            fake_orbit_x -= self.bba_offsets_x
+            fake_orbit_y -= self.bba_offsets_y
+
+        if subtract_reference:
+            # Subtract reference orbit
+            fake_orbit_x -= self.reference_x
+            fake_orbit_y -= self.reference_y
+
+        return fake_orbit_x, fake_orbit_y
 
     
     def capture_orbit_old(self):

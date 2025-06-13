@@ -51,6 +51,9 @@ class BPMSystem:
         self.total_rolls = self.rolls + self.support_rolls
         self.rot_matrices = _rotation_matrix(self.total_rolls)
 
+    def bpm_number(self, index):
+        return int(np.where(self.indices == index)[0][0])
+
     def capture_orbit(self, bba=True, subtract_reference=True):
         '''
         Simulates an orbit reading from the BPMs, applying calibration errors, offsets/rolls, and noise.

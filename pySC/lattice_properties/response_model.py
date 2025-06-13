@@ -34,7 +34,7 @@ def SCgetModelRM(SC, BPMords, CMords, trackMode='TBT', Z0=np.zeros(6), nTurns=1,
         nTurns:
             (default = 1) Number of turns over which to determine the TBT-RM. Ignored if in `ORB`-mode.
         dkick:
-            (default = 1e-5) Kick (scalar and array like inputs) [rad] to be added when numerically determining the partial derivatives.
+            (default = 1e-5) Kick (scalar or array-like inputs) [rad] to be added when numerically determining the partial derivatives.
         useIdealRing:
             (default = True) If True, the design lattice specified in `SC.IDEALRING` is used.
             If False, the model lattice is used SCgetModelRING(SC).

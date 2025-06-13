@@ -4,6 +4,8 @@ Support system: handles all misalignments
 import numpy as np
 import json
 
+from ..utils.sc_tools import update_transformation
+
 def tuple_if_not_none(tup):
     """
     Convert a list to a tuple if it is not None.
@@ -47,6 +49,7 @@ class Support:
         self.start = SupportEndpoint(index_start)
         self.end = SupportEndpoint(index_end)
 
+        self.length = 0. # to be filled in add_support
         self.offset_z = 0. ## not really implemented 
         self.roll = 0. ## only for Level 1
 
@@ -54,6 +57,14 @@ class Support:
             self.name = 'Support'
         else:
             self.name = name
+
+    @property
+    def yaw(self):
+        return (self.end.dx - self.start.dx ) / self.length 
+    
+    @property
+    def pitch(self):
+        return (self.end.dy - self.start.dy ) / self.length
 
     def __repr__(self):
         return f'({self.name}: {self.start.index}-{self.end.index})'
@@ -95,7 +106,7 @@ class ElementOffset:
         self.bpm_number = None
         self.s = None # to be filled 
 
-        
+
     def to_dict(self):
         return {
             'index': self.index,
@@ -151,6 +162,9 @@ class SupportSystem(dict):
         support = Support(index_start, index_end, name=name)
         support.start.s = float(self.parent.RING.get_s_pos(index_start)[0])
         support.end.s = float(self.parent.RING.get_s_pos(index_end)[0])
+
+        support.length = (support.end.s - support.start.s) % self.parent.RING.circumference
+
         index_for_support = len(self[key])
 
         self[key][index_for_support] = support
@@ -300,6 +314,14 @@ class SupportSystem(dict):
         dy = (dy2 - dy1)/(s2 - s1 + corr_s2) * (s - s1 + corr_s) + dy1
         return np.array([dx, dy])
 
+    def get_rotation(self, index, level='L0'):
+        """
+        Get the total rotation for an element or endpoint.
+        Returns a tuple (roll, yaw, pitch).
+        """
+
+        return roll, pitch, yaw
+
     def set_offset(self, index, level='L0', endpoint=None, dx=0, dy=0):
         """
         Set the transverse offset for an element or endpoint.
@@ -322,24 +344,43 @@ class SupportSystem(dict):
         else:
             raise Exception(f'BUG: Unknown case ?! endpoint={endpoint}')
 
-        self.update_transformation(level, index)
+        self.trigger_update(level, index)
         return
 
 
-    def update_transformation(self, level, index):
+    def trigger_update(self, level, index):
         """
-        Update the transformations for the given level and index.
+        Trigger the update of the transformations for the given level and index.
         If the target is a support, it will trigger the transformation of the elements it supports.
-        If the target is an element, it will recompute the at matrices t1,t2,r1,r2.
+        If the target is an element, it will recompute the at matrices T1,T2,R1,R2.
         """
         if level != 'L0':
             assert isinstance(self[level][index], Support), f'Element {index} in level {level} is not a Support object'
             for trig_level, trig_index in self[level][index].supports_elements:
                 self.update_transformation(trig_level, trig_index)
         else:
-            element_offset = self[level][index]
+            eo = self[level][index]
+            dx, dy = self.get_total_offset(eo.index, level)
+            dz = eo.dz
+            if eo.supported_by is not None:
+                support_level, support_key = eo.supported_by
+                support = self[support_level][support_key]
+                yaw = support.yaw + eo.yaw
+                pitch = support.pitch + eo.pitch
+                roll = support.roll + eo.roll
+            else:
+                yaw = eo.yaw
+                pitch = eo.pitch
+                roll = eo.roll
 
-    def transform_element(self, element_offset)
+            if eo.is_bpm:
+                self.parent.bpm_system.total_offsets_x[eo.bpm_number] = dx
+                self.parent.bpm_system.total_offsets_y[eo.bpm_number] = dy
+                self.parent.bpm_system.total_rolls[eo.bpm_number] = roll
+            else:
+                update_transformation(element=self.parent.RING[eo.index],
+                                      dx=dx, dy=dy, dz=dz,
+                                      roll=roll, yaw=yaw, pitch=pitch)
 
     def __repr__(self): # hide elements
         return {key: self[key] for key in self.keys() if key != 'L0'}.__repr__()

@@ -33,26 +33,20 @@ class SupportEndpoint(BaseModel):
         return SupportEndpoint.model_validate(data)
 
 
-class Support:
+class Support(BaseModel):
     """Support structure: represents a support with two endpoints."""
-    def __init__(self, index_start, index_end, name=None):
-        self.supports_elements = [] ## can be element/bpm or a support endpoint
-        self.start = SupportEndpoint(index=index_start)
-        self.end = SupportEndpoint(index=index_end)
-
-        self.length = 0. # to be filled in add_support
-        self.offset_z = 0. ## not really implemented 
-        self.roll = 0. ## only for Level 1
-
-        if name is None:
-            self.name = 'Support'
-        else:
-            self.name = name
+    start: SupportEndpoint
+    end: SupportEndpoint
+    supports_elements: List[Tuple[str, int]] = []  # list of (level, index) tuples
+    length: float = 0.0  # to be filled in add_support
+    offset_z: float = 0.0  # not really implemented
+    roll: float = 0.0  # only for Level 1
+    name: str = 'Support'  # name of the support type, e.g. 'Girder', 'Support', etc.
 
     @property
     def yaw(self):
         return (self.end.dx - self.start.dx ) / self.length 
-    
+
     @property
     def pitch(self):
         return (self.end.dy - self.start.dy ) / self.length
@@ -61,23 +55,10 @@ class Support:
         return f'({self.name}: {self.start.index}-{self.end.index})'
 
     def to_dict(self):
-        return {
-            'name': self.name,
-            'start': self.start.to_dict(),
-            'end': self.end.to_dict(),
-            'offset_z': self.offset_z,
-            'roll': self.roll,
-            'supports_elements': self.supports_elements
-        }
+        return self.model_dump()
 
     def from_dict(data):
-        new_support = Support(data['start']['index'], data['end']['index'], name=data['name'])
-        new_support.start = SupportEndpoint.from_dict(data['start'])
-        new_support.end = SupportEndpoint.from_dict(data['end'])
-        new_support.offset_z = data['offset_z']
-        new_support.roll = data['roll']
-        new_support.supports_elements = list(map(tuple, data['supports_elements'])) # convert list of lists to list of tuples
-        return new_support 
+        return Support.model_validate(data)
 
 
 class ElementOffset(BaseModel):
@@ -124,7 +105,7 @@ class SupportSystem:
         if index_start < 0 or index_end < 0:
             raise ValueError('Indices must be non-negative')
 
-        support = Support(index_start, index_end, name=name)
+        support = Support(start=SupportEndpoint(index=index_start), end=SupportEndpoint(index=index_end), name=name)
         support.start.s = float(self.parent.RING.get_s_pos(index_start)[0])
         support.end.s = float(self.parent.RING.get_s_pos(index_end)[0])
 

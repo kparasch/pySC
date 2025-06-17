@@ -8,12 +8,6 @@ from typing import Optional, Union
 
 from ..utils.sc_tools import update_transformation
 
-def tuple_if_not_none(tup):
-    """
-    Convert a list to a tuple if it is not None.
-    """
-    return tuple(tup) if tup is not None else None
-
 
 class SupportEndpoint(BaseModel):
     """
@@ -24,13 +18,6 @@ class SupportEndpoint(BaseModel):
     dx: float = 0.0
     dy: float = 0.0
     s: Optional[float] = None  # s position in the ring, to be filled later
-    # Note: dx, dy are the transverse offsets at the endpoint
-
-    def to_dict(self):
-        return self.model_dump()
-
-    def from_dict(data):
-        return SupportEndpoint.model_validate(data)
 
 
 class Support(BaseModel):
@@ -54,12 +41,6 @@ class Support(BaseModel):
     def __repr__(self):
         return f'({self.name}: {self.start.index}-{self.end.index})'
 
-    def to_dict(self):
-        return self.model_dump()
-
-    def from_dict(data):
-        return Support.model_validate(data)
-
 
 class ElementOffset(BaseModel):
     """
@@ -77,11 +58,6 @@ class ElementOffset(BaseModel):
     bpm_number: Optional[int] = None  # BPM number if it is a BPM
     s: Optional[float] = None  # s position in the ring, to be filled later
 
-    def to_dict(self):
-        return self.model_dump()
-
-    def from_dict(data):
-        return ElementOffset.model_validate(data)
 
 class SupportSystem(BaseModel):
     '''
@@ -106,7 +82,7 @@ class SupportSystem(BaseModel):
         support.start.s = float(self.parent.RING.get_s_pos(index_start)[0])
         support.end.s = float(self.parent.RING.get_s_pos(index_end)[0])
 
-        support.length = (support.end.s - support.start.s) % self.parent.RING.circumference
+        support.length = (support.end.s - support.start.s) % float(self.parent.RING.circumference)
 
         index_for_support = len(self.data[key])
 
@@ -338,8 +314,9 @@ class SupportSystem(BaseModel):
     def to_dict(self):
         return self.model_dump(exclude='parent')
 
-    def from_dict(data, parent=None):
-        return SupportSystem.model_validate(data, context={'parent': parent})
+    @classmethod
+    def from_dict(cls, data, parent=None):
+        return cls.model_validate(data, context={'parent': parent})
 
     def to_json(self, filename):
         with open(filename, 'w') as fp:

@@ -5,6 +5,7 @@ import numpy as np
 import json
 from pydantic import BaseModel
 from typing import Optional, Union
+from pathlib import Path
 
 from ..utils.sc_tools import update_transformation
 
@@ -321,3 +322,8 @@ class SupportSystem(BaseModel):
     def to_json(self, filename):
         with open(filename, 'w') as fp:
             json.dump(self.to_dict(), fp, indent=2)
+
+    @classmethod
+    def from_json(cls, filename, parent=None):
+        json_string = Path(filename).read_text()
+        return cls.model_validate_json(json_string, context={'parent': parent})

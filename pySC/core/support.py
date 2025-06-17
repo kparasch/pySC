@@ -43,7 +43,7 @@ class SupportEndpoint:
 
 
 class Support:
-    """Support structure: represents a support between two endpoints."""
+    """Support structure: represents a support with two endpoints."""
     def __init__(self, index_start, index_end, name=None):
         self.supports_elements = [] ## can be element/bpm or a support endpoint
         self.start = SupportEndpoint(index_start)
@@ -170,6 +170,9 @@ class SupportSystem(dict):
         self[key][index_for_support] = support
 
     def add_element(self, index):
+        """
+        Associates an ElementOffset object (at level L0) to an element of the lattice with index 'index'.
+        """
         if index in self['L0'].keys():
             raise ValueError(f'Element with index {index} already exists in support system')
         new_element = ElementOffset(index)
@@ -314,11 +317,24 @@ class SupportSystem(dict):
         dy = (dy2 - dy1)/(s2 - s1 + corr_s2) * (s - s1 + corr_s) + dy1
         return np.array([dx, dy])
 
-    def get_rotation(self, index, level='L0'):
+    def get_total_rotation(self, index, level='L0'):
         """
-        Get the total rotation for an element or endpoint.
+        Get the total rotation for an element.
         Returns a tuple (roll, yaw, pitch).
         """
+        if self.level_to_int(level) > 0:
+            raise NotImplementedError('Total rotation for supports is not implemented yet') 
+        eo = self[level][index]
+        if eo.supported_by is not None:
+            support_level, support_key = eo.supported_by
+            support = self[support_level][support_key]
+            yaw = support.yaw + eo.yaw
+            pitch = support.pitch + eo.pitch
+            roll = support.roll + eo.roll
+        else:
+            yaw = eo.yaw
+            pitch = eo.pitch
+            roll = eo.roll
 
         return roll, pitch, yaw
 
@@ -357,21 +373,12 @@ class SupportSystem(dict):
         if level != 'L0':
             assert isinstance(self[level][index], Support), f'Element {index} in level {level} is not a Support object'
             for trig_level, trig_index in self[level][index].supports_elements:
-                self.update_transformation(trig_level, trig_index)
+                self.trigger_update(trig_level, trig_index)
         else:
             eo = self[level][index]
             dx, dy = self.get_total_offset(eo.index, level)
             dz = eo.dz
-            if eo.supported_by is not None:
-                support_level, support_key = eo.supported_by
-                support = self[support_level][support_key]
-                yaw = support.yaw + eo.yaw
-                pitch = support.pitch + eo.pitch
-                roll = support.roll + eo.roll
-            else:
-                yaw = eo.yaw
-                pitch = eo.pitch
-                roll = eo.roll
+            roll, pitch, yaw = self.get_total_rotation(eo.index, level) 
 
             if eo.is_bpm:
                 self.parent.bpm_system.total_offsets_x[eo.bpm_number] = dx
@@ -413,7 +420,6 @@ class SupportSystem(dict):
             for index, support_data in support_level.items():
                 new_support_system[level][index] = Support.from_dict(support_data)
         return new_support_system
-
 
     def to_json(self, filename):
         with open(filename, 'w') as fp:

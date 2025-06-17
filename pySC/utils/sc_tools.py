@@ -123,11 +123,22 @@ def scale_circumference(RING, circ, mode='abs'):  # TODO
     return RING
 
 
-def update_transformation(element):
+def update_transformation(element, dx=None, dy=None, dz=None, roll=None, yaw=None, pitch=None):
     mag_length = getattr(element, "Length", 0)
     mag_theta = getattr(element, 'BendingAngle', 0)
-    offsets = element.SupportOffset + element.MagnetOffset
-    rolls = np.roll(element.MagnetRoll + element.SupportRoll, -1)  # z,x,y -> x,y,z
+
+    if (dx is None and dy is None and dz is None and 
+        roll is None and yaw is None and pitch is None):
+        offsets = element.SupportOffset + element.MagnetOffset
+        rolls = np.roll(element.MagnetRoll + element.SupportRoll, -1)  # z,x,y -> x,y,z
+    else:
+        offsets = np.array([dx if dx is not None else 0,
+                            dy if dy is not None else 0,
+                            dz if dz is not None else 0])
+        rolls = np.array([pitch if pitch is not None else 0,
+                          yaw if yaw is not None else 0,
+                          roll if roll is not None else 0])
+
     x_axis = np.array([1, 0, 0])
     y_axis = np.array([0, 1, 0])
     z_axis = np.array([0, 0, 1])

@@ -15,41 +15,30 @@ def tuple_if_not_none(tup):
     return tuple(tup) if tup is not None else None
 
 
-class SupportEndpoint:
+class SupportEndpoint(BaseModel):
     """
     Support endpoint: represents an endpoint of a support structure.
     """
-    def __init__(self, index):
-        self.index = int(index)
-        self.supported_by = None
-        self.dx = 0
-        self.dy = 0
-        self.s = None
+    index: int
+    supported_by: Optional[Tuple[str, int]] = None  # (level, index)
+    dx: float = 0.0
+    dy: float = 0.0
+    s: Optional[float] = None  # s position in the ring, to be filled later
+    # Note: dx, dy are the transverse offsets at the endpoint
 
     def to_dict(self):
-        return {
-            'index': self.index,
-            'supported_by': self.supported_by,
-            'dx': self.dx,
-            'dy': self.dy,
-            's': self.s
-        }
+        return self.model_dump()
 
     def from_dict(data):
-        new_endpoint = SupportEndpoint(data['index'])
-        new_endpoint.supported_by = tuple_if_not_none(data['supported_by'])
-        new_endpoint.dx = data['dx']
-        new_endpoint.dy = data['dy']
-        new_endpoint.s = data['s']
-        return new_endpoint
+        return SupportEndpoint.model_validate(data)
 
 
 class Support:
     """Support structure: represents a support with two endpoints."""
     def __init__(self, index_start, index_end, name=None):
         self.supports_elements = [] ## can be element/bpm or a support endpoint
-        self.start = SupportEndpoint(index_start)
-        self.end = SupportEndpoint(index_end)
+        self.start = SupportEndpoint(index=index_start)
+        self.end = SupportEndpoint(index=index_end)
 
         self.length = 0. # to be filled in add_support
         self.offset_z = 0. ## not really implemented 
@@ -106,19 +95,6 @@ class ElementOffset(BaseModel):
     is_bpm: bool = False
     bpm_number: Optional[int] = None  # BPM number if it is a BPM
     s: Optional[float] = None  # s position in the ring, to be filled later
-    # def __init__(self, index):
-    #     self.index = int(index)
-    #     self.dx = 0.
-    #     self.dy = 0.
-    #     self.dz = 0.
-    #     self.roll = 0.
-    #     self.yaw = 0.
-    #     self.pitch = 0.
-    #     self.supported_by = None
-    #     self.is_bpm = False
-    #     self.bpm_number = None
-    #     self.s = None # to be filled 
-
 
     def to_dict(self):
         return self.model_dump()

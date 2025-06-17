@@ -4,7 +4,7 @@ Support system: handles all misalignments
 import numpy as np
 import json
 from pydantic import BaseModel
-from typing import Optional, List, Tuple
+from typing import Optional, Union
 
 from ..utils.sc_tools import update_transformation
 
@@ -20,7 +20,7 @@ class SupportEndpoint(BaseModel):
     Support endpoint: represents an endpoint of a support structure.
     """
     index: int
-    supported_by: Optional[Tuple[str, int]] = None  # (level, index)
+    supported_by: Optional[tuple[str, int]] = None  # (level, index)
     dx: float = 0.0
     dy: float = 0.0
     s: Optional[float] = None  # s position in the ring, to be filled later
@@ -37,7 +37,7 @@ class Support(BaseModel):
     """Support structure: represents a support with two endpoints."""
     start: SupportEndpoint
     end: SupportEndpoint
-    supports_elements: List[Tuple[str, int]] = []  # list of (level, index) tuples
+    supports_elements: list[tuple[str, int]] = []  # list of (level, index) tuples
     length: float = 0.0  # to be filled in add_support
     offset_z: float = 0.0  # not really implemented
     roll: float = 0.0  # only for Level 1
@@ -72,7 +72,7 @@ class ElementOffset(BaseModel):
     roll: float = 0.0
     yaw: float = 0.0
     pitch: float = 0.0
-    supported_by: Optional[Tuple[str, int]] = None  # (level, index)
+    supported_by: Optional[tuple[str, int]] = None  # (level, index)
     is_bpm: bool = False
     bpm_number: Optional[int] = None  # BPM number if it is a BPM
     s: Optional[float] = None  # s position in the ring, to be filled later
@@ -83,18 +83,15 @@ class ElementOffset(BaseModel):
     def from_dict(data):
         return ElementOffset.model_validate(data)
 
-class SupportSystem:
+class SupportSystem(BaseModel):
     '''
     Support system: handles all misalignments through a graph-like structure.
     It is composed in level of supports, where L0 is the level of elements (offsets),
     L1 is the level of supports, L2 is the level of supports of supports, etc.
     The structure of the python object is a dictionary of dictionaries, where the keys are the levels (L0, L1, L2, etc.)
     '''
-    def __init__(self, parent=None):
-        super().__init__()
-        if parent is not None:
-            self.parent = parent
-        self.data = {'L0' : {}} # elements 
+    parent: Optional[object] = None  # Parent object, e.g. the SC object
+    data: dict[str, dict[int, Union[ElementOffset, Support]]] = { 'L0' : {} }  # Dictionary to hold the support data, structured by levels
 
     def add_support(self, index_start, index_end, level=1, name=None):
         assert level >= 1, 'Level must be larger or equal to 1'
@@ -125,7 +122,7 @@ class SupportSystem:
         if index in self.parent.bpm_system.indices:
             new_element.is_bpm = True
             new_element.bpm_number = self.parent.bpm_system.bpm_number(index)
-        new_element.s = self.parent.RING.get_s_pos(index)[0]
+        new_element.s = float(self.parent.RING.get_s_pos(index)[0])
         self.data['L0'][int(index)] = new_element
 
     def look_for_support(self, my_level, my_index):
@@ -339,33 +336,10 @@ class SupportSystem:
         return {key: self.data[key] for key in self.data.keys() if key != 'L0'}.__repr__()
 
     def to_dict(self):
-        """
-        Convert the support system to a dictionary.
-        """
-        return {level: {key : self.data[level][key].to_dict() for key in self.data[level].keys()}
-                 for level in self.data.keys()}
+        return self.model_dump(exclude='parent')
 
     def from_dict(data, parent=None):
-        """
-        Convert a dictionary to a support system.
-        """
-        new_support_system = SupportSystem()
-        new_support_system.parent = parent
-
-        level = 'L0'
-        assert level in data.keys()
-        for index, element_data in data[level].items():
-            new_support_system.data[level][index] = ElementOffset.from_dict(element_data)
-
-        for level, support_level in data.items():
-            if level == 'L0':
-                continue
-            if level not in new_support_system.data.keys():
-                new_support_system.data[level] = {}
-
-            for index, support_data in support_level.items():
-                new_support_system.data[level][index] = Support.from_dict(support_data)
-        return new_support_system
+        return SupportSystem.model_validate(data, context={'parent': parent})
 
     def to_json(self, filename):
         with open(filename, 'w') as fp:

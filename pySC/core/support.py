@@ -3,6 +3,8 @@ Support system: handles all misalignments
 '''
 import numpy as np
 import json
+from pydantic import BaseModel
+from typing import Optional, List, Tuple
 
 from ..utils.sc_tools import update_transformation
 
@@ -89,55 +91,42 @@ class Support:
         return new_support 
 
 
-class ElementOffset:
+class ElementOffset(BaseModel):
     """
     Element offset: represents an element in the support system with its misalignments.
     """
-    def __init__(self, index):
-        self.index = int(index)
-        self.dx = 0.
-        self.dy = 0.
-        self.dz = 0.
-        self.roll = 0.
-        self.yaw = 0.
-        self.pitch = 0.
-        self.supported_by = None
-        self.is_bpm = False
-        self.bpm_number = None
-        self.s = None # to be filled 
+    index: int
+    dx: float = 0.0
+    dy: float = 0.0
+    dz: float = 0.0
+    roll: float = 0.0
+    yaw: float = 0.0
+    pitch: float = 0.0
+    supported_by: Optional[Tuple[str, int]] = None  # (level, index)
+    is_bpm: bool = False
+    bpm_number: Optional[int] = None  # BPM number if it is a BPM
+    s: Optional[float] = None  # s position in the ring, to be filled later
+    # def __init__(self, index):
+    #     self.index = int(index)
+    #     self.dx = 0.
+    #     self.dy = 0.
+    #     self.dz = 0.
+    #     self.roll = 0.
+    #     self.yaw = 0.
+    #     self.pitch = 0.
+    #     self.supported_by = None
+    #     self.is_bpm = False
+    #     self.bpm_number = None
+    #     self.s = None # to be filled 
 
 
     def to_dict(self):
-        return {
-            'index': self.index,
-            'dx': self.dx,
-            'dy': self.dy,
-            'dz': self.dz,
-            'roll': self.roll,
-            'yaw': self.yaw,
-            'pitch': self.pitch,
-            'supported_by': self.supported_by,
-            'is_bpm': self.is_bpm,
-            'bpm_number': self.bpm_number,
-            's': self.s
-        }
+        return self.model_dump()
 
     def from_dict(data):
-        new_offset = ElementOffset(data['index'])
-        new_offset.dx = data['dx']
-        new_offset.dy = data['dy']
-        new_offset.dz = data['dz']
-        new_offset.roll = data['roll']
-        new_offset.yaw = data['yaw']
-        new_offset.pitch = data['pitch']
-        new_offset.supported_by = tuple_if_not_none(data['supported_by'])
-        new_offset.is_bpm = data['is_bpm']
-        new_offset.bpm_number = data['bpm_number']
-        new_offset.s = data['s']
-        return new_offset 
+        return ElementOffset.model_validate(data)
 
-
-class SupportSystem(dict):
+class SupportSystem:
     '''
     Support system: handles all misalignments through a graph-like structure.
     It is composed in level of supports, where L0 is the level of elements (offsets),
@@ -148,13 +137,13 @@ class SupportSystem(dict):
         super().__init__()
         if parent is not None:
             self.parent = parent
-        self['L0'] = {} # elements 
+        self.data = {'L0' : {}} # elements 
 
     def add_support(self, index_start, index_end, level=1, name=None):
         assert level >= 1, 'Level must be larger or equal to 1'
         key = f'L{level}'
-        if key not in self:
-            self[key] = {}
+        if key not in self.data.keys():
+            self.data[key] = {}
 
         if index_start < 0 or index_end < 0:
             raise ValueError('Indices must be non-negative')
@@ -165,22 +154,22 @@ class SupportSystem(dict):
 
         support.length = (support.end.s - support.start.s) % self.parent.RING.circumference
 
-        index_for_support = len(self[key])
+        index_for_support = len(self.data[key])
 
-        self[key][index_for_support] = support
+        self.data[key][index_for_support] = support
 
     def add_element(self, index):
         """
         Associates an ElementOffset object (at level L0) to an element of the lattice with index 'index'.
         """
-        if index in self['L0'].keys():
+        if index in self.data['L0'].keys():
             raise ValueError(f'Element with index {index} already exists in support system')
-        new_element = ElementOffset(index)
+        new_element = ElementOffset(index=index)
         if index in self.parent.bpm_system.indices:
             new_element.is_bpm = True
             new_element.bpm_number = self.parent.bpm_system.bpm_number(index)
         new_element.s = self.parent.RING.get_s_pos(index)[0]
-        self['L0'][int(index)] = new_element
+        self.data['L0'][int(index)] = new_element
 
     def look_for_support(self, my_level, my_index):
         """
@@ -188,7 +177,7 @@ class SupportSystem(dict):
         in the level my_level.
         Returns a tuple (next_level, support_key) if found, otherwise None.
         """
-        all_levels = list(self.keys())
+        all_levels = list(self.data.keys())
 
         # remove levels below, and my level, from list of levels to look into 
         # i.e. keep only higher levels
@@ -198,8 +187,8 @@ class SupportSystem(dict):
 
         # Loop through all next levels until we find the first supporting structure
         for next_level in all_levels:
-            for support_key in self[next_level].keys():
-                support = self[next_level][support_key]
+            for support_key in self.data[next_level].keys():
+                support = self.data[next_level][support_key]
                 if support.start.index < support.end.index:
                     ## normal support
                     if my_index >= support.start.index and my_index <= support.end.index:
@@ -211,14 +200,14 @@ class SupportSystem(dict):
         return None
 
     def check_levels_are_sorted(self):
-        int_levels = [int(str(key)[1:]) for key in self.keys()]
+        int_levels = [int(str(key)[1:]) for key in self.data.keys()]
         return all(int_levels[i] < int_levels[i+1] for i in range(len(int_levels)-1))
 
     def level_to_int(self, level):
         return int(level[1:])
 
     def sorted_levels(self):
-        int_levels = sorted([self.level_to_int(level) for level in self.keys()])
+        int_levels = sorted([self.level_to_int(level) for level in self.data.keys()])
         return [f'L{level}' for level in int_levels]
 
     def resolve_graph(self):
@@ -233,40 +222,40 @@ class SupportSystem(dict):
         ## for each element/endpoint find who it is supported by
         for level in all_levels:
             print(f'Resolving supports: looping through {level}')
-            for key in self[level].keys():
+            for key in self.data[level].keys():
                 if level == 'L0':
                     # element offset
-                    index = self[level][key].index
-                    self[level][key].supported_by = self.look_for_support(level, index)
+                    index = self.data[level][key].index
+                    self.data[level][key].supported_by = self.look_for_support(level, index)
                 else: # level > 0
                     # start endpoint
-                    index_start = self[level][key].start.index
-                    self[level][key].start.supported_by = self.look_for_support(level, index_start)
+                    index_start = self.data[level][key].start.index
+                    self.data[level][key].start.supported_by = self.look_for_support(level, index_start)
                     # end endpoint
-                    index_end = self[level][key].end.index
-                    self[level][key].end.supported_by = self.look_for_support(level, index_end)
+                    index_end = self.data[level][key].end.index
+                    self.data[level][key].end.supported_by = self.look_for_support(level, index_end)
 
         ## populate who supports who based on who is supported by who
         for level in all_levels:
-            for key in self[level].keys():
+            for key in self.data[level].keys():
                 if level == 'L0':
-                    p_level_key = self[level][key].supported_by
+                    p_level_key = self.data[level][key].supported_by
                     if p_level_key is not None:
                         p_level, p_key = p_level_key
-                        self[p_level][p_key].supports_elements.append((level, key))
+                        self.data[p_level][p_key].supports_elements.append((level, key))
                 else: ## level > 0, go per endpoint
-                    p_level_key_start = self[level][key].start.supported_by
-                    p_level_key_end = self[level][key].end.supported_by
+                    p_level_key_start = self.data[level][key].start.supported_by
+                    p_level_key_end = self.data[level][key].end.supported_by
                     if p_level_key_start is not None or p_level_key_end is not None:
                         if p_level_key_start == p_level_key_end:
                             p_level, p_key = p_level_key_start
-                            self[p_level][p_key].supports_elements.append((level, key))
+                            self.data[p_level][p_key].supports_elements.append((level, key))
                         elif p_level_key_start is not None:
                             p_level, p_key = p_level_key_start
-                            self[p_level][p_key].supports_elements.append((level, key))
+                            self.data[p_level][p_key].supports_elements.append((level, key))
                         elif p_level_key_end is not None:
                             p_level, p_key = p_level_key_end
-                            self[p_level][p_key].supports_elements.append((level, key))
+                            self.data[p_level][p_key].supports_elements.append((level, key))
                         else:
                             raise Exception('Unknown case ?! should not happen.')
 
@@ -280,11 +269,11 @@ class SupportSystem(dict):
             assert endpoint is None
 
         if endpoint is None:
-            this_element = self[level][index]
+            this_element = self.data[level][index]
         elif endpoint == 'start':
-            this_element = self[level][index].start
+            this_element = self.data[level][index].start
         elif endpoint == 'end':
-            this_element = self[level][index].end
+            this_element = self.data[level][index].end
         else:
             raise Exception(f'BUG: Unknown case ?! endpoint={endpoint}')
 
@@ -297,7 +286,7 @@ class SupportSystem(dict):
 
     def get_support_offset(self, s, support_level_key):
         supp_level, supp_index = support_level_key
-        support = self[supp_level][supp_index]
+        support = self.data[supp_level][supp_index]
         s1 = support.start.s
         s2 = support.end.s
         corr_s = 0
@@ -324,10 +313,10 @@ class SupportSystem(dict):
         """
         if self.level_to_int(level) > 0:
             raise NotImplementedError('Total rotation for supports is not implemented yet') 
-        eo = self[level][index]
+        eo = self.data[level][index]
         if eo.supported_by is not None:
             support_level, support_key = eo.supported_by
-            support = self[support_level][support_key]
+            support = self.data[support_level][support_key]
             yaw = support.yaw + eo.yaw
             pitch = support.pitch + eo.pitch
             roll = support.roll + eo.roll
@@ -349,14 +338,14 @@ class SupportSystem(dict):
             assert endpoint is None
 
         if endpoint is None:
-            self[level][index].dx = dx
-            self[level][index].dy = dy
+            self.data[level][index].dx = dx
+            self.data[level][index].dy = dy
         elif endpoint == 'start':
-            self[level][index].start.dx = dx
-            self[level][index].start.dy = dy
+            self.data[level][index].start.dx = dx
+            self.data[level][index].start.dy = dy
         elif endpoint == 'end':
-            self[level][index].end.dx = dx
-            self[level][index].end.dy = dy
+            self.data[level][index].end.dx = dx
+            self.data[level][index].end.dy = dy
         else:
             raise Exception(f'BUG: Unknown case ?! endpoint={endpoint}')
 
@@ -371,11 +360,11 @@ class SupportSystem(dict):
         If the target is an element, it will recompute the at matrices T1,T2,R1,R2.
         """
         if level != 'L0':
-            assert isinstance(self[level][index], Support), f'Element {index} in level {level} is not a Support object'
-            for trig_level, trig_index in self[level][index].supports_elements:
+            assert isinstance(self.data[level][index], Support), f'Element {index} in level {level} is not a Support object'
+            for trig_level, trig_index in self.data[level][index].supports_elements:
                 self.trigger_update(trig_level, trig_index)
         else:
-            eo = self[level][index]
+            eo = self.data[level][index]
             dx, dy = self.get_total_offset(eo.index, level)
             dz = eo.dz
             roll, pitch, yaw = self.get_total_rotation(eo.index, level) 
@@ -390,14 +379,14 @@ class SupportSystem(dict):
                                       roll=roll, yaw=yaw, pitch=pitch)
 
     def __repr__(self): # hide elements
-        return {key: self[key] for key in self.keys() if key != 'L0'}.__repr__()
+        return {key: self.data[key] for key in self.data.keys() if key != 'L0'}.__repr__()
 
     def to_dict(self):
         """
         Convert the support system to a dictionary.
         """
-        return {level: {key : self[level][key].to_dict() for key in self[level].keys()}
-                 for level in self.keys()}
+        return {level: {key : self.data[level][key].to_dict() for key in self.data[level].keys()}
+                 for level in self.data.keys()}
 
     def from_dict(data, parent=None):
         """
@@ -409,16 +398,16 @@ class SupportSystem(dict):
         level = 'L0'
         assert level in data.keys()
         for index, element_data in data[level].items():
-            new_support_system[level][index] = ElementOffset.from_dict(element_data)
+            new_support_system.data[level][index] = ElementOffset.from_dict(element_data)
 
         for level, support_level in data.items():
             if level == 'L0':
                 continue
-            if level not in new_support_system.keys():
-                new_support_system[level] = {}
+            if level not in new_support_system.data.keys():
+                new_support_system.data[level] = {}
 
             for index, support_data in support_level.items():
-                new_support_system[level][index] = Support.from_dict(support_data)
+                new_support_system.data[level][index] = Support.from_dict(support_data)
         return new_support_system
 
     def to_json(self, filename):

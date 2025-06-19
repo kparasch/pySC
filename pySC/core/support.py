@@ -10,6 +10,23 @@ from pathlib import Path
 from ..utils.sc_tools import update_transformation
 
 
+class ElementOffset(BaseModel):
+    """
+    Element offset: represents an element in the support system with its misalignments.
+    """
+    index: int
+    dx: float = 0.0
+    dy: float = 0.0
+    dz: float = 0.0
+    roll: float = 0.0
+    yaw: float = 0.0
+    pitch: float = 0.0
+    supported_by: Optional[tuple[str, int]] = None  # (level, index)
+    is_bpm: bool = False
+    bpm_number: Optional[int] = None  # BPM number if it is a BPM
+    s: Optional[float] = None  # s position in the ring, to be filled later
+
+
 class SupportEndpoint(BaseModel):
     """
     Support endpoint: represents an endpoint of a support structure.
@@ -41,23 +58,6 @@ class Support(BaseModel):
 
     def __repr__(self):
         return f'({self.name}: {self.start.index}-{self.end.index})'
-
-
-class ElementOffset(BaseModel):
-    """
-    Element offset: represents an element in the support system with its misalignments.
-    """
-    index: int
-    dx: float = 0.0
-    dy: float = 0.0
-    dz: float = 0.0
-    roll: float = 0.0
-    yaw: float = 0.0
-    pitch: float = 0.0
-    supported_by: Optional[tuple[str, int]] = None  # (level, index)
-    is_bpm: bool = False
-    bpm_number: Optional[int] = None  # BPM number if it is a BPM
-    s: Optional[float] = None  # s position in the ring, to be filled later
 
 
 class SupportSystem(BaseModel):
@@ -282,7 +282,6 @@ class SupportSystem(BaseModel):
 
         self.trigger_update(level, index)
         return
-
 
     def trigger_update(self, level, index):
         """

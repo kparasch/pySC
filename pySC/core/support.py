@@ -308,6 +308,17 @@ class SupportSystem(BaseModel):
                                       dx=dx, dy=dy, dz=dz,
                                       roll=roll, yaw=yaw, pitch=pitch)
 
+    ## this should maybe belong to tuning algorithms
+    def fake_align_bpms(self, bpm_indices, magnet_indices):
+        for bpm_index, magnet_index in zip(bpm_indices, magnet_indices):
+            magnet_dx, magnet_dy = self.get_total_offset(index=magnet_index)
+            bpm_tot_dx, bpm_tot_dy = self.get_total_offset(index=bpm_index)
+            new_dx = magnet_dx - bpm_tot_dx
+            new_dy = magnet_dy - bpm_tot_dy
+            bpm_number = self.parent.bpm_system.bpm_number(bpm_index)
+            self.parent.bpm_system.bba_offsets_x[bpm_number] = new_dx
+            self.parent.bpm_system.bba_offsets_y[bpm_number] = new_dy
+
     def __repr__(self): # hide elements
         return {key: self.data[key] for key in self.data.keys() if key != 'L0'}.__repr__()
 

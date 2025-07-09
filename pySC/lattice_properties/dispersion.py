@@ -5,6 +5,13 @@ from pySC.core.beam import bpm_reading
 
 LOGGER = logging_tools.get_logger(__name__)
 
+def modelDispersion(SC):
+
+    _, _, twiss = SC.IDEALRING.get_optics(refpts=SC.ORD.BPM)
+    Dx = twiss.dispersion[:, 0]  # horizontal dispersion
+    Dy = twiss.dispersion[:, 2]  # vertical dispersion
+    return Dx, Dy
+
 def measureDispersion(SC, CAVords, rfStep=1E3):
     """
     Calculates the lattice dispersion (orbit-based) based on current setpoints
@@ -52,7 +59,6 @@ def measureDispersion(SC, CAVords, rfStep=1E3):
     SC.IDEALRING.enable_6d()
     ### 
     gamma0 = SC.IDEALRING.gamma
-
     scale_factor = - rfStep / f_rf / (momentum_compaction_factor - 1 / gamma0**2)
 
     Dx = (T1[0] - T0[0]) * scale_factor

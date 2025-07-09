@@ -12,7 +12,7 @@ def modelDispersion(SC):
     Dy = twiss.dispersion[:, 2]  # vertical dispersion
     return Dx, Dy
 
-def measureDispersion(SC, CAVords, rfStep=1E3):
+def measureDispersion(SC, CAVords, rfStep=50):
     """
     Calculates the lattice dispersion (orbit-based) based on current setpoints
 
@@ -24,7 +24,7 @@ def measureDispersion(SC, CAVords, rfStep=1E3):
             SimulatedCommissioning class instance
         CAVords:
             Index of (main) RF Cavities in SC.RING (SC.ORD.CM)
-        rfStep: (default = 1e3) Change of rf frequency [Hz]
+        rfStep: (default = 50) Change of rf frequency [Hz]
 
     Returns:
         Dx : The horizontal dispersion given in [m].
@@ -59,9 +59,10 @@ def measureDispersion(SC, CAVords, rfStep=1E3):
     SC.IDEALRING.enable_6d()
     ### 
     gamma0 = SC.IDEALRING.gamma
-    scale_factor = - rfStep / f_rf / (momentum_compaction_factor - 1 / gamma0**2)
+    momentum_deviation_difference = - rfStep / f_rf / (momentum_compaction_factor - 1 / gamma0**2)
+    LOGGER.info(f"Momentum deviation difference: {momentum_deviation_difference:.6f}")
 
-    Dx = (T1[0] - T0[0]) * scale_factor
-    Dy = (T1[1] - T0[1]) * scale_factor
+    Dx = (T1[0] - T0[0]) / momentum_deviation_difference 
+    Dy = (T1[1] - T0[1]) / momentum_deviation_difference
 
     return Dx, Dy

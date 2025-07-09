@@ -1,0 +1,61 @@
+import numpy as np
+
+from pySC.utils import logging_tools
+from pySC.core.beam import bpm_reading
+
+LOGGER = logging_tools.get_logger(__name__)
+
+def measureDispersion(SC, CAVords, rfStep=1E3):
+    """
+    Calculates the lattice dispersion (orbit-based) based on current setpoints
+
+    Calculates the dispersion at the bpms by changing the frequency of the rf cavities
+    specified in `CAVords` using the current magnet setpoints.
+
+    Args:
+        SC:
+            SimulatedCommissioning class instance
+        CAVords:
+            Index of (main) RF Cavities in SC.RING (SC.ORD.CM)
+        rfStep: (default = 1e3) Change of rf frequency [Hz]
+
+    Returns:
+        Dx : The horizontal dispersion given in [m].
+        Dy : The vertical dispersion given in [m].
+
+    """
+    LOGGER.info('Calculating model dispersion')
+
+    assert SC.INJ.trackMode == 'ORB', "Track mode must be 'ORB' for dispersion calculation"
+
+    T0, _ = bpm_reading(SC)
+
+    if np.any(np.isnan(T0)):
+        raise ValueError('Initial trajectory/orbit is NaN. Aborting. ')
+
+    for ord in CAVords:  # Single point with all cavities with the same frequency shift
+        SC.RING[ord].Frequency += rfStep
+
+    T1, _ = bpm_reading(SC)
+
+    for ord in CAVords:  # Single point with all cavities with the same frequency shift
+        SC.RING[ord].Frequency -= rfStep
+
+    if np.any(np.isnan(T1)):
+        raise ValueError('Final trajectory/orbit is NaN. Aborting. ')
+
+    f_rf = np.mean([SC.RING[ord].Frequency for ord in CAVords])  # Average frequency of all cavities
+
+    ## get momentum compaction factor
+    SC.IDEALRING.disable_6d()
+    momentum_compaction_factor = SC.IDEALRING.get_mcf()
+    SC.IDEALRING.enable_6d()
+    ### 
+    gamma0 = SC.IDEALRING.gamma
+
+    scale_factor = - rfStep / f_rf / (momentum_compaction_factor - 1 / gamma0**2)
+
+    Dx = (T1[0] - T0[0]) * scale_factor
+    Dy = (T1[1] - T0[1]) * scale_factor
+
+    return Dx, Dy

@@ -61,7 +61,8 @@ def measureDispersion(SC, CAVords, rfStep=50):
     if np.any(np.isnan(T1)):
         raise ValueError('Final trajectory/orbit is NaN. Aborting. ')
 
-    f_rf = np.mean([SC.RING[ord].Frequency for ord in CAVords])  # Average frequency of all cavities
+    # Get the (ideal) frequency of the cavities
+    f_rf = np.mean([SC.IDEALRING[ord].Frequency for ord in CAVords])  # Average frequency of all cavities
 
     ## get momentum compaction factor
     SC.IDEALRING.disable_6d()

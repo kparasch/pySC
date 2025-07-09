@@ -5,9 +5,19 @@ from pySC.core.beam import bpm_reading
 
 LOGGER = logging_tools.get_logger(__name__)
 
-def modelDispersion(SC):
+def modelDispersion(SC, refpts=None):
+    """
+    Calculates the model dispersion (orbit-based) based on current setpoints
+    Returns:
+        Dx : The horizontal dispersion given in [m].
+        Dy : The vertical dispersion given in [m].
+    """
 
-    _, _, twiss = SC.IDEALRING.get_optics(refpts=SC.ORD.BPM)
+    if refpts is None:
+        refpts = SC.ORD.BPM
+        LOGGER.info('Calculating model dispersion at all bpms.')
+
+    _, _, twiss = SC.IDEALRING.get_optics(refpts=refpts)
     Dx = twiss.dispersion[:, 0]  # horizontal dispersion
     Dy = twiss.dispersion[:, 2]  # vertical dispersion
     return Dx, Dy

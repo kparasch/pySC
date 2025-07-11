@@ -1,6 +1,7 @@
-from typing import Dict
+from typing import Dict, Optional
 from pydantic import BaseModel, Field, model_validator, PrivateAttr
-from .magnetcontrol import Magnet, Control, ControlMagnetLink, MAGNET_NAME_TYPE
+from .magnet import Magnet, ControlMagnetLink, MAGNET_NAME_TYPE
+from .control import Control
 
 
 class MagnetSettings(BaseModel, extra="forbid"):
@@ -50,20 +51,13 @@ class MagnetSettings(BaseModel, extra="forbid"):
             raise ValueError(f"Control '{link.control_name}' not found")
         self.links[link.link_name] = link
 
-    def add_individually_powered_magnet(self,
-                                        sim_index: int,
-                                        controlled_components: list[str],
-                                        magnet_name: str = None) -> None:
+    def validate_components_and_get_max_order(self, components: list[str], magnet_name : Optional[MAGNET_NAME_TYPE] = None) -> int:
         """
-        Add a magnet with individually powered components.
-        Each component must be controlled by a separate control.
+        Validate the components and return the maximum order needed.
+        Each component must be in the form 'A1', 'B2', etc.
         """
-        if magnet_name is not None and magnet_name in self.magnets:
-            raise ValueError(f"Magnet '{magnet_name}' already exists")
-
-        # Validate components and get max order needed
         max_order = 0
-        for component in controlled_components:
+        for component in components:
             if component[0] not in ["A", "B"]:
                 raise ValueError(
                     f"Invalid component '{component}' for magnet '{magnet_name}', must start with 'A' or 'B'"
@@ -79,6 +73,24 @@ class MagnetSettings(BaseModel, extra="forbid"):
                 )
             if max_order < order:
                 max_order = order
+
+        return max_order
+
+    def add_individually_powered_magnet(self,
+                                        sim_index: int,
+                                        controlled_components: list[str],
+                                        magnet_name: str = None) -> None:
+        """
+        Add a magnet with individually powered components.
+        Each component must be controlled by a separate control.
+        """
+        if magnet_name is not None and magnet_name in self.magnets:
+            raise ValueError(f"Magnet '{magnet_name}' already exists")
+
+        if magnet_name is None:
+            magnet_name = sim_index  # Use sim_index as the default name if not provided
+
+        max_order = self.validate_components_and_get_max_order(components=controlled_components, magnet_name=magnet_name)
 
         # Create a new Magnet instance with the specified components
         magnet = Magnet(name=magnet_name,
@@ -127,6 +139,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
             raise ValueError(f"Control '{control_name}' not found")
 
         control = self.controls[control_name]
+        control.check_limits(setpoint)
         control.setpoint = setpoint
 
         # Update the state of the linked magnets

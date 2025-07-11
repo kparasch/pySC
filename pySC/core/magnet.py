@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Literal, Optional, Union, Any
-from pydantic import BaseModel, model_validator, PrivateAttr
+from pydantic import BaseModel, model_validator, PrivateAttr, PositiveInt, NonNegativeInt
 from .control import Control, LinearConv
 
 MAGNET_NAME_TYPE = Union[str, int]
@@ -11,7 +11,7 @@ class ControlMagnetLink(BaseModel, extra="forbid"):
     magnet_name: MAGNET_NAME_TYPE
     control_name: str
     component: Literal["A", "B"]
-    order: int  # index of A/B, starts at 1
+    order: PositiveInt  # index of A/B, starts at 1
     conv: LinearConv = LinearConv()
 
     def value(self, setpoint: float) -> float:
@@ -19,8 +19,8 @@ class ControlMagnetLink(BaseModel, extra="forbid"):
 
 class Magnet(BaseModel, extra="forbid"):
     name: Optional[MAGNET_NAME_TYPE] = None
-    sim_index: int = None
-    max_order: int
+    sim_index: Optional[NonNegativeInt] = None
+    max_order: NonNegativeInt
     A: Optional[list[float]] = None
     B: Optional[list[float]] = None
     _links: Optional[list[ControlMagnetLink]] = PrivateAttr(default=[])

@@ -1,6 +1,6 @@
 from typing import Dict
 from pydantic import BaseModel, Field, model_validator, PrivateAttr
-from magnetcontrol import Magnet, Control, ControlMagnetLink, MAGNET_NAME_TYPE
+from .magnetcontrol import Magnet, Control, ControlMagnetLink, MAGNET_NAME_TYPE
 
 
 class MagnetSettings(BaseModel, extra="forbid"):
@@ -50,9 +50,10 @@ class MagnetSettings(BaseModel, extra="forbid"):
             raise ValueError(f"Control '{link.control_name}' not found")
         self.links[link.link_name] = link
 
-    def add_individually_powered_magnet(
-        self, sim_index: int, controlled_components: list[str], magnet_name: str = None
-    ) -> None:
+    def add_individually_powered_magnet(self,
+                                        sim_index: int,
+                                        controlled_components: list[str],
+                                        magnet_name: str = None) -> None:
         """
         Add a magnet with individually powered components.
         Each component must be controlled by a separate control.
@@ -80,7 +81,9 @@ class MagnetSettings(BaseModel, extra="forbid"):
                 max_order = order
 
         # Create a new Magnet instance with the specified components
-        magnet = Magnet(name=magnet_name, sim_index=sim_index, max_order=max_order)
+        magnet = Magnet(name=magnet_name,
+                        sim_index=sim_index,
+                        max_order=max_order)
         magnet._parent = self  # Set the parent to the current settings instance
         self.add_magnet(magnet)
 

@@ -1,24 +1,21 @@
 from __future__ import annotations
 from typing import Literal, Optional, Union, Any
 from pydantic import BaseModel, model_validator, PrivateAttr
+from .control import Control, LinearConv
 
 MAGNET_NAME_TYPE = Union[str, int]
 
 
-class LinearConv(BaseModel, extra="forbid"):
-    factor: float = 1.0
-    offset: float = 0.0
+class ControlMagnetLink(BaseModel, extra="forbid"):
+    link_name: str
+    magnet_name: MAGNET_NAME_TYPE
+    control_name: str
+    component: Literal["A", "B"]
+    order: int  # index of A/B, starts at 1
+    conv: LinearConv = LinearConv()
 
-    def transform(self, value: float) -> float:
-        return value * self.factor + self.offset
-
-
-class Control(BaseModel, extra="forbid"):
-    name: str
-    setpoint: float
-    calibration: LinearConv = LinearConv()
-    _links: Optional[list[ControlMagnetLink]] = PrivateAttr(default=[])
-
+    def value(self, setpoint: float) -> float:
+        return self.conv.transform(setpoint)
 
 class Magnet(BaseModel, extra="forbid"):
     name: Optional[MAGNET_NAME_TYPE] = None
@@ -98,15 +95,3 @@ class Magnet(BaseModel, extra="forbid"):
                 raise ValueError(
                     f"Invalid component '{link.component}' for magnet '{self.name}'"
                 )
-
-
-class ControlMagnetLink(BaseModel, extra="forbid"):
-    link_name: str
-    magnet_name: MAGNET_NAME_TYPE
-    control_name: str
-    component: Literal["A", "B"]
-    order: int  # index of A/B, starts at 1
-    conv: LinearConv = LinearConv()
-
-    def value(self, setpoint: float) -> float:
-        return self.conv.transform(setpoint)

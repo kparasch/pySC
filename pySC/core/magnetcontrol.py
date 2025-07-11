@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Literal, Optional, Union, Any
-from pydantic import BaseModel, Field, model_validator, PrivateAttr
+from pydantic import BaseModel, model_validator, PrivateAttr
 
 MAGNET_NAME_TYPE = Union[str, int]
 

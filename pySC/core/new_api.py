@@ -32,7 +32,7 @@ def new_api(SC):
         SC.supports.data['L0'][index].roll = float(SC.RING[index].Roll)
     
     for ii in range(SC.ORD.Girder.shape[1]):
-        SC.supports.add_support(SC.ORD.Girder[0, ii], SC.ORD.Girder[1, ii], name=f'Girder', level=1)
+        SC.supports.add_support(SC.ORD.Girder[0, ii], SC.ORD.Girder[1, ii], name='Girder', level=1)
         sd = SC.RING[SC.ORD.Girder[0,ii]].GirderOffset
         ed = SC.RING[SC.ORD.Girder[1,ii]].GirderOffset
         SC.supports.data['L1'][ii].start.dx = float(sd[0])

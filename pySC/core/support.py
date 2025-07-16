@@ -3,11 +3,13 @@ Support system: handles all misalignments
 '''
 import numpy as np
 import json
-from pydantic import BaseModel
-from typing import Optional, Union
+from pydantic import BaseModel, PrivateAttr
+from typing import Optional, Union, TYPE_CHECKING
 from pathlib import Path
 
 from ..utils.sc_tools import update_transformation
+if TYPE_CHECKING:
+    from .new_simulated_commissioning import SimulatedCommissioning
 
 
 class ElementOffset(BaseModel):
@@ -46,7 +48,7 @@ class Support(BaseModel):
     length: float = 0.0  # to be filled in add_support
     offset_z: float = 0.0  # not really implemented
     roll: float = 0.0  # only for Level 1
-    name: str = 'Support'  # name of the support type, e.g. 'Girder', 'Support', etc.
+    name: Optional[str] = None  # name of the support type, e.g. 'Girder', 'Support', etc.
 
     @property
     def yaw(self):
@@ -67,7 +69,7 @@ class SupportSystem(BaseModel):
     L1 is the level of supports, L2 is the level of supports of supports, etc.
     The structure of the python object is a dictionary of dictionaries, where the keys are the levels (L0, L1, L2, etc.)
     '''
-    parent: Optional[object] = None  # Parent object, e.g. the SC object
+    _parent: Optional["SimulatedCommissioning"] = PrivateAttr(default=None)  # Parent object, e.g. the SC object
     data: dict[str, dict[int, Union[ElementOffset, Support]]] = { 'L0' : {} }  # Dictionary to hold the support data, structured by levels
 
     def add_support(self, index_start, index_end, level=1, name=None):
@@ -79,15 +81,20 @@ class SupportSystem(BaseModel):
         if index_start < 0 or index_end < 0:
             raise ValueError('Indices must be non-negative')
 
-        support = Support(start=SupportEndpoint(index=index_start), end=SupportEndpoint(index=index_end), name=name)
-        support.start.s = float(self.parent.RING.get_s_pos(index_start)[0])
-        support.end.s = float(self.parent.RING.get_s_pos(index_end)[0])
+        if name is None:
+            name = 'Support'
 
-        support.length = (support.end.s - support.start.s) % float(self.parent.RING.circumference)
+        support = Support(start=SupportEndpoint(index=index_start), end=SupportEndpoint(index=index_end), name=name)
+        support.start.s = float(self._parent.lattice.ring.get_s_pos(index_start)[0])
+        support.end.s = float(self._parent.lattice.ring.get_s_pos(index_end)[0])
+
+        support.length = (support.end.s - support.start.s) % float(self._parent.lattice.ring.circumference)
 
         index_for_support = len(self.data[key])
 
         self.data[key][index_for_support] = support
+
+        return index_for_support
 
     def add_element(self, index):
         """
@@ -96,10 +103,10 @@ class SupportSystem(BaseModel):
         if index in self.data['L0'].keys():
             raise ValueError(f'Element with index {index} already exists in support system')
         new_element = ElementOffset(index=index)
-        if index in self.parent.bpm_system.indices:
+        if hasattr(self._parent, 'bpm_system') and index in self._parent.bpm_system.indices:
             new_element.is_bpm = True
-            new_element.bpm_number = self.parent.bpm_system.bpm_number(index)
-        new_element.s = float(self.parent.RING.get_s_pos(index)[0])
+            new_element.bpm_number = self._parent.bpm_system.bpm_number(index)
+        new_element.s = float(self._parent.lattice.ring.get_s_pos(index)[0])
         self.data['L0'][int(index)] = new_element
 
     def look_for_support(self, my_level, my_index):
@@ -225,9 +232,9 @@ class SupportSystem(BaseModel):
 
         ## if support goes through start of ring we need to add corrections
         if support.start.index > support.end.index:
-            corr_s2 = self.parent.RING.circumference
+            corr_s2 = self._parent.lattice.ring.circumference
             if s < s1:
-                corr_s = self.parent.RING.circumference
+                corr_s = self._parent.lattice.ring.circumference
         ####
 
         dx1, dy1 = self.get_total_offset(supp_index, supp_level, endpoint='start')
@@ -283,7 +290,7 @@ class SupportSystem(BaseModel):
         self.trigger_update(level, index)
         return
 
-    def trigger_update(self, level, index):
+    def trigger_update(self, level: str, index):
         """
         Trigger the update of the transformations for the given level and index.
         If the target is a support, it will trigger the transformation of the elements it supports.
@@ -300,13 +307,19 @@ class SupportSystem(BaseModel):
             roll, pitch, yaw = self.get_total_rotation(eo.index, level) 
 
             if eo.is_bpm:
-                self.parent.bpm_system.total_offsets_x[eo.bpm_number] = dx
-                self.parent.bpm_system.total_offsets_y[eo.bpm_number] = dy
-                self.parent.bpm_system.total_rolls[eo.bpm_number] = roll
+                self._parent.bpm_system.offsets_x[eo.bpm_number] = dx
+                self._parent.bpm_system.offsets_y[eo.bpm_number] = dy
+                self._parent.bpm_system.rolls[eo.bpm_number] = roll
+                self._parent.bpm_system.update_rot_matrices()
             else:
-                update_transformation(element=self.parent.RING[eo.index],
+                update_transformation(element=self._parent.lattice.ring[eo.index],
                                       dx=dx, dy=dy, dz=dz,
                                       roll=roll, yaw=yaw, pitch=pitch)
+
+    def update_all(self) -> None:
+        for index in self.data['L0'].keys():
+            self.trigger_update('L0', index)
+        return
 
     ## this should maybe belong to tuning algorithms
     def fake_align_bpms(self, bpm_indices, magnet_indices):
@@ -315,12 +328,12 @@ class SupportSystem(BaseModel):
             bpm_tot_dx, bpm_tot_dy = self.get_total_offset(index=bpm_index)
             new_dx = magnet_dx - bpm_tot_dx
             new_dy = magnet_dy - bpm_tot_dy
-            bpm_number = self.parent.bpm_system.bpm_number(bpm_index)
-            self.parent.bpm_system.bba_offsets_x[bpm_number] = new_dx
-            self.parent.bpm_system.bba_offsets_y[bpm_number] = new_dy
+            bpm_number = self._parent.bpm_system.bpm_number(bpm_index)
+            self._parent.bpm_system.bba_offsets_x[bpm_number] = new_dx
+            self._parent.bpm_system.bba_offsets_y[bpm_number] = new_dy
 
-    def __repr__(self): # hide elements
-        return {key: self.data[key] for key in self.data.keys() if key != 'L0'}.__repr__()
+#     def __repr__(self): # hide elements
+#         return {key: self.data[key] for key in self.data.keys() if key != 'L0'}.__repr__()
 
     def to_dict(self):
         return self.model_dump(exclude='parent')

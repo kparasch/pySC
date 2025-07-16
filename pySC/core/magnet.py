@@ -12,10 +12,10 @@ class ControlMagnetLink(BaseModel, extra="forbid"):
     control_name: str
     component: Literal["A", "B"]
     order: PositiveInt  # index of A/B, starts at 1
-    conv: LinearConv = LinearConv()
+    error: LinearConv = LinearConv()
 
     def value(self, setpoint: float) -> float:
-        return self.conv.transform(setpoint)
+        return self.error.transform(setpoint)
 
 class Magnet(BaseModel, extra="forbid"):
     name: Optional[MAGNET_NAME_TYPE] = None
@@ -23,7 +23,7 @@ class Magnet(BaseModel, extra="forbid"):
     max_order: NonNegativeInt
     A: Optional[list[float]] = None
     B: Optional[list[float]] = None
-    _links: Optional[list[ControlMagnetLink]] = PrivateAttr(default=[])
+    _links: list[ControlMagnetLink] = PrivateAttr(default=[])
     _parent = PrivateAttr(default=None)
 
     @model_validator(mode="before")
@@ -50,9 +50,11 @@ class Magnet(BaseModel, extra="forbid"):
         If the magnet has a parent (e.g., in a settings context), it will return the controls from the parent.
         If no parent is set, it returns the control names from the links.
         """
-        if self._parent and self._links:
-            return [self._parent.controls[link.control_name] for link in self._links]
-        return [link.control_name for link in self._links] if self._links else []
+        if not self._parent:
+            raise Exception(
+                "Magnet has no settings set in ._parent. Cannot access controls without a parent."
+            )
+        return [self._parent.controls[link.control_name] for link in self._links]
 
     @property
     def state(self):
@@ -73,7 +75,7 @@ class Magnet(BaseModel, extra="forbid"):
                         control_name = link.control_name
                         setpoint = self._parent.controls[control_name].setpoint
                         link_value = link.value(setpoint)
-                        error = link.conv
+                        error = link.error
                         print(
                             f"    - {link.control_name}: setpoint = {setpoint}, error = {repr(error)} -> {link_value}"
                         )
@@ -95,3 +97,9 @@ class Magnet(BaseModel, extra="forbid"):
                 raise ValueError(
                     f"Invalid component '{link.component}' for magnet '{self.name}'"
                 )
+
+        for ii in range(self.max_order + 1):
+            self._parent._parent.lattice.set_magnet_component(
+                self.sim_index, self.A[ii], 'A', ii, use_design=False)
+            self._parent._parent.lattice.set_magnet_component(
+                self.sim_index, self.B[ii], 'B', ii, use_design=False)

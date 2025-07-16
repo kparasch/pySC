@@ -16,7 +16,7 @@ class Control(BaseModel, extra="forbid"):
     name: str
     setpoint: float
     # calibration: LinearConv = LinearConv() # for future use, if needed
-    limits : Optional[tuple[float, float]] = None
+    limits: Optional[tuple[float, float]] = None
     _links: Optional[list[ControlMagnetLink]] = PrivateAttr(default=[])
 
     def check_limits(self, setpoint: float) -> None:

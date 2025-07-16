@@ -1,0 +1,39 @@
+from pydantic import BaseModel, model_validator, PrivateAttr
+from typing import Union, Optional
+from numpy.random import default_rng
+import numpy as np
+
+class RNG(BaseModel):
+    seed: int
+    rng_state: Optional[dict[str, Union[str, int, dict[str, int]]]] = None
+    default_truncation: Optional[int] = None
+    _rng = PrivateAttr(default=None)
+
+    @model_validator(mode="after")
+    def initialize_rng(self):
+        self._rng = default_rng(seed=self.seed)
+        if self.rng_state is None:
+            self.rng_state = self._rng.bit_generator.state.copy()
+        else:
+            self._rng.bit_generator.state = self.rng_state
+        return self
+
+    def normal_trunc(self, loc: float = 0, scale: float = 1,
+                     sigma_truncate: Optional[float] = None,
+                     size: Optional[int]=None):
+        if sigma_truncate is None:
+            sigma_truncate = self.default_truncation
+
+        ## if still None then don't truncate
+        if sigma_truncate is None:
+            return self._rng.normal(loc, scale, size=size)
+        else:
+            if size is None:
+                raise NotImplementedError('ERROR: Getting random array from truncated normal distribution is not implemented yet.')
+            ret = self._rng.normal()
+            while abs(ret) > sigma_truncate:
+                ret = self._rng.normal()
+            return loc + ret * scale
+
+    def normal(self, loc: float = 0, scale: float = 1, size: Optional[int] = None) -> Union[float, np.ndarray]:
+        return self._rng.normal(loc=loc, scale=scale, size=size)

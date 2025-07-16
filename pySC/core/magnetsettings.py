@@ -1,14 +1,16 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field, model_validator, PrivateAttr
 from .magnet import Magnet, ControlMagnetLink, MAGNET_NAME_TYPE
 from .control import Control
 
+if TYPE_CHECKING:
+    from .new_simulated_commissioning import SimulatedCommissioning
 
 class MagnetSettings(BaseModel, extra="forbid"):
     magnets: Dict[MAGNET_NAME_TYPE, Magnet] = Field(default_factory=dict)
     controls: Dict[str, Control] = Field(default_factory=dict)
     links: Dict[str, ControlMagnetLink] = Field(default_factory=dict)
-    _ring = PrivateAttr(default=None)
+    _parent: Optional["SimulatedCommissioning"] = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def check_links_references(self):
@@ -51,6 +53,22 @@ class MagnetSettings(BaseModel, extra="forbid"):
             raise ValueError(f"Control '{link.control_name}' not found")
         self.links[link.link_name] = link
 
+    def validate_one_component(self, component: str, magnet_name: Optional[MAGNET_NAME_TYPE] = None) -> tuple[str, int]:
+        if component[0] not in ["A", "B"]:
+            raise ValueError(
+                f"Invalid component '{component}' for magnet '{magnet_name}', must start with 'A' or 'B'"
+            )
+        if len(component) != 2 or not component[1:].isdigit():
+            raise ValueError(
+                f"Invalid component '{component}' for magnet '{magnet_name}', must be in the form 'A1', 'B2', etc."
+            )
+        order = int(component[1:]) - 1  # Extract the order part
+        if order < 0:
+            raise ValueError(
+                f"Invalid order in component '{component}' for magnet '{magnet_name}', must be a positive integer"
+            )
+        return component[0], order
+
     def validate_components_and_get_max_order(self, components: list[str], magnet_name : Optional[MAGNET_NAME_TYPE] = None) -> int:
         """
         Validate the components and return the maximum order needed.
@@ -58,19 +76,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
         """
         max_order = 0
         for component in components:
-            if component[0] not in ["A", "B"]:
-                raise ValueError(
-                    f"Invalid component '{component}' for magnet '{magnet_name}', must start with 'A' or 'B'"
-                )
-            if len(component) != 2 or not component[1:].isdigit():
-                raise ValueError(
-                    f"Invalid component '{component}' for magnet '{magnet_name}', must be in the form 'A1', 'B2', etc."
-                )
-            order = int(component[1:]) - 1  # Extract the order part
-            if order < 0:
-                raise ValueError(
-                    f"Invalid order in component '{component}' for magnet '{magnet_name}', must be a positive integer"
-                )
+            _, order = self.validate_one_component(component, magnet_name=magnet_name)
             if max_order < order:
                 max_order = order
 

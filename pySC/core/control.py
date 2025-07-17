@@ -19,11 +19,17 @@ class Control(BaseModel, extra="forbid"):
     limits: Optional[tuple[float, float]] = None
     _links: Optional[list[ControlMagnetLink]] = PrivateAttr(default=[])
 
-    def check_limits(self, setpoint: float) -> None:
+    def check_limits_and_set(self, setpoint: float) -> None:
         """Validate the setpoint against the control's limits."""
         if self.limits is not None:
             lower_limit, upper_limit = self.limits
-            if not (lower_limit <= setpoint <= upper_limit):
-                raise ValueError(
-                    f"Setpoint {setpoint} for control '{self.name}' is out of limits ({lower_limit}, {upper_limit})"
-                )
+            if setpoint < lower_limit:
+                print(f'WARNING: Setpoint {setpoint} for control "{self.name}" is out of limits ({lower_limit}, {upper_limit})')
+                self.setpoint = lower_limit
+            elif setpoint > upper_limit:
+                print(f'WARNING: Setpoint {setpoint} for control "{self.name}" is out of limits ({lower_limit}, {upper_limit})')
+                self.setpoint = upper_limit
+            else:
+                self.setpoint = setpoint
+        else:
+            self.setpoint = setpoint

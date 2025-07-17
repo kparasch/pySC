@@ -13,6 +13,7 @@ class ControlMagnetLink(BaseModel, extra="forbid"):
     component: Literal["A", "B"]
     order: PositiveInt  # index of A/B, starts at 1
     error: LinearConv = LinearConv()
+    is_integrated: bool = False
 
     def value(self, setpoint: float) -> float:
         return self.error.transform(setpoint)
@@ -23,6 +24,8 @@ class Magnet(BaseModel, extra="forbid"):
     max_order: NonNegativeInt
     A: Optional[list[float]] = None
     B: Optional[list[float]] = None
+    to_design: bool = False
+    length: Optional[float] = None
     _links: list[ControlMagnetLink] = PrivateAttr(default=[])
     _parent = PrivateAttr(default=None)
 
@@ -59,7 +62,7 @@ class Magnet(BaseModel, extra="forbid"):
     @property
     def state(self):
         manget_name = self.name
-        print(f"Magnet: {manget_name}, max order: {self.max_order}")
+        print(f"Magnet: {manget_name}, max order: {self.max_order}, length: {self.length} m")
         for component, ktype in zip(["B", "A"], ["kn", "ks"]):
             for order in range(self.max_order + 1):
                 temp_links = []
@@ -75,6 +78,8 @@ class Magnet(BaseModel, extra="forbid"):
                         control_name = link.control_name
                         setpoint = self._parent.controls[control_name].setpoint
                         link_value = link.value(setpoint)
+                        if link.is_integrated:
+                            link_value = link_value / self.length
                         error = link.error
                         print(
                             f"    - {link.control_name}: setpoint = {setpoint}, error = {repr(error)} -> {link_value}"
@@ -89,6 +94,9 @@ class Magnet(BaseModel, extra="forbid"):
             control = self._parent.controls[link.control_name]
             setpoint = control.setpoint
             value = link.value(setpoint)
+            if link.is_integrated:
+                assert self.length is not None, f'ERROR: magnet length not specified for integrated strength link: {repr(link)}'
+                value = value / self.length
             if link.component == "A":
                 self.A[link.order - 1] += value
             elif link.component == "B":
@@ -100,6 +108,6 @@ class Magnet(BaseModel, extra="forbid"):
 
         for ii in range(self.max_order + 1):
             self._parent._parent.lattice.set_magnet_component(
-                self.sim_index, self.A[ii], 'A', ii, use_design=False)
+                self.sim_index, self.A[ii], 'A', ii, use_design=self.to_design)
             self._parent._parent.lattice.set_magnet_component(
-                self.sim_index, self.B[ii], 'B', ii, use_design=False)
+                self.sim_index, self.B[ii], 'B', ii, use_design=self.to_design)

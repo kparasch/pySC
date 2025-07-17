@@ -58,11 +58,16 @@ class MagnetSettings(BaseModel, extra="forbid"):
             raise ValueError(
                 f"Invalid component '{component}' for magnet '{magnet_name}', must start with 'A' or 'B'"
             )
-        if len(component) != 2 or not component[1:].isdigit():
+        if component[-1] == 'L':
+            digit_str = component[1:-1]
+        else:
+            digit_str = component[1:]
+
+        if not digit_str.isdigit():
             raise ValueError(
                 f"Invalid component '{component}' for magnet '{magnet_name}', must be in the form 'A1', 'B2', etc."
             )
-        order = int(component[1:]) - 1  # Extract the order part
+        order = int(digit_str) - 1  # Extract the order part
         if order < 0:
             raise ValueError(
                 f"Invalid order in component '{component}' for magnet '{magnet_name}', must be a positive integer"
@@ -85,7 +90,9 @@ class MagnetSettings(BaseModel, extra="forbid"):
     def add_individually_powered_magnet(self,
                                         sim_index: int,
                                         controlled_components: list[str],
-                                        magnet_name: str = None) -> None:
+                                        magnet_name: Optional[str] = None,
+                                        magnet_length: Optional[float] = None,
+                                        to_design: bool = False) -> None:
         """
         Add a magnet with individually powered components.
         Each component must be controlled by a separate control.
@@ -101,7 +108,9 @@ class MagnetSettings(BaseModel, extra="forbid"):
         # Create a new Magnet instance with the specified components
         magnet = Magnet(name=magnet_name,
                         sim_index=sim_index,
-                        max_order=max_order)
+                        max_order=max_order,
+                        to_design=to_design,
+                        length=magnet_length)
         magnet._parent = self  # Set the parent to the current settings instance
         self.add_magnet(magnet)
 
@@ -115,12 +124,15 @@ class MagnetSettings(BaseModel, extra="forbid"):
         for component in controlled_components:
             control_name = f"{magnet.name}/{component}"
             link_name = f"{control_name}->{control_name}"
+            is_integrated = True if component[-1] == 'L' else False
+            order = int(component[1:-1]) if is_integrated else int(component[1:])
             link = ControlMagnetLink(
                 link_name=link_name,
                 magnet_name=magnet.name,
                 control_name=control_name,
                 component=component[0],
-                order=int(component[1:]),
+                order=order,
+                is_integrated=is_integrated
             )
             self.add_link(link)
 
@@ -136,27 +148,34 @@ class MagnetSettings(BaseModel, extra="forbid"):
             self.controls[link.control_name]._links.append(link)
             self.magnets[link.magnet_name]._links.append(link)
 
-    def set(self, control_name: str, setpoint: float) -> None:
+    def set(self, control_name: str, setpoint: float, use_design: bool = False) -> None:
         """
         Set the setpoint for a control by its name.
         This will also update the linked magnets' state.
         """
+        if use_design: # go do it on the design instead using the same method of the design magnet settings
+            self._parent.design_magnet_settings.set(control_name=control_name, setpoint=setpoint)
+            return
+
         if control_name not in self.controls:
             raise ValueError(f"Control '{control_name}' not found")
 
         control = self.controls[control_name]
-        control.check_limits(setpoint)
-        control.setpoint = setpoint
+        control.check_limits_and_set(setpoint)
+        #control.setpoint = setpoint
 
         # Update the state of the linked magnets
         magnets = set(link.magnet_name for link in control._links)
         for magnet_name in magnets:
             self.magnets[magnet_name].update()
 
-    def get(self, control_name: str) -> float:
+    def get(self, control_name: str, use_design: bool = False) -> float:
         """
         Get the setpoint for a control by its name.
         """
+        if use_design: # go do it on the design instead using the same method of the design magnet settings
+            return self._parent.design_magnet_settings.get(control_name=control_name)
+
         if control_name not in self.controls:
             raise ValueError(f"Control '{control_name}' not found")
         return self.controls[control_name].setpoint

@@ -3,10 +3,11 @@ from typing import Optional
 
 from .lattice import ATLattice, XSuiteLattice
 from .magnetsettings import MagnetSettings
-from .support import SupportSystem
+from .supports import SupportSystem
 from .bpm_system import BPMSystem
 from .magnet import MAGNET_NAME_TYPE
 from .rfsettings import RFSettings
+from .tuning_core import Tuning
 from .injection import InjectionSettings
 from .rng import RNG
 from ..control_system.server import start_server as _start_server
@@ -14,10 +15,12 @@ from ..control_system.server import start_server as _start_server
 class SimulatedCommissioning(BaseModel, extra="forbid"):
     lattice: ATLattice | XSuiteLattice
     magnet_settings: MagnetSettings = MagnetSettings()
+    design_magnet_settings: MagnetSettings = MagnetSettings()
     support_system: SupportSystem = SupportSystem()
     bpm_system: BPMSystem = BPMSystem()
     rf_settings: RFSettings = RFSettings()
     injection: InjectionSettings = InjectionSettings()
+    tuning: Tuning = Tuning()
 
     configuration: dict = {}
     magnet_arrays: dict[str, list[MAGNET_NAME_TYPE]] = {}
@@ -40,6 +43,7 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
 
     def propagate_parents(self) -> None:
         self.magnet_settings._parent = self
+        self.design_magnet_settings._parent = self
         self.support_system._parent = self
         self.bpm_system._parent = self
         self.rf_settings._parent = self

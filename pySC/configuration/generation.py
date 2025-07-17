@@ -2,10 +2,11 @@ from typing import Optional
 from ..core.lattice import ATLattice
 from ..core.new_simulated_commissioning import SimulatedCommissioning
 from .load_config import load_yaml
-from .magnets import configure_magnets
-from .bpms import configure_bpms
-from .rf import configure_rf
-from .supports import configure_supports
+from .magnets_conf import configure_magnets
+from .bpm_system_conf import configure_bpms
+from .rf_conf import configure_rf
+from .supports_conf import configure_supports
+from .tuning_conf import configure_tuning
 from .general import scale_error_table
 
 
@@ -41,8 +42,6 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
     configure_magnets(SC)
 
     # initialize magnets
-    SC.magnet_settings.connect_links()
-    SC.magnet_settings.sendall()
 
     print('Configuring BPMs...')
     configure_bpms(SC)
@@ -54,4 +53,6 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
     configure_supports(SC)
     SC.support_system.update_all()
 
+    print('Configuring tuning...')
+    configure_tuning(SC)
     return SC

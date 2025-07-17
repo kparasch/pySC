@@ -1,13 +1,54 @@
 from .bpm_system import BPMSystem
-from .support import SupportSystem
+from .supports import SupportSystem
+import numpy as np
+
+def old_to_new_BPMSystem(SC):
+    bpm_system = BPMSystem()
+    bpm_system.rng = np.random.default_rng()
+
+    bpm_system.SC = SC
+    bpm_system.indices = SC.ORD.BPM
+    first_bpm = list(SC.SIG.BPM.keys())[0]
+    sig = SC.SIG.BPM[first_bpm]
+    bpm_system.rms_errors = {
+        'calibration_x' : float(sig.CalError[0]),
+        'calibration_y' : float(sig.CalError[1]),
+        'offset_x' : float(sig.Offset[0]),
+        'offset_y' : float(sig.Offset[1]),
+        'roll' : float(sig.Roll),
+        'noise_tbt_x' : float(sig.Noise[0]),
+        'noise_tbt_y' : float(sig.Noise[1]),
+        'noise_co_x' : float(sig.NoiseCO[0]),
+        'noise_co_y' : float(sig.NoiseCO[1]),
+        }
+    
+    indices = bpm_system.indices
+    bpm_system.calibration_errors_x = np.array([SC.RING[index].CalError[0] for index in indices])
+    bpm_system.calibration_errors_y = np.array([SC.RING[index].CalError[1] for index in indices])
+    bpm_system.offsets_x = np.array([SC.RING[index].Offset[0] for index in indices])
+    bpm_system.offsets_y = np.array([SC.RING[index].Offset[1] for index in indices])
+    bpm_system.rolls = np.array([SC.RING[index].Roll for index in indices])
+    bpm_system.support_offsets_x = np.array([SC.RING[index].SupportOffset[0] for index in indices])
+    bpm_system.support_offsets_y = np.array([SC.RING[index].SupportOffset[1] for index in indices])
+    bpm_system.support_rolls = np.array([SC.RING[index].SupportRoll for index in indices])
+
+    bpm_system.bba_offsets_x = np.zeros(len(indices))
+    bpm_system.bba_offsets_y = np.zeros(len(indices))
+
+    bpm_system.reference_x = np.zeros(len(indices))
+    bpm_system.reference_y = np.zeros(len(indices))
+
+    bpm_system.update_offset_and_support()
+    return bpm_system
 
 def new_api(SC):
 
-    SC.bpm_system = BPMSystem(SC)
+    SC.bpm_system = old_to_new_BPMSystem(SC)
     print(SC.bpm_system.rms_errors)
 
 
-    SC.supports = SupportSystem(parent=SC)
+    SC.supports = SupportSystem()
+    SC.supports._parent = SC
     for index in SC.ORD.Magnet:
         SC.supports.add_element(index)
         SC.supports.data['L0'][index].dx = float(SC.RING[index].MagnetOffset[0])

@@ -1,7 +1,7 @@
 from ..core.new_simulated_commissioning import SimulatedCommissioning
 from ..core.bpm_system import BPM_FIELDS_TO_INITIALISE
 from .general import get_error, get_indices_and_names
-from .supports import generate_element_misalignments
+from .supports_conf import generate_element_misalignments
 import numpy as np
 # def sort_list_with_argsort(mylist: list, argsort: list) -> list:
 

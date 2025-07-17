@@ -27,7 +27,7 @@ def get_indices_with_regex(SC: SimulatedCommissioning, category_name: str, categ
 def get_indices_and_names(SC: SimulatedCommissioning, category_name: str, category_conf: dict[str, Any]) -> tuple[list[int], list[MAGNET_NAME_TYPE]]:
     if 'regex' in category_conf:
         indices = get_indices_with_regex(SC, category_name, category_conf)
-        names = indices
+        names = list(map(str, indices))
     else:
         raise NotImplementedError("Only regex search is implemented.")
 

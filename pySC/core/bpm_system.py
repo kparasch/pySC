@@ -53,7 +53,7 @@ class BPMSystem(BaseModel):
     def bpm_number(self, index):
         return int(np.where(np.array(self.indices) == index)[0][0])
 
-    def capture_orbit(self, bba=True, subtract_reference=True) -> tuple[np.ndarray, np.ndarray]:
+    def capture_orbit(self, bba=True, subtract_reference=True, use_design=False) -> tuple[np.ndarray, np.ndarray]:
         '''
         Simulates an orbit reading from the BPMs, applying calibration errors, offsets/rolls, and noise.
         Args:
@@ -63,6 +63,10 @@ class BPMSystem(BaseModel):
             fake_orbit_x: Simulated x-coordinates of the orbit at the BPMs.
             fake_orbit_y: Simulated y-coordinates of the orbit at the BPMs.
         '''
+        if use_design:
+            orbit = self._parent.lattice.get_orbit(indices=self.indices, use_design=True)
+            return orbit[0], orbit[1]
+
         orbit = self._parent.lattice.get_orbit(indices=self.indices)
         rotated_orbit = np.einsum('ijk,jk->ik', self._rot_matrices, orbit)  # Rotate orbit according to bpm roll
 
@@ -84,7 +88,7 @@ class BPMSystem(BaseModel):
 
         return fake_orbit_x, fake_orbit_y
 
-    def capture_injection(self, n_turns=1, bba=True, subtract_reference=True) -> tuple[np.ndarray, np.ndarray]:
+    def capture_injection(self, n_turns=1, bba=True, subtract_reference=True, use_design=False) -> tuple[np.ndarray, np.ndarray]:
         '''
         Simulates an orbit reading during injection from the BPMs, applying calibration errors, offsets/rolls, and noise.
         Args:
@@ -94,9 +98,13 @@ class BPMSystem(BaseModel):
             fake_orbit_x: Simulated x-coordinates of the orbit at the BPMs.
             fake_orbit_y: Simulated y-coordinates of the orbit at the BPMs.
         '''
-        #orbit = at_wrapper.get_orbit(self.SC.RING, self.indices)
+        if use_design:
+            bunch = self._parent.injection.generate_design_bunch()
+            trajectory = np.mean(self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=True), axis=1) # average over all particles
+            return trajectory[0], trajectory[1]
+
         bunch = self._parent.injection.generate_bunch()
-        trajectory = np.mean(self._parent.lattice.track(bunch, indices=self.indices, use_design=False), axis=1) # average over all particles
+        trajectory = np.mean(self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=False), axis=1) # average over all particles
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])

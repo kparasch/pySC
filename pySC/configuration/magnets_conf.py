@@ -2,11 +2,16 @@ from typing import Any
 from ..core.new_simulated_commissioning import SimulatedCommissioning
 from ..core.magnet import MAGNET_NAME_TYPE
 from .general import get_error, get_indices_and_names
-from .supports import generate_element_misalignments
+from .supports_conf import generate_element_misalignments
 
-def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magnet_name: MAGNET_NAME_TYPE, magnet_category_conf: dict[str, Any]) -> list[str]:
+def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magnet_name: MAGNET_NAME_TYPE, magnet_category_conf: dict[str, Any], to_design: bool = False) -> list[str]:
     error_table = dict.get(SC.configuration, 'error_table', {}) # defaults to empty error_table if not declared
     new_control_list = []
+
+    if to_design:
+        magnet_settings = SC.design_magnet_settings
+    else:
+        magnet_settings = SC.magnet_settings
 
     if 'components' in magnet_category_conf:
         components = []
@@ -16,34 +21,54 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
             components.append(component)
             cal_errors.append(cal_error)
 
-        SC.magnet_settings.add_individually_powered_magnet(
+        magnet_length = SC.lattice.get_length(index)
+        magnet_settings.add_individually_powered_magnet(
             sim_index=index, controlled_components=components,
-            magnet_name=magnet_name)
+            magnet_name=magnet_name, magnet_length=magnet_length,
+            to_design=to_design)
 
         for component, cal_error in zip(components, cal_errors):
             control_name = f'{magnet_name}/{component}'
             link_name = f'{control_name}->{control_name}'
 
             new_control_list.append(control_name)
-            sig = get_error(cal_error, error_table)
-            factor = SC.rng.normal_trunc(1, sig)
+            if to_design:
+                factor = 1
+            else:
+                sig = get_error(cal_error, error_table)
+                factor = SC.rng.normal_trunc(1, sig)
 
-            component_type, order = SC.magnet_settings.validate_one_component(component)
+            component_type, order = magnet_settings.validate_one_component(component)
             if component == 'B1' and SC.lattice.is_dipole(index):
                 # when we have a dipole with bending angle it is a special case,
                 # setpoint points to bending angle, but B1 multipole (PolynomB[0]) should be changed
                 bending_angle = SC.lattice.get_bending_angle(index)
-                magnet_length = SC.lattice.get_length(index)
                 offset = - bending_angle / magnet_length
                 setpoint = bending_angle / magnet_length
             else:
                 #otherwise it is just the multipole
                 offset = 0
                 setpoint = SC.lattice.get_magnet_component(index, component_type=component_type, order=order)
+                if component[-1] == 'L':
+                    length = SC.lattice.get_length(index)
+                    setpoint = setpoint * length
 
-            SC.magnet_settings.controls[control_name].setpoint = setpoint
-            SC.magnet_settings.links[link_name].error.factor = factor
-            SC.magnet_settings.links[link_name].error.offset = offset
+            magnet_settings.controls[control_name].setpoint = setpoint
+            magnet_settings.links[link_name].error.factor = factor
+            magnet_settings.links[link_name].error.offset = offset
+
+    parameters_table = dict.get(SC.configuration, 'parameters', {}) # defaults to empty error_table if not declared
+    if 'limits' in magnet_category_conf:
+        for comp_dict in magnet_category_conf['limits']:
+            component, limit_name = comp_dict.copy().popitem()
+            if limit_name not in parameters_table:
+                raise Exception(f'ERROR: limits {limit_name} were not found in error_table.')
+            limit = float(parameters_table[limit_name])
+            control_name = f'{magnet_name}/{component}'
+            if control_name not in new_control_list:
+                raise Exception('ERROR: Invalid limit.') ## TODO make more verbose
+            magnet_settings.controls[control_name].limits = (-abs(limit), abs(limit))
+
     return new_control_list
 
 
@@ -64,6 +89,12 @@ def configure_magnets(SC: SimulatedCommissioning):
             generate_element_misalignments(SC, index, magnet_category_conf)
             # calibration errors
             new_controls = generate_default_magnet_control(SC, index, magnet_name, magnet_category_conf)
+            _ = generate_default_magnet_control(SC, index, magnet_name, magnet_category_conf, to_design=True)
             control_list = control_list + new_controls
         SC.magnet_arrays[magnet_category] = magnet_list
         SC.control_arrays[magnet_category] = control_list
+
+    SC.magnet_settings.connect_links()
+    SC.magnet_settings.sendall()
+    SC.design_magnet_settings.connect_links()
+    SC.design_magnet_settings.sendall()

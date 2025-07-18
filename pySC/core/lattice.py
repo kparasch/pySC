@@ -59,6 +59,20 @@ class ATLattice(Lattice):
         self._twiss = self.get_twiss(use_design=True)
         return self
 
+    def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False) -> tuple[nparray, nparray]:
+        if use_design:
+            if indices is not None:
+                out = self._design.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+            else:
+                out = self._design.track(bunch.T, nturns=n_turns)[0]
+        else:
+            if indices is not None:
+                out = self._ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+            else:
+                out = self._ring.track(bunch.T, nturns=n_turns)[0]
+        xy = out[[0,2], :, :, :]
+        return xy
+
     def get_orbit(self, indices: list[int] = None, use_design=False) -> dict:
         """
         Returns the closed orbit for the specified indices.
@@ -219,17 +233,3 @@ class ATLattice(Lattice):
         elem.TimeLag = timelag
         elem.Frequency = frequency
         return
-
-    def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False) -> tuple[nparray, nparray]:
-        if use_design:
-            if indices is not None:
-                out = self._design.track(bunch.T, refpts=indices, nturns=n_turns)[0]
-            else:
-                out = self._design.track(bunch.T, nturns=n_turns)[0]
-        else:
-            if indices is not None:
-                out = self._ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
-            else:
-                out = self._ring.track(bunch.T, nturns=n_turns)[0]
-        xy = out[[0,2], :, :, :]
-        return xy

@@ -1,7 +1,7 @@
 from pydantic import BaseModel, PrivateAttr
 from typing import Optional, TYPE_CHECKING
 from .response_matrix import ResponseMatrix
-from .model_response import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix
+from .response_measurements import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix
 
 import numpy as np
 from pathlib import Path

@@ -16,7 +16,7 @@ HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 
 def start_server(SC: "SimulatedCommissioning" , port : int = 13131, refresh_rate : float = 1):
 
-    orbit_x, orbit_y = SC.bpm_system.capture_orbit()
+    mode = 0
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, port))
@@ -26,7 +26,12 @@ def start_server(SC: "SimulatedCommissioning" , port : int = 13131, refresh_rate
         atexit.register(s.close)
         while True:
             print('Calculating orbit...')
-            orbit_x, orbit_y = SC.bpm_system.capture_orbit()
+            if mode == 0:
+                orbit_x, orbit_y = SC.bpm_system.capture_orbit()
+            else:
+                orbit_x, orbit_y = SC.bpm_system.capture_injection()
+                orbit_x = orbit_x[:,0]
+                orbit_y = orbit_y[:,0]
             start_time = time.time()
             print('Accepting commands...')
             while True:
@@ -49,8 +54,14 @@ def start_server(SC: "SimulatedCommissioning" , port : int = 13131, refresh_rate
                                 variable = signal.split(' ')[1]
                                 server, device, prop = variable.strip().split('/')
 
+                                if variable == 'ORBIT/INJECTION/MODE':
+                                    command = signal[:3]
+                                    if command == 'SET':
+                                        value = float(signal.split(' ')[2])
+                                        mode = value
+
                                 if server == 'ORBIT':
-                                    orbit_server(conn, signal, orbit_x, orbit_y)
+                                    orbit_server(conn, signal, orbit_x, orbit_y, SC)
 
                                 if server == 'MAGNET':
                                     magnet_server(conn, signal, SC)

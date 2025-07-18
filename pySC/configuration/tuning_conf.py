@@ -29,3 +29,6 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
 
     SC.tuning.HCORR = HCORR
     SC.tuning.VCORR = VCORR
+
+    if 'model_RM_folder' in tuning_conf:
+        SC.tuning.RM_folder = tuning_conf['model_RM_folder']

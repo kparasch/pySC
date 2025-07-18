@@ -7,7 +7,7 @@ from .supports import SupportSystem
 from .bpm_system import BPMSystem
 from .magnet import MAGNET_NAME_TYPE
 from .rfsettings import RFSettings
-from .tuning_core import Tuning
+from ..tuning.tuning_core import Tuning
 from .injection import InjectionSettings
 from .rng import RNG
 from ..control_system.server import start_server as _start_server
@@ -48,6 +48,7 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
         self.bpm_system._parent = self
         self.rf_settings._parent = self
         self.injection._parent = self
+        self.tuning._parent = self
         return
 
     def start_server(self, port : int = 13131, timeout: int = 1) -> None:

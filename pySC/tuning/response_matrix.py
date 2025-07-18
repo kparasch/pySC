@@ -1,4 +1,4 @@
-from pydantic import BaseModel, PrivateAttr, model_validator
+from pydantic import BaseModel, PrivateAttr, model_validator, ConfigDict
 from typing import Optional, Literal
 from ..core.numpy_type import NPARRAY
 import numpy as np
@@ -8,8 +8,14 @@ class InverseResponseMatrix(BaseModel, extra="forbid"):
     method: Literal['tikhonov', 'svd_values', 'svd_cutoff']
     parameter: float
 
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     def dot(self, output: np.array) -> np.array:
         return np.dot(self.matrix, output)
+    
+    @property
+    def shape(self):
+        return self.matrix.shape
 
 class ResponseMatrix(BaseModel, extra="forbid"):
     #inputs -> columns -> axis = 1
@@ -30,14 +36,17 @@ class ResponseMatrix(BaseModel, extra="forbid"):
     _bad_outputs: list[int] = PrivateAttr(default=[])
     _bad_inputs: list[int] = PrivateAttr(default=[])
 
-    _output_mask: NPARRAY = np.array()
+    _output_mask: NPARRAY = np.array([])
     _inverse_RM: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @model_validator(mode='after')
     def initialize_and_check(self):
         self._n_outputs, self._n_inputs = self.RM.shape
         self._singular_values = np.linalg.svd(self.RM, compute_uv=False)
         self.make_masks()
+        return self
 
     @property
     def singular_values(self) -> np.array:
@@ -67,7 +76,8 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         self._input_mask = np.ones(self._n_inputs, dtype=bool)
         self._input_mask[self._bad_inputs] = False
 
-    def build_pseudoinverse(self, matrix: np.array, method='svd_cutoff', parameter: float = 0.):
+    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0.):
+        matrix = self.RM[self._output_mask, :][:, self._input_mask]
         U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)
 
         if method == 'svd_cutoff':
@@ -82,18 +92,21 @@ class ResponseMatrix(BaseModel, extra="forbid"):
             s_mat = s_mat / (np.square(s_mat) + alpha**2)
 
         matrix_inv = np.dot(np.dot(np.transpose(Vh), np.diag(s_mat)), np.transpose(U))
-        return matrix_inv
+
+        return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter)
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.):
         if self._inverse_RM is None:
-            self.build_pseudoinverse(method=method, parameter=parameter)
+            self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
         else:
             if self._inverse_RM.method != method or self._inverse_RM.parameter != parameter:
-                self.build_pseudoinverse(method=method, parameter=parameter)
+                self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
 
-        good_output = output[self._output_mask]
+        bad_output = output.copy()
+        bad_output[np.isnan(bad_output)] = 0
+        good_output = bad_output[self._output_mask]
 
-        expected_shape = (len(self.input_names) - len(self._bad_inputs), len(good_output))
+        expected_shape = (self._n_inputs - len(self._bad_inputs), len(good_output))
         if self._inverse_RM.shape != expected_shape:
             raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 
              + f'inverse RM shape = {self._inverse_RM.shape},\n'

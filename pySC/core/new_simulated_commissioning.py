@@ -1,5 +1,6 @@
 from pydantic import BaseModel, model_validator, Field
 from typing import Optional
+import json
 
 from .lattice import ATLattice, XSuiteLattice
 from .magnetsettings import MagnetSettings
@@ -31,15 +32,29 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
     @model_validator(mode="after")
     def initialize(self):
         self.propagate_parents()
-        self.rng = RNG(seed=self.seed)
+        if self.rng is None:
+            self.rng = RNG(seed=self.seed)
+        self.support_system.update_all()
+        self.design_magnet_settings.sendall()
+        self.magnet_settings.sendall()
         return self
 
     @classmethod
-    def from_json(cls, json_str: str) -> "SimulatedCommissioning":
+    def from_json(cls, json_filename: str) -> "SimulatedCommissioning":
         """
-        Load the SimulatedCommissioning instance from a JSON string.
+        Load the SimulatedCommissioning instance from a file with a JSON format.
         """
-        return cls.model_validate_json(json_str)
+        with open(json_filename, 'r') as fp:
+            obj = json.load(fp)
+            return cls.model_validate(obj)
+
+    def to_json(self, json_filename: str) -> None:
+        """
+        Save the SimulatedCommissioning instance to a file in a JSON format.
+        """
+        with open(json_filename, 'w') as fp:
+            obj = self.model_dump()
+            json.dump(obj, fp, indent=2)
 
     def propagate_parents(self) -> None:
         self.magnet_settings._parent = self

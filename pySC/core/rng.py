@@ -1,4 +1,4 @@
-from pydantic import BaseModel, model_validator, PrivateAttr
+from pydantic import BaseModel, field_serializer, model_validator, PrivateAttr
 from typing import Union, Optional
 from numpy.random import default_rng
 import numpy as np
@@ -8,6 +8,10 @@ class RNG(BaseModel):
     rng_state: Optional[dict[str, Union[str, int, dict[str, int]]]] = None
     default_truncation: Optional[int] = None
     _rng = PrivateAttr(default=None)
+
+    @field_serializer('rng_state')
+    def update_rng_state(self, rng_state: Optional[dict[str, Union[str, int, dict[str, int]]]]):
+        return self._rng.bit_generator.state.copy()
 
     @model_validator(mode="after")
     def initialize_rng(self):

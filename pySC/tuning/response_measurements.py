@@ -14,7 +14,7 @@ def response_loop(inputs, inputs_delta, get_output, settings):
 
     with progress:
         task_id = progress.add_task("Measuring RM", start=True, total=n_inputs)
-        progress.update(0, total=n_inputs)
+        progress.update(task_id, total=n_inputs)
 
         reference = get_output()
         if np.any(np.isnan(reference)):
@@ -27,11 +27,12 @@ def response_loop(inputs, inputs_delta, get_output, settings):
             delta = inputs_delta[i]
             settings.set(control, ref_setpoint + delta)
             output = get_output()
-            RM[:, i] = output - reference
+            RM[:, i] = (output - reference)/delta
             settings.set(control, ref_setpoint)
 
             progress.update(task_id, completed=i+1, description=f'Measuring response of {control}...')
         progress.update(task_id, completed=n_inputs, description='Response measured.')
+        progress.remove_task(task_id)
 
     return RM
 

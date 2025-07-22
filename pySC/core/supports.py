@@ -105,7 +105,7 @@ class SupportSystem(BaseModel):
         new_element = ElementOffset(index=index)
         if hasattr(self._parent, 'bpm_system') and index in self._parent.bpm_system.indices:
             new_element.is_bpm = True
-            new_element.bpm_number = self._parent.bpm_system.bpm_number(index)
+            new_element.bpm_number = self._parent.bpm_system.bpm_number(index=index)
         new_element.s = float(self._parent.lattice.ring.get_s_pos(index)[0])
         self.data['L0'][int(index)] = new_element
 
@@ -328,7 +328,7 @@ class SupportSystem(BaseModel):
             bpm_tot_dx, bpm_tot_dy = self.get_total_offset(index=bpm_index)
             new_dx = magnet_dx - bpm_tot_dx
             new_dy = magnet_dy - bpm_tot_dy
-            bpm_number = self._parent.bpm_system.bpm_number(bpm_index)
+            bpm_number = self._parent.bpm_system.bpm_number(index=bpm_index)
             self._parent.bpm_system.bba_offsets_x[bpm_number] = new_dx
             self._parent.bpm_system.bba_offsets_y[bpm_number] = new_dy
 

@@ -58,3 +58,6 @@ def configure_supports(SC: SimulatedCommissioning):
             if 'roll' in level_conf:
                 sigma = get_error(level_conf['roll'], error_table)
                 SC.support_system.data[f'L{level}'][support_index].roll = SC.rng.normal_trunc(0, sigma)
+
+    SC.support_system.resolve_graph()
+    SC.support_system.update_all()

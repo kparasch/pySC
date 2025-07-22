@@ -51,7 +51,6 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
 
     print('Configuring supports...')
     configure_supports(SC)
-    SC.support_system.update_all()
 
     print('Configuring tuning...')
     configure_tuning(SC)

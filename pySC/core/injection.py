@@ -30,12 +30,18 @@ class InjectionSettings(BaseModel, extra="forbid"):
     delta_error_stat: float = 0
 
     n_particles: int = 1
-    x_size: float = 1
-    px_divergence: float = 1
-    y_size: float = 1
-    py_divergence: float = 1
+    # x_size: float = 1
+    # px_divergence: float = 1
+    # y_size: float = 1
+    # py_divergence: float = 1
     bunch_length: float = 1
     energy_spread: float = 1
+    betx: float = 1
+    alfx: float = 0
+    bety: float = 1
+    alfy: float = 0
+    gemit_x: float = 1
+    gemit_y: float = 1
 
     _parent: Optional["SimulatedCommissioning"] = PrivateAttr(default=None)
 
@@ -63,6 +69,23 @@ class InjectionSettings(BaseModel, extra="forbid"):
     def delta_inj(self) -> float:
         return self.delta + self._parent.rng.normal(loc=self.delta_error_syst, scale=self.delta_error_stat) 
 
+    @property
+    def invW(self) -> np.ndarray:
+        invW = np.zeros([6,6])
+
+        sbetx = self.betx**0.5
+        invW[0, 0] = sbetx
+        invW[1, 0] = -self.alfx / sbetx
+        invW[1, 1] = 1 / sbetx
+
+        sbety = self.bety**0.5
+        invW[2, 2] = sbety
+        invW[3, 2] = -self.alfy / sbety
+        invW[3, 3] = 1 / sbety
+
+        invW[4,4] = 1
+        invW[5,5] = 1
+
     def generate_bunch(self) -> np.ndarray:
         # When array will be transposed to go to AT, it will be F_CONTIGUOUS :)
         bunch = np.zeros([self.n_particles, 6])
@@ -75,12 +98,40 @@ class InjectionSettings(BaseModel, extra="forbid"):
             bunch[0, 4] = self.tau_inj
             bunch[0, 5] = self.delta_inj
         else:
-            bunch[:, 0] = self._parent.rng.normal(loc=self.x_inj, scale=self.x_size, size=self.n_particles)
-            bunch[:, 1] = self._parent.rng.normal(loc=self.px_inj, scale=self.px_divergence, size=self.n_particles)
-            bunch[:, 2] = self._parent.rng.normal(loc=self.y_inj, scale=self.y_size, size=self.n_particles)
-            bunch[:, 3] = self._parent.rng.normal(loc=self.py_inj, scale=self.py_divergence, size=self.n_particles)
-            bunch[:, 4] = self._parent.rng.normal(loc=self.tau_inj, scale=self.bunch_length, size=self.n_particles)
-            bunch[:, 5] = self._parent.rng.normal(loc=self.delta_inj, scale=self.energy_spread, size=self.n_particles)
+            bunch_norm = np.zeros([self.n_particles, 6])
+            bunch_norm[:, 0] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 1] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 2] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 3] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 4] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 5] = self._parent.rng.normal(size=self.n_particles)
+
+            sbetx = self.betx**0.5
+            bunch[:, 0] = sbetx * bunch_norm[:, 0]
+            bunch[:, 1] = -self.alfx / sbetx * bunch_norm[:, 0] + ( 1. / sbetx ) * bunch_norm[: , 1]
+
+            sbety = self.bety**0.5
+            bunch[:, 2] = sbety * bunch_norm[:, 2]
+            bunch[:, 3] = -self.alfx / sbety * bunch_norm[:, 2] + ( 1. / sbety ) * bunch_norm[: , 3]
+
+            bunch[:, 4] = bunch_norm[:, 4]
+            bunch[:, 5] = bunch_norm[:, 5]
+
+            sgemit_x = self.gemit_x**0.5
+            bunch[:, 0] = sgemit_x * bunch[:, 0] + self.x_inj
+            bunch[:, 1] = sgemit_x * bunch[:, 1] + self.px_inj
+            sgemit_y = self.gemit_y**0.5
+            bunch[:, 2] = sgemit_y * bunch[:, 2] + self.y_inj
+            bunch[:, 3] = sgemit_y * bunch[:, 3] + self.py_inj
+            bunch[:, 4] = self.energy_spread * bunch[:, 4] + self.delta_inj
+            bunch[:, 5] = self.bunch_length * bunch[:, 5] + self.tau_inj
+
+            # bunch[:, 0] = self._parent.rng.normal(loc=self.x_inj, scale=self.x_size, size=self.n_particles)
+            # bunch[:, 1] = self._parent.rng.normal(loc=self.px_inj, scale=self.px_divergence, size=self.n_particles)
+            # bunch[:, 2] = self._parent.rng.normal(loc=self.y_inj, scale=self.y_size, size=self.n_particles)
+            # bunch[:, 3] = self._parent.rng.normal(loc=self.py_inj, scale=self.py_divergence, size=self.n_particles)
+            # bunch[:, 4] = self._parent.rng.normal(loc=self.tau_inj, scale=self.bunch_length, size=self.n_particles)
+            # bunch[:, 5] = self._parent.rng.normal(loc=self.delta_inj, scale=self.energy_spread, size=self.n_particles)
         return bunch
 
 

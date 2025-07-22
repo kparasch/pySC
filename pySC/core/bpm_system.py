@@ -2,6 +2,7 @@ from pydantic import BaseModel, PrivateAttr, ConfigDict, model_validator
 from typing import TYPE_CHECKING, Optional, Union
 from .numpy_type import NPARRAY
 import numpy as np
+import warnings
 
 if TYPE_CHECKING:
     from .new_simulated_commissioning import SimulatedCommissioning
@@ -35,6 +36,8 @@ class BPMSystem(BaseModel):
     reference_x: NPARRAY = np.array([])
     reference_y: NPARRAY = np.array([])
 
+    transmission_threshold: float = 0.4
+
     _parent: Optional["SimulatedCommissioning"] = PrivateAttr(default=None)
     _rot_matrices: Optional[NPARRAY] = PrivateAttr(default=None)
 
@@ -44,14 +47,23 @@ class BPMSystem(BaseModel):
     @model_validator(mode="after")
     def initialize(self):
         if len(self.rolls) > 0:
-            self.update_rot_matices()
+            self.update_rot_matrices()
         return self
 
     def update_rot_matrices(self):
         self._rot_matrices = _rotation_matrix(self.rolls)
 
-    def bpm_number(self, index):
-        return int(np.where(np.array(self.indices) == index)[0][0])
+    def bpm_number(self, index: Optional[int] = None, name: Optional[str] = None) -> int:
+        if index is None:
+            assert name is not None, 'Exactly one of index and name must be defined.'
+            bpm_number =  int(np.where(np.array(self.names) == name)[0][0])
+        elif name is None:
+            assert index is not None, 'Exactly one of index and name must be defined.'
+            bpm_number =  int(np.where(np.array(self.indices) == index)[0][0])
+        else:
+            raise AssertionError('Exactly one of index and name must be defined.')
+        
+        return bpm_number
 
     def capture_orbit(self, bba=True, subtract_reference=True, use_design=False) -> tuple[np.ndarray, np.ndarray]:
         '''
@@ -88,7 +100,7 @@ class BPMSystem(BaseModel):
 
         return fake_orbit_x, fake_orbit_y
 
-    def capture_injection(self, n_turns=1, bba=True, subtract_reference=True, use_design=False) -> tuple[np.ndarray, np.ndarray]:
+    def capture_injection(self, n_turns=1, bba=True, subtract_reference=True, use_design=False, return_transmission=False) -> tuple[np.ndarray, np.ndarray]:
         '''
         Simulates an orbit reading during injection from the BPMs, applying calibration errors, offsets/rolls, and noise.
         Args:
@@ -100,11 +112,23 @@ class BPMSystem(BaseModel):
         '''
         if use_design:
             bunch = self._parent.injection.generate_design_bunch()
-            trajectory = np.mean(self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=True), axis=1) # average over all particles
+            track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
+            transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+            with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                trajectory = np.nanmean(track_data, axis=1) # average over all particles
+            trajectory[0][transmission < self.transmission_threshold] = np.nan
+            trajectory[1][transmission < self.transmission_threshold] = np.nan
             return trajectory[0], trajectory[1]
 
         bunch = self._parent.injection.generate_bunch()
-        trajectory = np.mean(self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=False), axis=1) # average over all particles
+        track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=False)
+        transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+        with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            trajectory = np.nanmean(track_data, axis=1) # average over all particles
+        trajectory[0][transmission < self.transmission_threshold] = np.nan
+        trajectory[1][transmission < self.transmission_threshold] = np.nan
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])

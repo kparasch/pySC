@@ -156,7 +156,7 @@ class Tuning(BaseModel, extra="forbid"):
 
 
 
-    def do_trajectory_bba(self, bpm_names: Optional[list[str]] = None):
+    def do_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1):
         SC = self._parent
         if bpm_names is None:
             bpm_names = SC.bpm_system.names
@@ -170,10 +170,10 @@ class Tuning(BaseModel, extra="forbid"):
         for ii, name in enumerate(bpm_names):
             true_offset_x, true_offset_y = self.bba_to_quad_true_offset(bpm_name=name)
             bpm_number = SC.bpm_system.bpm_number(name=name)
-            offset_x, offset_x_err = trajectory_bba(SC, name, plane='H')
+            offset_x, offset_x_err = trajectory_bba(SC, name, plane='H', shots_per_trajectory=shots_per_trajectory)
             print(f'\t{name=}, bpm_number = {bpm_number}')
             print(f'\t\t new H. offset = {offset_x*1e6:.1f} +- {offset_x_err*1e6:.1f} um, true offset is {true_offset_x*1e6:.1f} um')
-            offset_y, offset_y_err = trajectory_bba(SC, name, plane='V')
+            offset_y, offset_y_err = trajectory_bba(SC, name, plane='V', shots_per_trajectory=shots_per_trajectory)
             print(f'\t\t new V. offset = {offset_y*1e6:.1f} +- {offset_y_err*1e6:.1f} um, true offset is {true_offset_y*1e6:.1f} um')
 
             true_offsets_x[ii] = true_offset_x
@@ -188,6 +188,6 @@ class Tuning(BaseModel, extra="forbid"):
         for ii, bpm_number in enumerate(bpm_numbers):
             SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
-        return
+        return offsets_x, offsets_y
 
 

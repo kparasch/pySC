@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import TYPE_CHECKING, Dict
+from typing import TYPE_CHECKING, Dict, Literal
 import numpy as np
 
 if TYPE_CHECKING:
@@ -109,7 +109,8 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         return Trajectory_BBA_Configuration(config=config)
 
 
-def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps=5, n_downstream_bpms=50, plane='H'):
+def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: int = 5,
+                   n_downstream_bpms: int = 50, plane: Literal['H','V'] = 'H', shots_per_trajectory: int = 1):
 
     assert plane in ['H', 'V']
 
@@ -118,14 +119,13 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps=5, 
     config = SC.tuning.trajectory_bba_config.config[bpm_name]
 
     def get_orbit():
-        N = 5
         x, y = SC.bpm_system.capture_injection(n_turns=2, bba=False, subtract_reference=False, use_design=False)
-        x = x/N
-        y = y/N
-        for i in range(N-1):
+        x = x / shots_per_trajectory
+        y = y / shots_per_trajectory
+        for i in range(shots_per_trajectory-1):
             x_tmp, y_tmp = SC.bpm_system.capture_injection(n_turns=2, bba=False, subtract_reference=False, use_design=False)
-            x = x + x_tmp / N
-            y = y + y_tmp / N
+            x = x + x_tmp / shots_per_trajectory
+            y = y + y_tmp / shots_per_trajectory
 
         return (x.flatten(order='F'), y.flatten(order='F'))
 

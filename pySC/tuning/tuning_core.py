@@ -109,6 +109,7 @@ class Tuning(BaseModel, extra="forbid"):
         return
 
     def set_multipole_scale(self, scale: float = 1):
+        print(f'Setting "multipoles" to {scale*100:.0f}%')
         for control_name in self.multipoles:
             setpoint = self._parent.design_magnet_settings.get(control_name)
             self._parent.magnet_settings.set(control_name, scale*setpoint)
@@ -154,8 +155,6 @@ class Tuning(BaseModel, extra="forbid"):
         else:
             raise Exception(f'Unknown {plane=}')
 
-
-
     def do_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1):
         SC = self._parent
         if bpm_names is None:
@@ -190,4 +189,9 @@ class Tuning(BaseModel, extra="forbid"):
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-
+    def injection_efficiency(self, n_turns: int = 1) -> float:
+        SC = self._parent
+        bunch = SC.injection.generate_bunch()
+        track_data = SC.lattice.track(bunch, indices=SC.bpm_system.indices, n_turns=n_turns, use_design=False)
+        transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+        return transmission[-1, :]

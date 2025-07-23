@@ -40,12 +40,14 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
         return self
 
     @classmethod
-    def from_json(cls, json_filename: str) -> "SimulatedCommissioning":
+    def from_json(cls, json_filename: str, lattice_file: Optional[str] = None) -> "SimulatedCommissioning":
         """
         Load the SimulatedCommissioning instance from a file with a JSON format.
         """
         with open(json_filename, 'r') as fp:
             obj = json.load(fp)
+            if lattice_file is not None:
+                obj['lattice']['lattice_file'] = lattice_file
             return cls.model_validate(obj)
 
     def to_json(self, json_filename: str) -> None:

@@ -31,7 +31,7 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         config = {}
         n_turns = 2
         RM_name = f'trajectory{n_turns}'
-        SC.tuning.fetch_response_matrix(RM_name, orbit=False)
+        SC.tuning.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         RM = SC.tuning.response_matrix[RM_name]
 
         bba_magnets = SC.tuning.bba_magnets
@@ -89,7 +89,7 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
                 temp_RM = VRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]
             else: # it is a skew quadrupole component
                 ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
-                temp_RM = VRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]
+                temp_RM = HRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]
             quad_dk_v = (max_modulation/float(np.max(np.abs(temp_RM)))) / max_dx_at_bpm
 
             bpm_name = SC.bpm_system.names[bpm_number]
@@ -193,13 +193,6 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
     final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
 
     offset, offset_err = get_offset(center, center_err, final_mask)
-    # # this may be unneccessary
-    # try:
-    #     offset, offset_err = get_offset(center, center_err, final_mask)
-    # except:
-    #     print('Failed to estimate offset!!')
-    #     offset = np.nan
-    #     offset_err = np.nan
  
     return offset, offset_err
 
@@ -281,7 +274,15 @@ def get_slopes_center(bpm_pos, orbits, dk1):
 
 def get_offset( center, center_err, mask):
     from pySC.utils import stats
-    offset_change = stats.weighted_mean(center[mask], center_err[mask])
-    offset_change_error = stats.weighted_error(center[mask]-offset_change, center_err[mask]) / np.sqrt(stats.effective_sample_size(center[mask], stats.weights_from_errors(center_err[mask])))
+    try:
+        offset_change = stats.weighted_mean(center[mask], center_err[mask])
+        offset_change_error = stats.weighted_error(center[mask]-offset_change, center_err[mask]) / np.sqrt(stats.effective_sample_size(center[mask], stats.weights_from_errors(center_err[mask])))
+    except ZeroDivisionError as exc:
+        print(exc)
+        print('Failed to estimate offset!!')
+        print(f'Debug info: {center=}, {center_err=}, {mask=}')
+        print(f'Debug info: {center[mask]=}, {center_err[mask]=}')
+        offset_change = 0
+        offset_change_error = np.nan
 
     return offset_change, offset_change_error

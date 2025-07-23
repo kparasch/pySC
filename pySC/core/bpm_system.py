@@ -111,7 +111,7 @@ class BPMSystem(BaseModel):
             fake_orbit_y: Simulated y-coordinates of the orbit at the BPMs.
         '''
         if use_design:
-            bunch = self._parent.injection.generate_design_bunch()
+            bunch = self._parent.injection.generate_bunch(use_design=True)
             track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
             transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
             with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice

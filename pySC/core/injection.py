@@ -86,18 +86,10 @@ class InjectionSettings(BaseModel, extra="forbid"):
         invW[4,4] = 1
         invW[5,5] = 1
 
-    def generate_bunch(self) -> np.ndarray:
+    def generate_zero_centered_bunch(self) -> np.ndarray:
         # When array will be transposed to go to AT, it will be F_CONTIGUOUS :)
         bunch = np.zeros([self.n_particles, 6])
-
-        if self.n_particles == 1:
-            bunch[0, 0] = self.x_inj
-            bunch[0, 1] = self.px_inj
-            bunch[0, 2] = self.y_inj
-            bunch[0, 3] = self.py_inj
-            bunch[0, 4] = self.tau_inj
-            bunch[0, 5] = self.delta_inj
-        else:
+        if self.n_particles > 1:
             bunch_norm = np.zeros([self.n_particles, 6])
             bunch_norm[:, 0] = self._parent.rng.normal(size=self.n_particles)
             bunch_norm[:, 1] = self._parent.rng.normal(size=self.n_particles)
@@ -118,39 +110,30 @@ class InjectionSettings(BaseModel, extra="forbid"):
             bunch[:, 5] = bunch_norm[:, 5]
 
             sgemit_x = self.gemit_x**0.5
-            bunch[:, 0] = sgemit_x * bunch[:, 0] + self.x_inj
-            bunch[:, 1] = sgemit_x * bunch[:, 1] + self.px_inj
+            bunch[:, 0] = sgemit_x * bunch[:, 0] 
+            bunch[:, 1] = sgemit_x * bunch[:, 1] 
             sgemit_y = self.gemit_y**0.5
-            bunch[:, 2] = sgemit_y * bunch[:, 2] + self.y_inj
-            bunch[:, 3] = sgemit_y * bunch[:, 3] + self.py_inj
-            bunch[:, 4] = self.energy_spread * bunch[:, 4] + self.delta_inj
-            bunch[:, 5] = self.bunch_length * bunch[:, 5] + self.tau_inj
-
-            # bunch[:, 0] = self._parent.rng.normal(loc=self.x_inj, scale=self.x_size, size=self.n_particles)
-            # bunch[:, 1] = self._parent.rng.normal(loc=self.px_inj, scale=self.px_divergence, size=self.n_particles)
-            # bunch[:, 2] = self._parent.rng.normal(loc=self.y_inj, scale=self.y_size, size=self.n_particles)
-            # bunch[:, 3] = self._parent.rng.normal(loc=self.py_inj, scale=self.py_divergence, size=self.n_particles)
-            # bunch[:, 4] = self._parent.rng.normal(loc=self.tau_inj, scale=self.bunch_length, size=self.n_particles)
-            # bunch[:, 5] = self._parent.rng.normal(loc=self.delta_inj, scale=self.energy_spread, size=self.n_particles)
+            bunch[:, 2] = sgemit_y * bunch[:, 2] 
+            bunch[:, 3] = sgemit_y * bunch[:, 3] 
+            bunch[:, 4] = self.energy_spread * bunch[:, 4]
+            bunch[:, 5] = self.bunch_length * bunch[:, 5]
         return bunch
 
-
-    def generate_design_bunch(self) -> np.ndarray:
+    def generate_bunch(self, use_design=False) -> np.ndarray:
         # When array will be transposed to go to AT, it will be F_CONTIGUOUS :)
-        bunch = np.zeros([self.n_particles, 6])
-
-        if self.n_particles == 1:
-            bunch[0, 0] = self.x
-            bunch[0, 1] = self.px
-            bunch[0, 2] = self.y
-            bunch[0, 3] = self.py
-            bunch[0, 4] = self.tau
-            bunch[0, 5] = self.delta
+        bunch = self.generate_zero_centered_bunch()
+        if use_design:
+            bunch[:, 0] += self.x
+            bunch[:, 1] += self.px
+            bunch[:, 2] += self.y
+            bunch[:, 3] += self.py
+            bunch[:, 4] += self.tau
+            bunch[:, 5] += self.delta
         else:
-            bunch[:, 0] = self._parent.rng.normal(loc=self.x, scale=self.x_size, size=self.n_particles)
-            bunch[:, 1] = self._parent.rng.normal(loc=self.px, scale=self.px_divergence, size=self.n_particles)
-            bunch[:, 2] = self._parent.rng.normal(loc=self.y, scale=self.y_size, size=self.n_particles)
-            bunch[:, 3] = self._parent.rng.normal(loc=self.py, scale=self.py_divergence, size=self.n_particles)
-            bunch[:, 4] = self._parent.rng.normal(loc=self.tau, scale=self.bunch_length, size=self.n_particles)
-            bunch[:, 5] = self._parent.rng.normal(loc=self.delta, scale=self.energy_spread, size=self.n_particles)
+            bunch[:, 0] += self.x_inj
+            bunch[:, 1] += self.px_inj
+            bunch[:, 2] += self.y_inj
+            bunch[:, 3] += self.py_inj
+            bunch[:, 4] += self.tau_inj
+            bunch[:, 5] += self.delta_inj
         return bunch

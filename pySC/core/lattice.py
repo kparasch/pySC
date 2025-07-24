@@ -166,7 +166,7 @@ class ATLattice(Lattice):
 
         if type(elem) is at.Corrector:
             if order != 0:
-                raise Exception('ERROR: order={order}, for at.Corrector, order different than 0 is not supported.')
+                raise Exception(f'ERROR: order={order}, for at.Corrector, order different than 0 is not supported.')
             if component_type == 'A':
                 value = elem.KickAngle[1] / elem.Length
             else:

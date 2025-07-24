@@ -114,10 +114,21 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
 
     assert plane in ['H', 'V']
 
+    ## get configuration of measurement
     if SC.tuning.trajectory_bba_config is None:
         SC.tuning.generate_trajectory_bba_config()
     config = SC.tuning.trajectory_bba_config.config[bpm_name]
 
+    corr = config[f'{plane}CORR']
+    quad = config['QUAD']
+    bpm_number = config['number']
+    corr_delta_sp = config[f'{plane}CORR_delta']
+    quad_delta = config[f'QUAD_dk_{plane}']
+
+    n1 = bpm_number + 1
+    n2 = bpm_number + 1 + n_downstream_bpms
+
+    ## define get_orbit
     def get_orbit():
         x, y = SC.bpm_system.capture_injection(n_turns=2, bba=False, subtract_reference=False, use_design=False)
         x = x / shots_per_trajectory
@@ -129,33 +140,28 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
 
         return (x.flatten(order='F'), y.flatten(order='F'))
 
-    corr = config[f'{plane}CORR']
-    quad = config['QUAD']
-    bpm_number = config['number']
-    corr_delta_sp = config[f'{plane}CORR_delta']
-    quad_delta = config[f'QUAD_dk_{plane}']
 
-    n1 = bpm_number + 1
-    n2 = bpm_number + 1 + n_downstream_bpms
-
-    corr_sp0 = SC.magnet_settings.get(corr)
-    quad_sp0 = SC.magnet_settings.get(quad)
+    ## define settings to get/set
+    settings = SC.magnet_settings
 
     bpm_pos = np.zeros([n_corr_steps, 2])
     orbits = np.zeros([n_corr_steps, 2, n_downstream_bpms])
 
+    corr_sp0 = settings.get(corr)
+    quad_sp0 = settings.get(quad)
+
     corr_sp_array = np.linspace(-corr_delta_sp, corr_delta_sp, n_corr_steps) + corr_sp0 
     for i_corr, corr_sp in enumerate(corr_sp_array):
-        SC.magnet_settings.set(corr, corr_sp)
+        settings.set(corr, corr_sp)
         trajectory_x_center, trajectory_y_center = get_orbit()
 
-        SC.magnet_settings.set(quad, quad_sp0 + quad_delta)
+        settings.set(quad, quad_sp0 + quad_delta)
         trajectory_x_up, trajectory_y_up = get_orbit()
 
-        SC.magnet_settings.set(quad, quad_sp0 - quad_delta)
+        settings.set(quad, quad_sp0 - quad_delta)
         trajectory_x_down, trajectory_y_down = get_orbit()
 
-        SC.magnet_settings.set(quad, quad_sp0)
+        settings.set(quad, quad_sp0)
 
         if plane == 'H':
             trajectory_main_down = trajectory_x_down
@@ -183,8 +189,8 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
         else:
             raise Exception('Invalid magnet for BBA: {quad}')
 
-    SC.magnet_settings.set(corr, corr_sp0)
-    SC.magnet_settings.set(quad, quad_sp0)
+    settings.set(corr, corr_sp0)
+    settings.set(quad, quad_sp0)
 
     slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, quad_delta)
     mask_bpm_outlier = reject_bpm_outlier(orbits)
@@ -226,8 +232,6 @@ def reject_center_outlier(center):
     # n_rejections = len(center) - np.sum(mask)
     # print(f"Rejected {n_rejections}/{len(center)} bpms for center away from mean ( > {CENTER_OUTLIER} r.m.s. )")
     return mask
-
-
 
 def get_slopes_center(bpm_pos, orbits, dk1):
     mag_vec = np.array([dk1, -dk1])

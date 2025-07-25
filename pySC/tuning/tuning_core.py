@@ -77,7 +77,7 @@ class Tuning(BaseModel, extra="forbid"):
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):
-                setpoint = settings.get(control_name=control_name) - gain*trim
+                setpoint = settings.get(control_name=control_name) - gain * trim
                 settings.set(control_name=control_name, setpoint=setpoint)
 
         trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
@@ -91,7 +91,36 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100):
+    def correct_pseudo_orbit_at_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1):
+        RM_name = 'orbit'
+        self.fetch_response_matrix(RM_name, orbit=True)
+        RM = self.response_matrix[RM_name]
+
+        for _ in range(n_reps):
+            trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
+            pseudo_orbit_x = np.nanmean(trajectory_x, axis=1)
+            pseudo_orbit_y = np.nanmean(trajectory_y, axis=1)
+            pseudo_orbit = np.concat((pseudo_orbit_x, pseudo_orbit_y))
+
+            trims = RM.solve(pseudo_orbit, method=method, parameter=parameter)
+
+            settings = self._parent.magnet_settings
+            for control_name, trim in zip(self.CORR, trims):
+                setpoint = settings.get(control_name=control_name) - gain * trim
+                settings.set(control_name=control_name, setpoint=setpoint)
+
+        trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
+        trajectory_x = trajectory_x.flatten('F')
+        trajectory_y = trajectory_y.flatten('F')
+        rms_x = np.nanstd(trajectory_x) * 1e6
+        rms_y = np.nanstd(trajectory_y) * 1e6
+        bad_readings = sum(np.isnan(trajectory_x))
+        good_turns = (len(trajectory_x) - bad_readings) / len(self._parent.bpm_system.indices)
+        print(f'Corrected injection: transmission through {good_turns:.2f}/{n_turns} turns, {rms_x=:.1f} um, {rms_y=:.1f} um.')
+
+        return
+
+    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         RM = self.response_matrix[RM_name]
@@ -104,8 +133,13 @@ class Tuning(BaseModel, extra="forbid"):
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):
-                setpoint = settings.get(control_name=control_name) - trim
+                setpoint = settings.get(control_name=control_name) - gain * trim
                 settings.set(control_name=control_name, setpoint=setpoint)
+
+        orbit_x, orbit_y = self._parent.bpm_system.capture_orbit()
+        rms_x = np.nanstd(orbit_x) * 1e6
+        rms_y = np.nanstd(orbit_y) * 1e6
+        print(f'Corrected orbit: {rms_x=:.1f} um, {rms_y=:.1f} um.')
         return
 
     def set_multipole_scale(self, scale: float = 1):

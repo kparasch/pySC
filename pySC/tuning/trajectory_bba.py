@@ -187,7 +187,7 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
             orbits[i_corr, 0, :] = trajectory_other_down[n1:n2] - trajectory_other_center[n1:n2]
             orbits[i_corr, 1, :] = trajectory_other_up[n1:n2] - trajectory_other_center[n1:n2]
         else:
-            raise Exception('Invalid magnet for BBA: {quad}')
+            raise Exception(f'Invalid magnet for BBA: {quad}')
 
     settings.set(corr, corr_sp0)
     settings.set(quad, quad_sp0)
@@ -276,7 +276,7 @@ def get_slopes_center(bpm_pos, orbits, dk1):
 
     return slopes, slopes_err, center, center_err
 
-def get_offset( center, center_err, mask):
+def get_offset(center, center_err, mask):
     from pySC.utils import stats
     try:
         offset_change = stats.weighted_mean(center[mask], center_err[mask])

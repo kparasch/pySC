@@ -28,10 +28,17 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
     if 'bpms' not in config_dict.keys():
         print("WARNING: 'bpms' is missing in the configuration file. Generating an empty one.")
 
+    # TODO: maybe put in a separate module
     if config_dict['lattice']['simulator'] == 'at':
         lattice_file = config_dict['lattice']['lattice_file']
+
+        if 'no_6d' in config_dict['lattice']:
+            no_6d = config_dict['lattice']['no_6d']
+        else:
+            no_6d = False
+
         print(f'Loading AT lattice from {lattice_file}')
-        lattice = ATLattice(lattice_file=lattice_file)
+        lattice = ATLattice(lattice_file=lattice_file, no_6d=no_6d)
     else:
         raise NotImplementedError(f"Simulator {config_dict['lattice']['simulator']} is not implemented.")
 

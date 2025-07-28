@@ -10,6 +10,7 @@ class Lattice(BaseModel, extra="forbid"):
     Base class for machine
     """
     lattice_file: str
+    no_6d : bool = False
     _ring = PrivateAttr(default=None)
     _design = PrivateAttr(default=None)
     _twiss: dict = PrivateAttr(default=None)
@@ -53,8 +54,9 @@ class ATLattice(Lattice):
         self._ring = at.load_mat(self.lattice_file)
         self._design = at.load_mat(self.lattice_file)
 
-        self._ring.enable_6d()
-        self._design.enable_6d()
+        if not self.no_6d:
+            self._ring.enable_6d()
+            self._design.enable_6d()
 
         self._twiss = self.get_twiss(use_design=True)
         return self
@@ -81,7 +83,7 @@ class ATLattice(Lattice):
         if indices is None:
             indices = range(len(self._design))
         ring = self._design if use_design else self._ring
-        _, orbit = at.find_orbit6(ring, refpts=indices)
+        _, orbit = at.find_orbit(ring, refpts=indices)
         return orbit[:, [0,2]].T
 
     def get_twiss(self, indices: Optional[list[int]] = None, use_design=False) -> dict:
@@ -93,9 +95,12 @@ class ATLattice(Lattice):
             indices = range(len(self._design))
         ring = self._design if use_design else self._ring
         _, ringdata, elemdata = at.get_optics(ring, refpts=indices, get_chrom=True)
+
+        qs = ringdata['tune'][2] if not self.no_6d else 0 # doesn't exist when ring has 6d disabled
+
         twiss = {'qx': ringdata['tune'][0],
                  'qy': ringdata['tune'][1],
-                 'qs': ringdata['tune'][2],
+                 'qs': qs,
                  'dqx': ringdata['chromaticity'][0],
                  'dqy': ringdata['chromaticity'][1],
                  's': elemdata.s_pos,
@@ -154,7 +159,10 @@ class ATLattice(Lattice):
         return getattr(elem, 'BendingAngle', 0)
 
     def get_length(self, index: int) -> float:
-        return self._design[index].Length
+        if self._design[index].Length:
+            return self._design[index].Length
+        else: # when length is zero
+            return 1
 
     def get_magnet_component(self, index: int, component_type: Literal['A', 'B'],
                              order: int, use_design=True) -> float:
@@ -167,10 +175,11 @@ class ATLattice(Lattice):
         if type(elem) is at.Corrector:
             if order != 0:
                 raise Exception(f'ERROR: order={order}, for at.Corrector, order different than 0 is not supported.')
+            length = self.get_length(index)
             if component_type == 'A':
-                value = elem.KickAngle[1] / elem.Length
+                value = elem.KickAngle[1] / length
             else:
-                value = - elem.KickAngle[0] / elem.Length
+                value = - elem.KickAngle[0] / length
         else:
             value =  getattr(elem, f'Polynom{component_type}')[order]
 
@@ -188,10 +197,11 @@ class ATLattice(Lattice):
         if type(elem) is at.Corrector:
             if order != 0:
                 raise Exception('ERROR: order={order}, for at.Corrector, order different than 0 is not supported.')
+            length = self.get_length(index)
             if component_type == 'A':
-                elem.KickAngle[1] = value * elem.Length
+                elem.KickAngle[1] = value * length
             elif component_type == 'B':
-                elem.KickAngle[0] = - value * elem.Length
+                elem.KickAngle[0] = - value * length
             else:
                 raise Exception('ERROR: Not supposed to happen!')
         else:

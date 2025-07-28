@@ -61,8 +61,8 @@ class Magnet(BaseModel, extra="forbid"):
 
     @property
     def state(self):
-        manget_name = self.name
-        print(f"Magnet: {manget_name}, max order: {self.max_order}, length: {self.length} m")
+        magnet_name = self.name
+        print(f"Magnet: {magnet_name}, max order: {self.max_order}, length: {self.length} m")
         for component, ktype in zip(["B", "A"], ["kn", "ks"]):
             for order in range(self.max_order + 1):
                 temp_links = []
@@ -97,6 +97,7 @@ class Magnet(BaseModel, extra="forbid"):
             if link.is_integrated:
                 assert self.length is not None, f'ERROR: magnet length not specified for integrated strength link: {repr(link)}'
                 value = value / self.length
+                # if it is equal to zero then assume A and B are already integrated strengths :(
             if link.component == "A":
                 self.A[link.order - 1] += value
             elif link.component == "B":

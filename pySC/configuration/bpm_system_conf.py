@@ -62,7 +62,7 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
             bpms_calibration_error_y.append(SC.rng.normal_trunc(0, sig))
 
     # sort everything to make sure indices are in order
-    argsort = np.argsort(indices).tolist()
+    argsort = np.argsort(bpms_indices).tolist()
     bpms_indices = [bpms_indices[i] for i in argsort]
     bpms_names = [bpms_names[i] for i in argsort]
     bpms_orbit_noise = [bpms_orbit_noise[i] for i in argsort]

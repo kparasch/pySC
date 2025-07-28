@@ -8,7 +8,7 @@ def configure_rf(SC: SimulatedCommissioning) -> None:
     error_table = dict.get(SC.configuration, 'error_table', {}) # defaults to empty error_table if not declared
 
     if 'main' not in rf_conf:
-        raise Exception(' "main" rf system was not found in the configuration file.')
+        print('WARNING: "main" rf system was not found in the configuration file.')
 
     for rf_category in rf_conf.keys():
         rf_category_conf = rf_conf[rf_category]

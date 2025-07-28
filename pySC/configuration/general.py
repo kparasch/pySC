@@ -1,4 +1,5 @@
 from typing import Optional, Any
+import yaml
 from ..core.new_simulated_commissioning import SimulatedCommissioning
 from ..core.magnet import MAGNET_NAME_TYPE
 
@@ -26,9 +27,16 @@ def get_indices_with_regex(SC: SimulatedCommissioning, category_name: str, categ
 
 def get_indices_and_names(SC: SimulatedCommissioning, category_name: str, category_conf: dict[str, Any]) -> tuple[list[int], list[MAGNET_NAME_TYPE]]:
     if 'regex' in category_conf:
+        assert 'mapping' not in category_conf, 'Only one of regex and mapping must be defined!'
         indices = get_indices_with_regex(SC, category_name, category_conf)
         names = list(map(str, indices))
+    elif 'mapping' in category_conf:
+        yaml_filename = category_conf['mapping']
+        with open(yaml_filename, 'r') as pf:
+            mapping = yaml.safe_load(pf)
+        indices = list(mapping.values())
+        names = list(mapping.keys())
     else:
-        raise NotImplementedError("Only regex search is implemented.")
+        raise NotImplementedError("Only regex search and mapping is implemented.")
 
     return indices, names

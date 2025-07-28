@@ -20,15 +20,17 @@ def configure_family(SC: SimulatedCommissioning, config_dict: dict) -> list[str]
 def configure_tuning(SC: SimulatedCommissioning) -> None:
     tuning_conf = dict.get(SC.configuration, 'tuning', {})
 
-    HCORR = configure_family(SC, config_dict=tuning_conf['HCORR'])
-    VCORR = configure_family(SC, config_dict=tuning_conf['VCORR'])
+    if 'HCORR' in tuning_conf:
+        HCORR = configure_family(SC, config_dict=tuning_conf['HCORR'])
+        HCORR = sort_controls(SC, HCORR)
+        SC.tuning.HCORR = HCORR
 
     # if 'sort_correctors' in tuning_conf and tuning_conf['sort_correctors']:
-    HCORR = sort_controls(SC, HCORR)
-    VCORR = sort_controls(SC, VCORR)
+    if 'VCORR' in tuning_conf:
+        VCORR = configure_family(SC, config_dict=tuning_conf['VCORR'])
+        VCORR = sort_controls(SC, VCORR)
+        SC.tuning.VCORR = VCORR
 
-    SC.tuning.HCORR = HCORR
-    SC.tuning.VCORR = VCORR
 
     if 'model_RM_folder' in tuning_conf:
         SC.tuning.RM_folder = tuning_conf['model_RM_folder']

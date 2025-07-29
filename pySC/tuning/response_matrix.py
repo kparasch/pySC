@@ -77,21 +77,27 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         self._input_mask[self._bad_inputs] = False
 
     def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0.):
+        print(f'Rebuilding pseudoinverse RM with {method=} and {parameter=}.')
         matrix = self.RM[self._output_mask, :][:, self._input_mask]
         U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)
 
         if method == 'svd_cutoff':
             cutoff = parameter
             s0 = s_mat[0]
-            s_mat[s_mat < cutoff * s0] = 0
+            keep = np.sum(s_mat > cutoff * s0)
+            d_mat = 1. / s_mat[:keep]
         elif method == 'svd_values':
             number_of_values_to_keep = parameter
             s_mat[int(number_of_values_to_keep):] = 0
+            keep = number_of_values_to_keep
+            d_mat = 1. / s_mat[:keep]
         elif method == 'tikhonov':
             alpha = parameter
-            s_mat = s_mat / (np.square(s_mat) + alpha**2)
+            d_mat = s_mat / (np.square(s_mat) + alpha**2)
+            keep = len(d_mat)
 
-        matrix_inv = np.dot(np.dot(np.transpose(Vh), np.diag(s_mat)), np.transpose(U))
+        #matrix_inv = np.dot(np.dot(np.transpose(Vh), np.diag(d_mat)), np.transpose(U))
+        matrix_inv = np.dot(np.dot(np.transpose(Vh[:keep,:]), np.diag(d_mat)), np.transpose(U[:, :keep]))
 
         return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter)
 

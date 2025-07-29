@@ -179,7 +179,7 @@ class Tuning(BaseModel, extra="forbid"):
         quad = bba_magnets[bba_magnet_number]
 
         quad_index = SC.magnet_settings.magnets[quad.split('/')[0]].sim_index
-        true_offset2 =SC.support_system.get_total_offset(quad_index) - SC.support_system.get_total_offset(bpm_index)
+        true_offset2 = SC.support_system.get_total_offset(quad_index) - SC.support_system.get_total_offset(bpm_index)
         if plane is None:
            return tuple(true_offset2)
         elif plane == 'H':
@@ -188,6 +188,17 @@ class Tuning(BaseModel, extra="forbid"):
            return true_offset2[1]
         else:
             raise Exception(f'Unknown {plane=}')
+
+    def fake_align_bpms(self, bpm_names: Optional[list[str]] = None):
+        SC = self._parent
+        if bpm_names is None:
+            bpm_names = SC.bpm_system.names
+
+        for bpm_name in bpm_names:
+            bpm_number = SC.bpm_system.bpm_number(name=bpm_name)
+            bba_x, bba_y = self.bba_to_quad_true_offset(bpm_name=bpm_name)
+            self._parent.bpm_system.bba_offsets_x[bpm_number] = bba_x
+            self._parent.bpm_system.bba_offsets_y[bpm_number] = bba_y
 
     def do_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1):
         SC = self._parent

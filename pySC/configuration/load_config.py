@@ -11,4 +11,5 @@ def load_yaml(file_path: str) -> dict:
         dict: Contents of the YAML file.
     """
     with open(file_path, 'r') as file:
-        return yaml.safe_load(file)
+        obj = yaml.safe_load(file)
+    return obj

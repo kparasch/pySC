@@ -1,5 +1,6 @@
 from typing import Optional, Any
 import yaml
+from .load_config import load_yaml
 from ..core.new_simulated_commissioning import SimulatedCommissioning
 from ..core.magnet import MAGNET_NAME_TYPE
 
@@ -31,9 +32,8 @@ def get_indices_and_names(SC: SimulatedCommissioning, category_name: str, catego
         indices = get_indices_with_regex(SC, category_name, category_conf)
         names = list(map(str, indices))
     elif 'mapping' in category_conf:
-        yaml_filename = category_conf['mapping']
-        with open(yaml_filename, 'r') as pf:
-            mapping = yaml.safe_load(pf)
+        mapping = load_yaml(category_conf['mapping'])
+
         indices = list(mapping.values())
         names = list(mapping.keys())
     else:

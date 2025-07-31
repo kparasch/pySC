@@ -55,7 +55,7 @@ def configure_rf(SC: SimulatedCommissioning) -> None:
 
         SC.rf_settings.systems[rf_category]._parent = SC.rf_settings
         for name in cavity_names:
-            SC.rf_settings.cavities[name]._parent = SC.rf_settings.systems[rf_category]
+            SC.rf_settings.cavities[name]._parent_system = SC.rf_settings.systems[rf_category]
 
         SC.rf_settings.systems[rf_category].trigger_update()
 

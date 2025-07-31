@@ -26,30 +26,33 @@ class RFCavity(BaseModel, extra="forbid"):
     phase_delta: float = 0
     frequency_delta: float = 0
 
-    _parent: Optional[RFSystem] = PrivateAttr(default = None)
+    _parent_system: Optional[RFSystem] = PrivateAttr(default = None)
 
     @property
     def actual_voltage(self):
-        total_voltage = self._parent.voltage
-        cavity_voltage = total_voltage / len(self._parent.cavities)
+        system = self._parent_system
+        total_voltage = system.voltage
+        cavity_voltage = total_voltage / len(system.cavities)
         return (cavity_voltage + self.voltage_error 
                 + self.voltage_correction + self.voltage_delta)
     @property
     def actual_phase(self):
-        return (self._parent.phase + self.phase_error 
+        system = self._parent_system
+        return (system.phase + self.phase_error 
                 + self.phase_correction + self.phase_delta)
 
     @property
     def actual_frequency(self):
-        return (self._parent.frequency + self.frequency_error 
+        system = self._parent_system
+        return (system.frequency + self.frequency_error 
                 + self.frequency_correction + self.frequency_delta)
 
     def update(self) -> None:
+        SC = self._parent_system._parent._parent
         voltage = self.actual_voltage
         phase = self.actual_phase
         frequency = self.actual_frequency
-        lattice = self._parent._parent._parent.lattice
-        lattice.update_cavity(index=self.sim_index, voltage=voltage, phase=phase,
+        SC.lattice.update_cavity(index=self.sim_index, voltage=voltage, phase=phase,
                               frequency=frequency, use_design=False)
         return
 

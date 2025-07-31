@@ -64,6 +64,10 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
         self.support_system._parent = self
         self.bpm_system._parent = self
         self.rf_settings._parent = self
+        for system_name in self.rf_settings.systems:
+            system = self.rf_settings.systems[system_name]
+            for cav_name in system.cavities:
+                self.rf_settings.cavities[cav_name]._parent_system = system
         self.injection._parent = self
         self.tuning._parent = self
         return

@@ -26,6 +26,7 @@ class RFCavity(BaseModel, extra="forbid"):
     phase_delta: float = 0
     frequency_delta: float = 0
 
+    to_design: bool = False
     _parent_system: Optional[RFSystem] = PrivateAttr(default = None)
 
     @property
@@ -53,7 +54,7 @@ class RFCavity(BaseModel, extra="forbid"):
         phase = self.actual_phase
         frequency = self.actual_frequency
         SC.lattice.update_cavity(index=self.sim_index, voltage=voltage, phase=phase,
-                              frequency=frequency, use_design=False)
+                              frequency=frequency, use_design=self.to_design)
         return
 
 class RFSystem(BaseModel, extra="forbid"):

@@ -20,6 +20,7 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
     support_system: SupportSystem = SupportSystem()
     bpm_system: BPMSystem = BPMSystem()
     rf_settings: RFSettings = RFSettings()
+    design_rf_settings: RFSettings = RFSettings()
     injection: InjectionSettings = InjectionSettings()
     tuning: Tuning = Tuning()
 
@@ -37,6 +38,9 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
         self.support_system.update_all()
         self.design_magnet_settings.sendall()
         self.magnet_settings.sendall()
+        for rf_settings in [self.rf_settings, self.design_rf_settings]:
+            for system_name in rf_settings.systems:
+                rf_settings.systems[system_name].trigger_update()
         return self
 
     @classmethod
@@ -63,11 +67,15 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
         self.design_magnet_settings._parent = self
         self.support_system._parent = self
         self.bpm_system._parent = self
-        self.rf_settings._parent = self
-        for system_name in self.rf_settings.systems:
-            system = self.rf_settings.systems[system_name]
-            for cav_name in system.cavities:
-                self.rf_settings.cavities[cav_name]._parent_system = system
+
+        for rf_settings in [self.rf_settings, self.design_rf_settings]:
+            rf_settings._parent = self
+            for system_name in rf_settings.systems:
+                system = rf_settings.systems[system_name]
+                system._parent = rf_settings
+                for cav_name in system.cavities:
+                    rf_settings.cavities[cav_name]._parent_system = system
+
         self.injection._parent = self
         self.tuning._parent = self
         return

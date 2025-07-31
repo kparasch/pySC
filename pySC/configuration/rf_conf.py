@@ -35,6 +35,7 @@ def configure_rf(SC: SimulatedCommissioning) -> None:
                 print(f'WARNING: cavities in the {rf_category} rf system do not have the same frequency.')
 
             cavity = RFCavity(sim_index=index, phase_delta=phase_delta, frequency_delta=frequency_delta)
+            design_cavity = RFCavity(sim_index=index, phase_delta=phase_delta, frequency_delta=frequency_delta, to_design=True)
 
             if 'voltage' in rf_conf:
                 sig = get_error(rf_conf['voltage'], error_table=error_table)
@@ -49,13 +50,18 @@ def configure_rf(SC: SimulatedCommissioning) -> None:
                 cavity.frequency_error = SC.rng.normal_trunc(0, sig)
 
             SC.rf_settings.cavities[name] = cavity
+            SC.design_rf_settings.cavities[name] = design_cavity
 
         SC.rf_settings.systems[rf_category] = RFSystem(cavities=cavity_names, voltage=total_voltage,
                                                        phase=system_phase, frequency=system_frequency)
+        SC.design_rf_settings.systems[rf_category] = RFSystem(cavities=cavity_names, voltage=total_voltage,
+                                                       phase=system_phase, frequency=system_frequency)
 
         SC.rf_settings.systems[rf_category]._parent = SC.rf_settings
+        SC.design_rf_settings.systems[rf_category]._parent = SC.design_rf_settings
         for name in cavity_names:
             SC.rf_settings.cavities[name]._parent_system = SC.rf_settings.systems[rf_category]
+            SC.design_rf_settings.cavities[name]._parent_system = SC.design_rf_settings.systems[rf_category]
 
         SC.rf_settings.systems[rf_category].trigger_update()
-
+        SC.design_rf_settings.systems[rf_category].trigger_update()

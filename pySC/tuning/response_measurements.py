@@ -1,6 +1,9 @@
-from typing import Union
+from typing import Union, TYPE_CHECKING
 import numpy as np
 from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
+
+if TYPE_CHECKING:
+    from ..core.new_simulated_commissioning import SimulatedCommissioning
 
 progress = Progress(
                     TextColumn("[progress.description]{task.description}"),
@@ -36,7 +39,7 @@ def response_loop(inputs, inputs_delta, get_output, settings):
 
     return RM
 
-def measure_TrajectoryResponseMatrix(SC, n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False):
+def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False):
     print('Calculating response matrix')
 
     ### set inputs
@@ -65,7 +68,7 @@ def measure_TrajectoryResponseMatrix(SC, n_turns: int = 1, dkick: Union[float, l
 
     return RM
 
-def measure_OrbitResponseMatrix(SC, dkick: Union[float, list] = 1e-5, use_design: bool = False):
+def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", dkick: Union[float, list] = 1e-5, use_design: bool = False):
     print('Calculating response matrix')
 
     ### set inputs
@@ -93,3 +96,25 @@ def measure_OrbitResponseMatrix(SC, dkick: Union[float, list] = 1e-5, use_design
     RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings)
 
     return RM
+
+def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main', use_design: bool = False):
+
+    rf_settings = SC.design_rf_settings if use_design else SC.rf_settings
+    rf_system = rf_settings.systems[rf_system_name]
+
+    ### function that gathers outputs
+    def get_orbit():
+        x,y = SC.bpm_system.capture_orbit(bba=False, subtract_reference=False, use_design=use_design)
+        return np.concat((x.flatten(order='F'), y.flatten(order='F')))
+
+    frf = rf_system.frequency
+    
+    xy0 = get_orbit()
+    rf_system.set_frequency(frf + delta_frf)
+    xy1 = get_orbit()
+    rf_system.set_frequency(frf)
+    response = (xy1 - xy0)/delta_frf
+
+    return response
+
+

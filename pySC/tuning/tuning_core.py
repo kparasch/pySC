@@ -1,7 +1,7 @@
 from pydantic import BaseModel, PrivateAttr
 from typing import Optional, Union, TYPE_CHECKING
 from .response_matrix import ResponseMatrix
-from .response_measurements import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix
+from .response_measurements import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix, measure_RFFrequencyOrbitResponse
 from .trajectory_bba import Trajectory_BBA_Configuration, trajectory_bba, get_mag_s_pos
 
 import numpy as np
@@ -141,6 +141,17 @@ class Tuning(BaseModel, extra="forbid"):
         rms_y = np.nanstd(orbit_y) * 1e6
         print(f'Corrected orbit: {rms_x=:.1f} um, {rms_y=:.1f} um.')
         return
+
+    def fit_dispersive_orbit(self):
+        SC = self._parent
+        response = measure_RFFrequencyOrbitResponse(SC=SC, use_design=True)
+
+        x,y = SC.bpm_system.capture_orbit(bba=False, subtract_reference=False, use_design=False)
+        xy =  np.concat((x.flatten(order='F'), y.flatten(order='F')))
+
+        return np.dot(xy, response) / np.dot(response, response)
+        
+        
 
     def set_multipole_scale(self, scale: float = 1):
         print(f'Setting "multipoles" to {scale*100:.0f}%')

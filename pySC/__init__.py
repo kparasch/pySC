@@ -6,11 +6,15 @@ pySC
 
 """
 
-__title__ = "pySC"
-__description__ = "Python version of Simulated Commissioning toolkit for synchrotrons (https://github.com/ThorstenHellert/SC) "
-__url__ = "https://github.com/lmalina/pySC"
-__version__ = "0.2.0"
-__author__ = "lmalina"
-__author_email__ = "lukas.malina@desy.de"
+__version__ = "0.3.0"
 
-__all__ = [__version__]
+from .core.new_simulated_commissioning import SimulatedCommissioning
+import logging
+
+logging.basicConfig(
+    #format='%(asctime)s.%(msecs)03d:%(levelname)s:%(name)s:\t%(message)s',
+    format="{asctime} | {levelname} | {message}",
+    datefmt="%d %b% %Y, %H:%M:%S",
+    level=logging.DEBUG,
+    style='{'
+)

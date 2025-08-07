@@ -82,3 +82,9 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
 
     def start_server(self, port : int = 13131, timeout: int = 1) -> None:
         _start_server(self, port=port, refresh_rate=timeout)
+
+    def copy(self) -> "SimulatedCommissioning":
+        """
+        Create a copy of the SimulatedCommissioning instance.
+        """
+        return SimulatedCommissioning.model_validate(self.model_dump())

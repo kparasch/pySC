@@ -3,13 +3,18 @@ from typing import Optional, Union, TYPE_CHECKING
 from .response_matrix import ResponseMatrix
 from .response_measurements import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix, measure_RFFrequencyOrbitResponse
 from .trajectory_bba import Trajectory_BBA_Configuration, trajectory_bba, get_mag_s_pos
+from .parallel import parallel_tbba_target, get_listener_and_queue
 
 import numpy as np
 from pathlib import Path
 import json
+import logging
+from multiprocessing import Process, Queue
 
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
+
+logger = logging.getLogger(__name__)
 
 class Tuning(BaseModel, extra="forbid"):
     HCORR: list[str] = []
@@ -211,7 +216,7 @@ class Tuning(BaseModel, extra="forbid"):
             self._parent.bpm_system.bba_offsets_x[bpm_number] = bba_x
             self._parent.bpm_system.bba_offsets_y[bpm_number] = bba_y
 
-    def do_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1):
+    def do_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1, skip_summary: bool = False):
         SC = self._parent
         if bpm_names is None:
             bpm_names = SC.bpm_system.names
@@ -226,20 +231,71 @@ class Tuning(BaseModel, extra="forbid"):
             true_offset_x, true_offset_y = self.bba_to_quad_true_offset(bpm_name=name)
             bpm_number = SC.bpm_system.bpm_number(name=name)
             offset_x, offset_x_err = trajectory_bba(SC, name, plane='H', shots_per_trajectory=shots_per_trajectory)
-            print(f'\t{name=}, bpm_number = {bpm_number}')
-            print(f'\t\t new H. offset = {offset_x*1e6:.1f} +- {offset_x_err*1e6:.1f} um, true offset is {true_offset_x*1e6:.1f} um')
+            logger.info(f'T. BBA: Name={name}, number={bpm_number}, new H. offset = {offset_x*1e6:.1f} +- {offset_x_err*1e6:.1f} um, true is {true_offset_x*1e6:.1f} um')
             offset_y, offset_y_err = trajectory_bba(SC, name, plane='V', shots_per_trajectory=shots_per_trajectory)
-            print(f'\t\t new V. offset = {offset_y*1e6:.1f} +- {offset_y_err*1e6:.1f} um, true offset is {true_offset_y*1e6:.1f} um')
+            logger.info(f'T. BBA: Name={name}, number={bpm_number}, new V. offset = {offset_y*1e6:.1f} +- {offset_y_err*1e6:.1f} um, true is {true_offset_y*1e6:.1f} um')
 
             true_offsets_x[ii] = true_offset_x
             true_offsets_y[ii] = true_offset_y
             offsets_x[ii] = offset_x
             offsets_y[ii] = offset_y
 
+        if not skip_summary:
+            acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
+            acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
+            logger.info(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
+
+        for ii, bpm_number in enumerate(bpm_numbers):
+            SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
+            SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
+        return offsets_x, offsets_y
+
+    def do_parallel_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1, omp_num_threads: int = 2):
+        SC = self._parent
+        if bpm_names is None:
+            bpm_names = SC.bpm_system.names
+
+        logger.info(f'Running parallel trajectory BBA with {omp_num_threads} processes.')
+        n_bpm = len(bpm_names)
+        bpm_mapping = {name: ii for ii, name in enumerate(bpm_names)}
+        #split bpm_names into n_processes chunks
+        bpm_names_chunks = [bpm_names[i::omp_num_threads] for i in range(omp_num_threads)]
+
+        SC_model = SC.model_dump()
+        SC_class = SC.__class__
+
+        queue = Queue()
+        listener, log_queue = get_listener_and_queue(logger)
+        processes = []
+        listener.start()
+        for num in range(omp_num_threads):
+            p = Process(target=parallel_tbba_target, args=(SC_model, SC_class, bpm_names_chunks[num], shots_per_trajectory, queue, log_queue))
+            processes.append(p)
+            p.start()
+
+        rets = []
+        for p in processes:
+            ret = queue.get()  
+            rets.append(ret)
+        for p in processes:
+            p.join()
+
+        offsets_x = np.zeros(n_bpm)
+        offsets_y = np.zeros(n_bpm)
+        true_offsets_x = np.zeros(n_bpm)
+        true_offsets_y = np.zeros(n_bpm)
+        for bpm_names_chunk, offsets_x_chunk, offsets_y_chunk in rets:
+            for name, offset_x, offset_y in zip(bpm_names_chunk, offsets_x_chunk, offsets_y_chunk):
+                ii = bpm_mapping[name]
+                offsets_x[ii] = offset_x
+                offsets_y[ii] = offset_y
+                true_offsets_x[ii], true_offsets_y[ii] = SC.tuning.bba_to_quad_true_offset(bpm_name=name)
+
         acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
         acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
         print(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
+        bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
         for ii, bpm_number in enumerate(bpm_numbers):
             SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]

@@ -301,9 +301,18 @@ class Tuning(BaseModel, extra="forbid"):
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-    def injection_efficiency(self, n_turns: int = 1) -> float:
+    def injection_efficiency(self, n_turns: int = 1, omp_num_threads: Optional[int] = None) -> float:
         SC = self._parent
+
+        if omp_num_threads is not None:
+            previous_threads = SC.lattice.omp_num_threads
+            SC.lattice.omp_num_threads = omp_num_threads
+
         bunch = SC.injection.generate_bunch()
         track_data = SC.lattice.track(bunch, indices=SC.bpm_system.indices, n_turns=n_turns, use_design=False)
         transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+
+        if omp_num_threads is not None:
+            SC.lattice.omp_num_threads = previous_threads
+
         return transmission[-1, :]

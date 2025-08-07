@@ -11,6 +11,7 @@ class Lattice(BaseModel, extra="forbid"):
     """
     lattice_file: str
     no_6d : bool = False
+    _omp_num_threads = PrivateAttr(default=None)
     _ring = PrivateAttr(default=None)
     _design = PrivateAttr(default=None)
     _twiss: dict = PrivateAttr(default=None)
@@ -59,19 +60,40 @@ class ATLattice(Lattice):
             self._design.enable_6d()
 
         self._twiss = self.get_twiss(use_design=True)
+
         return self
+
+    @property
+    def omp_num_threads(self):
+        return self._omp_num_threads
+
+    @omp_num_threads.setter
+    def omp_num_threads(self, value: int):
+        self._omp_num_threads = value
+        at.lattice.DConstant.patpass_poolsize = value
 
     def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False) -> tuple[nparray, nparray]:
         if use_design:
-            if indices is not None:
-                out = self._design.track(bunch.T, refpts=indices, nturns=n_turns)[0]
-            else:
-                out = self._design.track(bunch.T, nturns=n_turns)[0]
+            ring = self._design
         else:
-            if indices is not None:
-                out = self._ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+            ring = self._ring
+
+        if indices is not None:
+            if self.omp_num_threads is not None:
+                out = at.patpass(ring, bunch.T, refpts=indices, nturns=n_turns)
             else:
-                out = self._ring.track(bunch.T, nturns=n_turns)[0]
+                out = ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+            #out = self._design.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+        else:
+            if self.omp_num_threads is not None:
+                out = at.patpass(ring, bunch.T, nturns=n_turns)
+            else:
+                out = ring.track(bunch.T, nturns=n_turns)[0]
+            # out = ring.track(bunch.T, nturns=n_turns)[0]
+        #     if indices is not None:
+        #         out = ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+        #     else:
+        #         out = ring.track(bunch.T, nturns=n_turns)[0]
         xy = out[[0,2], :, :, :]
         return xy
 

@@ -158,6 +158,67 @@ class BPMSystem(BaseModel):
 
         return fake_trajectory_x_tbt, fake_trajectory_y_tbt
 
+    def capture_kick(self, n_turns=1, kick_px=0, kick_py=0, bba=True, subtract_reference=True, use_design=False) -> tuple[np.ndarray, np.ndarray]:
+        '''
+        Simulates an orbit reading, after kicking a stored beam, from the BPMs, applying calibration errors, offsets/rolls, and noise.
+        Args:
+            bba (bool): If True, corrects for the BBA offsets stored in the BPMSystem class.
+            subtract_reference (bool): If True, subtracts the reference orbit from the simulated orbit.
+        Returns:
+            fake_orbit_x: Simulated x-coordinates of the orbit at the BPMs.
+            fake_orbit_y: Simulated y-coordinates of the orbit at the BPMs.
+        '''
+        if use_design:
+            bunch = self._parent.injection.generate_orbit_centered_bunch(use_design=True)
+            bunch[:, 1] += kick_px
+            bunch[:, 3] += kick_py
+            track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
+            transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+            with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                trajectory = np.nanmean(track_data, axis=1) # average over all particles
+            trajectory[0][transmission < self.transmission_threshold] = np.nan
+            trajectory[1][transmission < self.transmission_threshold] = np.nan
+            return trajectory[0], trajectory[1]
+
+        bunch = self._parent.injection.generate_orbit_centered_bunch()
+        bunch[:, 1] += kick_px
+        bunch[:, 3] += kick_py
+        track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=False)
+        transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+        with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            trajectory = np.nanmean(track_data, axis=1) # average over all particles
+        trajectory[0][transmission < self.transmission_threshold] = np.nan
+        trajectory[1][transmission < self.transmission_threshold] = np.nan
+
+        fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
+        fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])
+
+        for n in range(n_turns):
+            one_trajectory = trajectory[:, :, n]
+            rotated_trajectory = np.einsum('ijk,jk->ik', self._rot_matrices, one_trajectory)  
+
+            noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
+            noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
+
+            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
+            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+
+            if bba:
+                # Apply BBA offsets
+                fake_trajectory_x -= self.bba_offsets_x
+                fake_trajectory_y -= self.bba_offsets_y
+
+            if subtract_reference:
+                # Subtract reference orbit
+                fake_trajectory_x -= self.reference_x
+                fake_trajectory_y -= self.reference_y
+
+            fake_trajectory_x_tbt[:, n] = fake_trajectory_x
+            fake_trajectory_y_tbt[:, n] = fake_trajectory_y
+
+        return fake_trajectory_x_tbt, fake_trajectory_y_tbt
     # def capture_turn_by_turn(self, num_turns=1, return_sigma=False, Z0=None):
     #     if Z0 is None:
     #         self.SC.INJ.Z0 = np.zeros(6)

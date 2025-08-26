@@ -86,6 +86,29 @@ class InjectionSettings(BaseModel, extra="forbid"):
         invW[4,4] = 1
         invW[5,5] = 1
 
+    def generate_orbit_centered_bunch(self, use_design=False) -> np.ndarray:
+        # When array will be transposed to go to AT, it will be F_CONTIGUOUS :)
+        bunch = np.zeros([self.n_particles, 6])
+        if self.n_particles > 1:
+            bunch_norm = np.zeros([self.n_particles, 6])
+            bunch_norm[:, 0] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 1] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 2] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 3] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 4] = self._parent.rng.normal(size=self.n_particles)
+            bunch_norm[:, 5] = self._parent.rng.normal(size=self.n_particles)
+            raise NotImplementedError
+        
+        twiss = self._parent.lattice.get_twiss(use_design=use_design)
+
+        bunch[:, 0] += twiss['x'][0]
+        bunch[:, 1] += twiss['px'][0]
+        bunch[:, 2] += twiss['y'][0]
+        bunch[:, 3] += twiss['py'][0]
+        bunch[:, 4] += twiss['tau'][0]
+        bunch[:, 5] += twiss['delta'][0]
+        return bunch
+
     def generate_zero_centered_bunch(self) -> np.ndarray:
         # When array will be transposed to go to AT, it will be F_CONTIGUOUS :)
         bunch = np.zeros([self.n_particles, 6])
@@ -115,8 +138,8 @@ class InjectionSettings(BaseModel, extra="forbid"):
             sgemit_y = self.gemit_y**0.5
             bunch[:, 2] = sgemit_y * bunch[:, 2] 
             bunch[:, 3] = sgemit_y * bunch[:, 3] 
-            bunch[:, 4] = self.energy_spread * bunch[:, 4]
-            bunch[:, 5] = self.bunch_length * bunch[:, 5]
+            bunch[:, 4] = self.bunch_length * bunch[:, 4]
+            bunch[:, 5] = self.energy_spread * bunch[:, 5]
         return bunch
 
     def generate_bunch(self, use_design=False) -> np.ndarray:

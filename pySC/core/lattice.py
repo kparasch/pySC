@@ -73,6 +73,8 @@ class ATLattice(Lattice):
         at.lattice.DConstant.patpass_poolsize = value
 
     def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False) -> tuple[nparray, nparray]:
+        new_bunch = bunch.copy()
+        new_bunch[:,4], new_bunch[:,5] = new_bunch[:,5], new_bunch[:,4]  # swap zeta and delta for AT
         if use_design:
             ring = self._design
         else:
@@ -80,15 +82,15 @@ class ATLattice(Lattice):
 
         if indices is not None:
             if self.omp_num_threads is not None:
-                out = at.patpass(ring, bunch.T, refpts=indices, nturns=n_turns)
+                out = at.patpass(ring, new_bunch.T, refpts=indices, nturns=n_turns)
             else:
-                out = ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+                out = ring.track(new_bunch.T, refpts=indices, nturns=n_turns)[0]
             #out = self._design.track(bunch.T, refpts=indices, nturns=n_turns)[0]
         else:
             if self.omp_num_threads is not None:
-                out = at.patpass(ring, bunch.T, nturns=n_turns)
+                out = at.patpass(ring, new_bunch.T, nturns=n_turns)
             else:
-                out = ring.track(bunch.T, nturns=n_turns)[0]
+                out = ring.track(new_bunch.T, nturns=n_turns)[0]
             # out = ring.track(bunch.T, nturns=n_turns)[0]
         #     if indices is not None:
         #         out = ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
@@ -131,7 +133,7 @@ class ATLattice(Lattice):
                  'y' : elemdata.closed_orbit[:, 2],
                  'py': elemdata.closed_orbit[:, 3],
                  'delta': elemdata.closed_orbit[:, 4],
-                 'zeta': elemdata.closed_orbit[:, 5],
+                 'tau': elemdata.closed_orbit[:, 5],
                  'betx': elemdata.beta[:, 0],
                  'bety': elemdata.beta[:, 1],
                  'alfx': elemdata.alpha[:, 0],

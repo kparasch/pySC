@@ -16,7 +16,7 @@ BPM_FIELDS_TO_INITIALISE = ['offsets_x', 'offsets_y', 'rolls',
                             'bba_offsets_x', 'bba_offsets_y',
                             'reference_x', 'reference_y']
 
-class BPMSystem(BaseModel):
+class BPMSystem(BaseModel, extra='forbid'):
     indices: list[int] = []
     names: list[BPM_NAME_TYPE] = []
 

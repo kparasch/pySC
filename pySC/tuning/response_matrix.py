@@ -32,7 +32,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
 
     _n_outputs: int = 0
     _n_inputs: int = 0
-    _singular_values: Optional[NPARRAY] = None
+    _singular_values: Optional[NPARRAY] = None ## TODO PrivateAttr??
     _bad_outputs: list[int] = PrivateAttr(default=[])
     _bad_inputs: list[int] = PrivateAttr(default=[])
 

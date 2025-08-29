@@ -186,3 +186,14 @@ class MagnetSettings(BaseModel, extra="forbid"):
         """
         for magnet in self.magnets.values():
             magnet.update()
+
+    def get_many(self, control_list: list[str], use_design: bool = False) -> dict[str, float]:
+        data = {}
+        for control_name in control_list:
+            data[control_name] = self.get(control_name, use_design=use_design)
+        return data
+
+    def set_many(self, data: dict[str, float], use_design: bool = False) -> None:
+        for control_name in data.keys():
+            self.set(control_name, data[control_name], use_design=use_design)
+        return

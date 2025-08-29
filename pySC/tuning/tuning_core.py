@@ -4,6 +4,7 @@ from .response_matrix import ResponseMatrix
 from .response_measurements import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix, measure_RFFrequencyOrbitResponse
 from .trajectory_bba import Trajectory_BBA_Configuration, trajectory_bba, get_mag_s_pos
 from .parallel import parallel_tbba_target, get_listener_and_queue
+from .tune import Tune
 
 import numpy as np
 from pathlib import Path
@@ -20,6 +21,7 @@ class Tuning(BaseModel, extra="forbid"):
     HCORR: list[str] = []
     VCORR: list[str] = []
     multipoles: list[str] = []
+    tune: Tune = Tune()
     bba_magnets: list[str] = []
     trajectory_bba_config: Optional[Trajectory_BBA_Configuration] = None
     RM_folder: Optional[str] = None

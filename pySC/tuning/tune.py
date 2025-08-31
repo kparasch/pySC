@@ -105,7 +105,7 @@ class Tune(BaseModel, extra="forbid"):
 
         for _ in range(n_iter):
             qx, qy = self.measure_with_kick(kick_px, kick_py, n_turns=n_turns)
-            if qx is None or qy is None:
+            if qx is None or qy is None or qx != qx or qy != qy:
                 logger.info("Tune measurement failed, skipping correction.")
                 return
             logger.info(f"Measured tune: qx={qx:.4f}, qy={qy:.4f}")

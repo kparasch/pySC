@@ -33,3 +33,10 @@ def parallel_tbba_target(SC_model, SC_class, bpm_names, shots_per_trajectory, qu
     offsets_x, offsets_y = SC.tuning.do_trajectory_bba(bpm_names=bpm_names, shots_per_trajectory=shots_per_trajectory)
     queue.put((bpm_names, offsets_x, offsets_y))
     del SC
+
+def parallel_obba_target(SC_model, SC_class, bpm_names, shots_per_orbit, queue, log_queue):
+    logging_init(log_queue)
+    SC = SC_class.model_validate(SC_model)
+    offsets_x, offsets_y = SC.tuning.do_orbit_bba(bpm_names=bpm_names, shots_per_orbit=shots_per_orbit)
+    queue.put((bpm_names, offsets_x, offsets_y))
+    del SC

@@ -3,7 +3,8 @@ from typing import Optional, Union, TYPE_CHECKING
 from .response_matrix import ResponseMatrix
 from .response_measurements import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix, measure_RFFrequencyOrbitResponse
 from .trajectory_bba import Trajectory_BBA_Configuration, trajectory_bba, get_mag_s_pos
-from .parallel import parallel_tbba_target, get_listener_and_queue
+from .orbit_bba import Orbit_BBA_Configuration, orbit_bba
+from .parallel import parallel_tbba_target, parallel_obba_target, get_listener_and_queue
 from .tune import Tune
 
 import numpy as np
@@ -24,6 +25,7 @@ class Tuning(BaseModel, extra="forbid"):
     tune: Tune = Tune()
     bba_magnets: list[str] = []
     trajectory_bba_config: Optional[Trajectory_BBA_Configuration] = None
+    orbit_bba_config: Optional[Orbit_BBA_Configuration] = None
     RM_folder: Optional[str] = None
 
     _responses: Optional[dict[str, ResponseMatrix]] = PrivateAttr(default={})
@@ -46,7 +48,7 @@ class Tuning(BaseModel, extra="forbid"):
         if name not in self.response_matrix and self.RM_folder is not None:
             rm_path = Path(self.RM_folder) / Path(name + '.json')
             if rm_path.exists():
-                print(f'Loading {name} RM from file: {rm_path}')
+                logger.info(f'Loading {name} RM from file: {rm_path}')
                 self.response_matrix[name] = ResponseMatrix.model_validate(json.load(open(rm_path,'r')))
             else:
                 if orbit:
@@ -94,7 +96,7 @@ class Tuning(BaseModel, extra="forbid"):
         rms_y = np.nanstd(trajectory_y) * 1e6
         bad_readings = sum(np.isnan(trajectory_x))
         good_turns = (len(trajectory_x) - bad_readings) / len(self._parent.bpm_system.indices)
-        print(f'Corrected injection: transmission through {good_turns:.2f}/{n_turns} turns, {rms_x=:.1f} um, {rms_y=:.1f} um.')
+        logger.info(f'Corrected injection: transmission through {good_turns:.2f}/{n_turns} turns, {rms_x=:.1f} um, {rms_y=:.1f} um.')
 
         return
 
@@ -123,7 +125,7 @@ class Tuning(BaseModel, extra="forbid"):
         rms_y = np.nanstd(trajectory_y) * 1e6
         bad_readings = sum(np.isnan(trajectory_x))
         good_turns = (len(trajectory_x) - bad_readings) / len(self._parent.bpm_system.indices)
-        print(f'Corrected injection: transmission through {good_turns:.2f}/{n_turns} turns, {rms_x=:.1f} um, {rms_y=:.1f} um.')
+        logger.info(f'Corrected injection: transmission through {good_turns:.2f}/{n_turns} turns, {rms_x=:.1f} um, {rms_y=:.1f} um.')
 
         return
 
@@ -146,7 +148,7 @@ class Tuning(BaseModel, extra="forbid"):
         orbit_x, orbit_y = self._parent.bpm_system.capture_orbit()
         rms_x = np.nanstd(orbit_x) * 1e6
         rms_y = np.nanstd(orbit_y) * 1e6
-        print(f'Corrected orbit: {rms_x=:.1f} um, {rms_y=:.1f} um.')
+        logger.info(f'Corrected orbit: {rms_x=:.1f} um, {rms_y=:.1f} um.')
         return
 
     def fit_dispersive_orbit(self):
@@ -161,7 +163,7 @@ class Tuning(BaseModel, extra="forbid"):
         
 
     def set_multipole_scale(self, scale: float = 1):
-        print(f'Setting "multipoles" to {scale*100:.0f}%')
+        logger.info(f'Setting "multipoles" to {scale*100:.0f}%')
         for control_name in self.multipoles:
             setpoint = self._parent.design_magnet_settings.get(control_name)
             self._parent.magnet_settings.set(control_name, scale*setpoint)
@@ -181,6 +183,14 @@ class Tuning(BaseModel, extra="forbid"):
                                                               n_downstream_bpms=n_downstream_bpms,
                                                               max_ncorr_index=max_ncorr_index)
         self.trajectory_bba_config = config
+        return
+
+    def generate_orbit_bba_config(self, max_dx_at_bpm: float = 0.3e-3, 
+                                       max_modulation: float = 20e-6) -> None:
+        config = Orbit_BBA_Configuration.generate_config(SC=self._parent,
+                                                         max_dx_at_bpm=max_dx_at_bpm,
+                                                         max_modulation=max_modulation)
+        self.orbit_bba_config = config
         return
 
     def bba_to_quad_true_offset(self, bpm_name: str, plane=None) -> Union[float, tuple[float,float]]:
@@ -252,6 +262,40 @@ class Tuning(BaseModel, extra="forbid"):
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
+    def do_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, skip_summary: bool = False, n_corr_steps: int = 7):
+        SC = self._parent
+        if bpm_names is None:
+            bpm_names = SC.bpm_system.names
+
+        n_bpm = len(bpm_names)
+        bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
+        offsets_x = np.zeros(n_bpm)
+        offsets_y = np.zeros(n_bpm)
+        true_offsets_x = np.zeros(n_bpm)
+        true_offsets_y = np.zeros(n_bpm)
+        for ii, name in enumerate(bpm_names):
+            true_offset_x, true_offset_y = self.bba_to_quad_true_offset(bpm_name=name)
+            bpm_number = SC.bpm_system.bpm_number(name=name)
+            offset_x, offset_x_err = orbit_bba(SC, name, plane='H', shots_per_orbit=shots_per_orbit, n_corr_steps=n_corr_steps)
+            logger.info(f'O. BBA: Name={name}, number={bpm_number}, new H. offset = {offset_x*1e6:.1f} +- {offset_x_err*1e6:.1f} um, true is {true_offset_x*1e6:.1f} um')
+            offset_y, offset_y_err = orbit_bba(SC, name, plane='V', shots_per_orbit=shots_per_orbit, n_corr_steps=n_corr_steps)
+            logger.info(f'O. BBA: Name={name}, number={bpm_number}, new V. offset = {offset_y*1e6:.1f} +- {offset_y_err*1e6:.1f} um, true is {true_offset_y*1e6:.1f} um')
+
+            true_offsets_x[ii] = true_offset_x
+            true_offsets_y[ii] = true_offset_y
+            offsets_x[ii] = offset_x
+            offsets_y[ii] = offset_y
+
+        if not skip_summary:
+            acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
+            acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
+            logger.info(f'Orbit BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
+
+        for ii, bpm_number in enumerate(bpm_numbers):
+            SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
+            SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
+        return offsets_x, offsets_y
+
     def do_parallel_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1, omp_num_threads: int = 2):
         SC = self._parent
         if bpm_names is None:
@@ -296,6 +340,57 @@ class Tuning(BaseModel, extra="forbid"):
         acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
         acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
         print(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
+
+        bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
+        for ii, bpm_number in enumerate(bpm_numbers):
+            SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
+            SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
+        return offsets_x, offsets_y
+
+    def do_parallel_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, omp_num_threads: int = 2):
+        SC = self._parent
+        if bpm_names is None:
+            bpm_names = SC.bpm_system.names
+
+        logger.info(f'Running parallel orbit BBA with {omp_num_threads} processes.')
+        n_bpm = len(bpm_names)
+        bpm_mapping = {name: ii for ii, name in enumerate(bpm_names)}
+        #split bpm_names into n_processes chunks
+        bpm_names_chunks = [bpm_names[i::omp_num_threads] for i in range(omp_num_threads)]
+
+        SC_model = SC.model_dump()
+        SC_class = SC.__class__
+
+        queue = Queue()
+        listener, log_queue = get_listener_and_queue(logger)
+        processes = []
+        listener.start()
+        for num in range(omp_num_threads):
+            p = Process(target=parallel_obba_target, args=(SC_model, SC_class, bpm_names_chunks[num], shots_per_orbit, queue, log_queue))
+            processes.append(p)
+            p.start()
+
+        rets = []
+        for p in processes:
+            ret = queue.get()  
+            rets.append(ret)
+        for p in processes:
+            p.join()
+
+        offsets_x = np.zeros(n_bpm)
+        offsets_y = np.zeros(n_bpm)
+        true_offsets_x = np.zeros(n_bpm)
+        true_offsets_y = np.zeros(n_bpm)
+        for bpm_names_chunk, offsets_x_chunk, offsets_y_chunk in rets:
+            for name, offset_x, offset_y in zip(bpm_names_chunk, offsets_x_chunk, offsets_y_chunk):
+                ii = bpm_mapping[name]
+                offsets_x[ii] = offset_x
+                offsets_y[ii] = offset_y
+                true_offsets_x[ii], true_offsets_y[ii] = SC.tuning.bba_to_quad_true_offset(bpm_name=name)
+
+        acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
+        acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
+        print(f'Orbit BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
         for ii, bpm_number in enumerate(bpm_numbers):

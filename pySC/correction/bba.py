@@ -147,8 +147,8 @@ def orbit_bba_one_bpm_one_plane(SC, bpm_id, magnet_id, n_dim, n_k1_steps=5, max_
     SC.set_cm_setpoints(corrector_ids, zero_kick, skewness=cm_is_skew, method='abs')
     SC.set_magnet_setpoints(magnet_id, zero_quad, skewness=quad_is_skew, order=1, method='abs')
 
-    SC.orbits.append(orbits)
-    SC.bps.append(bpm_pos)
+    # SC.orbits.append(orbits)
+    # SC.bps.append(bpm_pos)
 
     par = DotDict(dict(fit_order=1,# magnet_strengths=k2_steps, 
                        dipole_compensation=True, 

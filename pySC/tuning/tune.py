@@ -83,12 +83,12 @@ class Tune(BaseModel, extra="forbid"):
         x, y = SC.bpm_system.capture_kick(n_turns=n_turns, kick_px=kick_px, kick_py=kick_py)
         amp_x, harm_x = nafflib.harmonics(x[0,:] - np.mean(x[0,:]), num_harmonics=2)
         amp_y, harm_y = nafflib.harmonics(y[0,:] - np.mean(y[0,:]), num_harmonics=2)
-        qx = harm_x[0]
+        qx = abs(harm_x[0])
         qy = None
         for hy in harm_y:
-            if abs(hy - qx) < dqtol:
+            if abs(abs(hy) - qx) < dqtol:
                 continue
-            qy = hy
+            qy = abs(hy)
         return float(qx), float(qy)
 
     def correct(self, target_qx: Optional[float] = None, target_qy: Optional[float] = None,

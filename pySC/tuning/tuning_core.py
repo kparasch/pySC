@@ -6,6 +6,7 @@ from .trajectory_bba import Trajectory_BBA_Configuration, trajectory_bba, get_ma
 from .orbit_bba import Orbit_BBA_Configuration, orbit_bba
 from .parallel import parallel_tbba_target, parallel_obba_target, get_listener_and_queue
 from .tune import Tune
+from .rf_tuning import RF_tuning
 
 import numpy as np
 from pathlib import Path
@@ -21,8 +22,12 @@ logger = logging.getLogger(__name__)
 class Tuning(BaseModel, extra="forbid"):
     HCORR: list[str] = []
     VCORR: list[str] = []
+    bad_bpms: list[int] = []
     multipoles: list[str] = []
-    tune: Tune = Tune()
+
+    tune: Tune = Tune() ## TODO: generate config from yaml file
+    rf: RF_tuning = RF_tuning() ## TODO: generate config from yaml file
+
     bba_magnets: list[str] = []
     trajectory_bba_config: Optional[Trajectory_BBA_Configuration] = None
     orbit_bba_config: Optional[Orbit_BBA_Configuration] = None
@@ -73,16 +78,34 @@ class Tuning(BaseModel, extra="forbid"):
             json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
         return 
 
-    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1):
+    def bad_outputs_from_bad_bpms(self, bad_bpms: list[int], n_bpms: int, n_turns: int = 1) -> list[int]:
+        bad_outputs = []
+        for plane in [0, 1]:
+            for turn in range(n_turns):
+                for bpm in bad_bpms:
+                    bad_outputs.append(bpm + turn * n_bpms + plane * n_turns * n_bpms)
+        return bad_outputs
+
+    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False):
         RM_name = f'trajectory{n_turns}'
         self.fetch_response_matrix(RM_name, orbit=False)
         RM = self.response_matrix[RM_name]
+        n_bpms = len(self._parent.bpm_system.indices)
+        RM.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms, n_bpms=n_bpms, n_turns=n_turns)
 
         for _ in range(n_reps):
             trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
             trajectory = np.concat((trajectory_x.flatten(order='F'), trajectory_y.flatten(order='F')))
 
-            trims = RM.solve(trajectory, method=method, parameter=parameter)
+            if correct_to_first_turn:
+                reference = np.zeros_like(trajectory)
+                n_per_turn = len(trajectory) // n_turns
+                for iturn in range(1, n_turns):
+                    reference[iturn*n_per_turn:(iturn+1)*n_per_turn] = trajectory[0:n_per_turn]
+            else:
+                reference = np.zeros_like(trajectory)
+
+            trims = RM.solve(trajectory - reference, method=method, parameter=parameter)
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):

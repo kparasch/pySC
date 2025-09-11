@@ -72,13 +72,19 @@ class ATLattice(Lattice):
         self._omp_num_threads = value
         at.lattice.DConstant.patpass_poolsize = value
 
-    def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False) -> tuple[nparray, nparray]:
+    def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False, coordinates: Optional[list] = None) -> nparray:
         new_bunch = bunch.copy()
         new_bunch[:,4], new_bunch[:,5] = new_bunch[:,5], new_bunch[:,4]  # swap zeta and delta for AT
         if use_design:
             ring = self._design
         else:
             ring = self._ring
+
+        ## transform coordinates to indices
+        if coordinates is None:
+            coordinates = ['x', 'y']
+        coord_map = {'x':0, 'px':1, 'y':2, 'py':3, 'tau':5, 'delta':4}
+        coords = [coord_map[c] for c in coordinates]
 
         if indices is not None:
             if self.omp_num_threads is not None:
@@ -96,7 +102,7 @@ class ATLattice(Lattice):
         #         out = ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
         #     else:
         #         out = ring.track(bunch.T, nturns=n_turns)[0]
-        xy = out[[0,2], :, :, :]
+        xy = out[coords, :, :, :]
         return xy
 
     def get_orbit(self, indices: list[int] = None, use_design=False) -> dict:

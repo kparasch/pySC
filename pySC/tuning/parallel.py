@@ -2,11 +2,12 @@ import logging
 from logging.handlers import QueueHandler, QueueListener
 import multiprocessing
 from multiprocessing import Queue
+import sys
 
 
 def get_listener_and_queue(logger):
     log_queue = Queue()
-    handler = logging.StreamHandler()
+    handler = logging.StreamHandler(stream=sys.stdout)
     logger.addHandler(handler)
     listener = QueueListener(log_queue, handler, respect_handler_level=True)
     return listener, log_queue

@@ -79,6 +79,7 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
         self.injection._parent = self
         self.tuning._parent = self
         self.tuning.tune._parent = self.tuning
+        self.tuning.rf._parent = self.tuning
         return
 
     def start_server(self, port : int = 13131, timeout: int = 1) -> None:

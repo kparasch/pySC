@@ -2,6 +2,9 @@ from pydantic import BaseModel, PrivateAttr, model_validator, ConfigDict
 from typing import Optional, Literal
 from ..core.numpy_type import NPARRAY
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 class InverseResponseMatrix(BaseModel, extra="forbid"):
     matrix: NPARRAY
@@ -21,7 +24,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
     #inputs -> columns -> axis = 1
     #outputs -> rows -> axis = 0
     # here, good and bad in the names of the variables mean that bad output/input includes inside
-    # values which are marked to be ignored (like bad bpms).
+    # values which are marked to be ignored (e.g. bad bpms are bad_outputs).
     RM: NPARRAY
 
     # input_indices: list[int]
@@ -62,12 +65,12 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         self.make_masks()
 
     @property
-    def good_inputs(self) -> list[int]:
-        return self._bad_inputs
+    def bad_outputs(self) -> list[int]:
+        return self._bad_outputs
 
-    @good_inputs.setter
-    def good_inputs(self, good_list: list[int]) -> None:
-        self._good_inputs = good_list.copy()
+    @bad_outputs.setter
+    def bad_outputs(self, bad_list: list[int]) -> None:
+        self._bad_outputs = bad_list.copy()
         self.make_masks()
 
     def make_masks(self):
@@ -77,7 +80,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         self._input_mask[self._bad_inputs] = False
 
     def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0.):
-        print(f'Rebuilding pseudoinverse RM with {method=} and {parameter=}.')
+        logging.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=}.')
         matrix = self.RM[self._output_mask, :][:, self._input_mask]
         U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)
 
@@ -102,17 +105,17 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter)
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.):
+        expected_shape = (self._n_inputs - len(self._bad_inputs), self._n_outputs - len(self._bad_outputs))
         if self._inverse_RM is None:
             self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
         else:
-            if self._inverse_RM.method != method or self._inverse_RM.parameter != parameter:
+            if self._inverse_RM.method != method or self._inverse_RM.parameter != parameter or self._inverse_RM.shape != expected_shape:
                 self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
 
         bad_output = output.copy()
         bad_output[np.isnan(bad_output)] = 0
         good_output = bad_output[self._output_mask]
 
-        expected_shape = (self._n_inputs - len(self._bad_inputs), len(good_output))
         if self._inverse_RM.shape != expected_shape:
             raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 
              + f'inverse RM shape = {self._inverse_RM.shape},\n'

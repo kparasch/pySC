@@ -2,6 +2,7 @@ from typing import Dict, Optional, Union, TYPE_CHECKING
 from pydantic import BaseModel, PrivateAttr, ConfigDict
 import numpy as np
 import logging
+import scipy.optimize
 
 from ..core.numpy_type import NPARRAY
 
@@ -60,20 +61,20 @@ class Tune(BaseModel, extra="forbid"):
         self.inverse_tune_response_matrix = iTRM
         return
 
-    def trim_tune(self, dqx: float = 0, dqy: float = 0):
+    def trim_tune(self, dqx: float = 0, dqy: float = 0, use_design: bool = False) -> None:
         SC = self._parent._parent
         if self.inverse_tune_response_matrix is None:
             logger.info('Did not find inverse tune response matrix. Building now.')
             self.build_tune_response_matrix()
 
         dk1, dk2 = np.dot(self.inverse_tune_response_matrix, [dqx, dqy])
-        ref_data1 = SC.magnet_settings.get_many(self.tune_quad_controls_1)
-        ref_data2 = SC.magnet_settings.get_many(self.tune_quad_controls_2)
+        ref_data1 = SC.magnet_settings.get_many(self.tune_quad_controls_1, use_design=use_design)
+        ref_data2 = SC.magnet_settings.get_many(self.tune_quad_controls_2, use_design=use_design)
         data1 = {key: ref_data1[key] + dk1 for key in ref_data1.keys()}
         data2 = {key: ref_data2[key] + dk2 for key in ref_data2.keys()}
 
-        SC.magnet_settings.set_many(data1)
-        SC.magnet_settings.set_many(data2)
+        SC.magnet_settings.set_many(data1, use_design=use_design)
+        SC.magnet_settings.set_many(data2, use_design=use_design)
         return
 
     def measure_with_kick(self, kick_px=10e-6, kick_py=10e-6, n_turns=100):
@@ -94,7 +95,7 @@ class Tune(BaseModel, extra="forbid"):
     def correct(self, target_qx: Optional[float] = None, target_qy: Optional[float] = None,
                 kick_px: float = 10e-6, kick_py: float = 10e-6, n_turns: int = 100, n_iter: int = 1,
                 gain: float = 1, measurement_method: str = 'kick'):
-        if measurement_method not in ['kick']:
+        if measurement_method not in ['kick', 'first_turn']:
             raise NotImplementedError(f'{measurement_method=} not implemented yet.')
 
         if target_qx is None:
@@ -104,7 +105,12 @@ class Tune(BaseModel, extra="forbid"):
             target_qy = self.design_qy
 
         for _ in range(n_iter):
-            qx, qy = self.measure_with_kick(kick_px, kick_py, n_turns=n_turns)
+            if measurement_method == 'kick':
+                qx, qy = self.measure_with_kick(kick_px, kick_py, n_turns=n_turns)
+            elif measurement_method == 'first_turn':
+                qx, qy = self.estimate_from_first_turn(kick_px)
+            else:
+                raise Exception(f'Unknown measurement_method {measurement_method}')
             if qx is None or qy is None or qx != qx or qy != qy:
                 logger.info("Tune measurement failed, skipping correction.")
                 return
@@ -114,3 +120,80 @@ class Tune(BaseModel, extra="forbid"):
             logger.info(f"Delta tune: delta_q1={dqx:.4f}, delta_q2={dqy:.4f}")
             self.trim_tune(dqx=-gain*dqx, dqy=-gain*dqy)
         return
+
+    def get_design_corrector_response(self, corr: str, dk0: float = 1e-6):
+        SC = self._parent._parent
+        k0 = SC.magnet_settings.get(corr, use_design=True)
+        SC.magnet_settings.set(corr, k0 + dk0, use_design=True)
+        bunch = SC.injection.generate_bunch(use_design=True)
+        x1, y1 = SC.lattice.track(bunch.copy(), indices=SC.bpm_system.indices, use_design=True)
+        SC.magnet_settings.set(corr, k0 - dk0, use_design=True)
+        x2, y2 = SC.lattice.track(bunch.copy(), indices=SC.bpm_system.indices, use_design=True)
+        SC.magnet_settings.set(corr, k0, use_design=True)
+        dx = (x1[0,:,0] - x2[0,:,0]) / (2*dk0)
+        dy = (y1[0,:,0] - y2[0,:,0]) / (2*dk0)
+        return dx, dy
+
+
+    def estimate_from_first_turn(self, dk: float = 1e-4):
+        SC = self._parent._parent
+        hcorr = SC.tuning.HCORR[0]
+        vcorr = SC.tuning.VCORR[0]
+
+        hcorr_k0 = SC.magnet_settings.get(hcorr)
+        vcorr_k0 = SC.magnet_settings.get(vcorr)
+
+        # measure responses
+        x0, y0 = SC.bpm_system.capture_injection()
+
+        def get_average_xy(SC, n=10):
+            N = len(SC.bpm_system.names)
+            x_avg = np.zeros(N)
+            y_avg = np.zeros(N)
+            for _ in range(n):
+                x, y = SC.bpm_system.capture_injection(n_turns=1)
+                x_avg += x[:, 0]
+                y_avg += y[:, 0]
+            return x_avg / n, y_avg / n
+
+        SC.magnet_settings.set(hcorr, hcorr_k0 + dk)
+        x1, _ = get_average_xy(SC, n=5)
+        #x1, _ = SC.bpm_system.capture_injection()
+        SC.magnet_settings.set(hcorr, hcorr_k0)
+
+        SC.magnet_settings.set(vcorr, vcorr_k0 + dk)
+        #_, y1 = SC.bpm_system.capture_injection()
+        _, y1 = get_average_xy(SC, n=5)
+        SC.magnet_settings.set(vcorr, vcorr_k0)
+
+        dx0 = (x1 - x0) / (dk)
+        dy0 = (y1 - y0) / (dk)
+        #####
+
+        ### do fit based on knobs
+
+        def x_chi2(delta):
+            SC.tuning.tune.trim_tune(delta, 0, use_design=True)
+            dx_ideal, _ = self.get_design_corrector_response(hcorr)
+            SC.tuning.tune.trim_tune(-delta, 0, use_design=True)
+            return np.sum((dx0 - dx_ideal)**2)
+
+        def y_chi2(delta):
+            SC.tuning.tune.trim_tune(0, delta, use_design=True)
+            _, dy_ideal = self.get_design_corrector_response(vcorr)
+            SC.tuning.tune.trim_tune(0, -delta, use_design=True)
+            return np.sum((dy0 - dy_ideal)**2)
+
+        x_res = scipy.optimize.minimize_scalar(x_chi2, (-0.1, 0.1), method='Brent')
+        delta_x = x_res.x
+        est_qx = self.design_qx + delta_x
+        logger.info(f"Estimated horizontal tune: Qx = {est_qx:.3f} (Δ = {delta_x:.3f})")
+        print(x_res)
+
+        y_res = scipy.optimize.minimize_scalar(y_chi2, (-0.1, 0.1), method='Brent')
+        delta_y = y_res.x
+        est_qy = self.design_qy + delta_y
+        logger.info(f"Estimated vertical tune: Qy = {est_qy:.3f} (Δ = {delta_y:.3f})")
+        print(y_res)
+
+        return est_qx, est_qy

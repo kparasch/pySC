@@ -188,12 +188,10 @@ class Tune(BaseModel, extra="forbid"):
         delta_x = x_res.x
         est_qx = self.design_qx + delta_x
         logger.info(f"Estimated horizontal tune: Qx = {est_qx:.3f} (Δ = {delta_x:.3f})")
-        print(x_res)
 
         y_res = scipy.optimize.minimize_scalar(y_chi2, (-0.1, 0.1), method='Brent')
         delta_y = y_res.x
         est_qy = self.design_qy + delta_y
         logger.info(f"Estimated vertical tune: Qy = {est_qy:.3f} (Δ = {delta_y:.3f})")
-        print(y_res)
 
         return est_qx, est_qy

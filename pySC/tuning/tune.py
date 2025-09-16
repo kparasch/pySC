@@ -95,7 +95,7 @@ class Tune(BaseModel, extra="forbid"):
     def correct(self, target_qx: Optional[float] = None, target_qy: Optional[float] = None,
                 kick_px: float = 10e-6, kick_py: float = 10e-6, n_turns: int = 100, n_iter: int = 1,
                 gain: float = 1, measurement_method: str = 'kick'):
-        if measurement_method not in ['kick', 'first_turn']:
+        if measurement_method not in ['kick', 'first_turn', 'orbit']:
             raise NotImplementedError(f'{measurement_method=} not implemented yet.')
 
         if target_qx is None:
@@ -108,7 +108,9 @@ class Tune(BaseModel, extra="forbid"):
             if measurement_method == 'kick':
                 qx, qy = self.measure_with_kick(kick_px, kick_py, n_turns=n_turns)
             elif measurement_method == 'first_turn':
-                qx, qy = self.estimate_from_first_turn(kick_px)
+                qx, qy = self.estimate_from_first_turn(dk0=kick_px)
+            elif measurement_method == 'orbit':
+                qx, qy = self.estimate_from_orbit(dk0=kick_px)
             else:
                 raise Exception(f'Unknown measurement_method {measurement_method}')
             if qx is None or qy is None or qx != qx or qy != qy:
@@ -209,10 +211,10 @@ class Tune(BaseModel, extra="forbid"):
         return dx, dy
 
 
-    def estimate_from_orbit(self, m=0, dk0: float = 1e-4):
+    def estimate_from_orbit(self, dk0: float = 1e-5):
         SC = self._parent._parent
-        hcorr = SC.tuning.HCORR[m]
-        vcorr = SC.tuning.VCORR[m]
+        hcorr = SC.tuning.HCORR[0]
+        vcorr = SC.tuning.VCORR[0]
 
         hcorr_k0 = SC.magnet_settings.get(hcorr)
         vcorr_k0 = SC.magnet_settings.get(vcorr)

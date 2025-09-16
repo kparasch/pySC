@@ -121,7 +121,7 @@ class Tune(BaseModel, extra="forbid"):
             self.trim_tune(dqx=-gain*dqx, dqy=-gain*dqy)
         return
 
-    def get_design_corrector_response(self, corr: str, dk0: float = 1e-6):
+    def get_design_corrector_response_injection(self, corr: str, dk0: float = 1e-6):
         SC = self._parent._parent
         k0 = SC.magnet_settings.get(corr, use_design=True)
         SC.magnet_settings.set(corr, k0 + dk0, use_design=True)
@@ -174,13 +174,93 @@ class Tune(BaseModel, extra="forbid"):
 
         def x_chi2(delta):
             SC.tuning.tune.trim_tune(delta, 0, use_design=True)
-            dx_ideal, _ = self.get_design_corrector_response(hcorr)
+            dx_ideal, _ = self.get_design_corrector_response_injection(hcorr)
             SC.tuning.tune.trim_tune(-delta, 0, use_design=True)
             return np.sum((dx0 - dx_ideal)**2)
 
         def y_chi2(delta):
             SC.tuning.tune.trim_tune(0, delta, use_design=True)
-            _, dy_ideal = self.get_design_corrector_response(vcorr)
+            _, dy_ideal = self.get_design_corrector_response_injection(vcorr)
+            SC.tuning.tune.trim_tune(0, -delta, use_design=True)
+            return np.sum((dy0 - dy_ideal)**2)
+
+        x_res = scipy.optimize.minimize_scalar(x_chi2, (-0.1, 0.1), method='Brent')
+        delta_x = x_res.x
+        est_qx = self.design_qx + delta_x
+        logger.info(f"Estimated horizontal tune: Qx = {est_qx:.3f} (Δ = {delta_x:.3f})")
+
+        y_res = scipy.optimize.minimize_scalar(y_chi2, (-0.1, 0.1), method='Brent')
+        delta_y = y_res.x
+        est_qy = self.design_qy + delta_y
+        logger.info(f"Estimated vertical tune: Qy = {est_qy:.3f} (Δ = {delta_y:.3f})")
+
+        return est_qx, est_qy
+
+    def get_design_corrector_response_orbit(self, corr: str, dk0: float = 1e-6):
+        SC = self._parent._parent
+        k0 = SC.magnet_settings.get(corr, use_design=True)
+        SC.magnet_settings.set(corr, k0 + dk0, use_design=True)
+        x1, y1 = SC.lattice.get_orbit(indices=SC.bpm_system.indices, use_design=True)
+        SC.magnet_settings.set(corr, k0 - dk0, use_design=True)
+        x2, y2 = SC.lattice.get_orbit(indices=SC.bpm_system.indices, use_design=True)
+        SC.magnet_settings.set(corr, k0, use_design=True)
+        dx = (x1 - x2) / (2*dk0)
+        dy = (y1 - y2) / (2*dk0)
+        return dx, dy
+
+
+    def estimate_from_orbit(self, m=0, dk0: float = 1e-4):
+        SC = self._parent._parent
+        hcorr = SC.tuning.HCORR[m]
+        vcorr = SC.tuning.VCORR[m]
+
+        hcorr_k0 = SC.magnet_settings.get(hcorr)
+        vcorr_k0 = SC.magnet_settings.get(vcorr)
+
+        # measure responses
+        x0, y0 = SC.bpm_system.capture_orbit()
+
+        def get_average_xy(SC, n=10):
+            N = len(SC.bpm_system.names)
+            x_avg = np.zeros(N)
+            y_avg = np.zeros(N)
+            for _ in range(n):
+                x, y = SC.bpm_system.capture_orbit()
+                x_avg += x
+                y_avg += y
+            return x_avg / n, y_avg / n
+
+        SC.magnet_settings.set(hcorr, hcorr_k0 + dk0)
+        x1, _ = get_average_xy(SC, n=5)
+        #x1, _ = SC.bpm_system.capture_orbit()
+        SC.magnet_settings.set(hcorr, hcorr_k0 - dk0)
+        x0, _ = get_average_xy(SC, n=5)
+        #x0, _ = SC.bpm_system.capture_orbit()
+        SC.magnet_settings.set(hcorr, hcorr_k0)
+
+        SC.magnet_settings.set(vcorr, vcorr_k0 + dk0)
+        _, y1 = get_average_xy(SC, n=5)
+        #_, y1 = SC.bpm_system.capture_orbit()
+        SC.magnet_settings.set(vcorr, vcorr_k0 - dk0)
+        _, y0 = get_average_xy(SC, n=5)
+        #_, y0 = SC.bpm_system.capture_orbit()
+        SC.magnet_settings.set(vcorr, vcorr_k0)
+
+        dx0 = (x1 - x0) / (2 * dk0)
+        dy0 = (y1 - y0) / (2 * dk0)
+        #####
+
+        ### do fit based on knobs
+
+        def x_chi2(delta):
+            SC.tuning.tune.trim_tune(delta, 0, use_design=True)
+            dx_ideal, _ = self.get_design_corrector_response_orbit(hcorr, dk0=dk0)
+            SC.tuning.tune.trim_tune(-delta, 0, use_design=True)
+            return np.sum((dx0 - dx_ideal)**2)
+
+        def y_chi2(delta):
+            SC.tuning.tune.trim_tune(0, delta, use_design=True)
+            _, dy_ideal = self.get_design_corrector_response_orbit(vcorr, dk0=dk0)
             SC.tuning.tune.trim_tune(0, -delta, use_design=True)
             return np.sum((dy0 - dy_ideal)**2)
 

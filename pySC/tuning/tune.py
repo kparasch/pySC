@@ -137,7 +137,7 @@ class Tune(BaseModel, extra="forbid"):
         return dx, dy
 
 
-    def estimate_from_first_turn(self, dk: float = 1e-4):
+    def estimate_from_first_turn(self, dk0: float = 1e-4):
         SC = self._parent._parent
         hcorr = SC.tuning.HCORR[0]
         vcorr = SC.tuning.VCORR[0]
@@ -158,18 +158,18 @@ class Tune(BaseModel, extra="forbid"):
                 y_avg += y[:, 0]
             return x_avg / n, y_avg / n
 
-        SC.magnet_settings.set(hcorr, hcorr_k0 + dk)
+        SC.magnet_settings.set(hcorr, hcorr_k0 + dk0)
         x1, _ = get_average_xy(SC, n=5)
         #x1, _ = SC.bpm_system.capture_injection()
         SC.magnet_settings.set(hcorr, hcorr_k0)
 
-        SC.magnet_settings.set(vcorr, vcorr_k0 + dk)
+        SC.magnet_settings.set(vcorr, vcorr_k0 + dk0)
         #_, y1 = SC.bpm_system.capture_injection()
         _, y1 = get_average_xy(SC, n=5)
         SC.magnet_settings.set(vcorr, vcorr_k0)
 
-        dx0 = (x1 - x0) / (dk)
-        dy0 = (y1 - y0) / (dk)
+        dx0 = (x1 - x0) / (dk0)
+        dy0 = (y1 - y0) / (dk0)
         #####
 
         ### do fit based on knobs

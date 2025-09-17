@@ -22,11 +22,11 @@ class Tune(BaseModel, extra="forbid"):
 
     @property
     def design_qx(self):
-        return self._parent._parent.lattice.twiss['qx']
+        return np.mod(self._parent._parent.lattice.twiss['qx'], 1)
 
     @property
     def design_qy(self):
-        return self._parent._parent.lattice.twiss['qy']
+        return np.mod(self._parent._parent.lattice.twiss['qy'], 1)
 
     def tune_response(self, quads: list[str], dk: float = 1e-5):
         SC = self._parent._parent

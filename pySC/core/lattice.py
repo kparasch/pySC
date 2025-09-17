@@ -1,6 +1,7 @@
 from pydantic import BaseModel, PrivateAttr, model_validator
 from typing import Optional, Literal
 import re
+import numpy as np
 import at
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
@@ -128,8 +129,8 @@ class ATLattice(Lattice):
 
         qs = ringdata['tune'][2] if not self.no_6d else 0 # doesn't exist when ring has 6d disabled
 
-        twiss = {'qx': ringdata['tune'][0],
-                 'qy': ringdata['tune'][1],
+        twiss = {'qx': elemdata.mu[-1,0]/2/np.pi,
+                 'qy': elemdata.mu[-1,1]/2/np.pi,
                  'qs': qs,
                  'dqx': ringdata['chromaticity'][0],
                  'dqy': ringdata['chromaticity'][1],

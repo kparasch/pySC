@@ -3,7 +3,10 @@ from logging.handlers import QueueHandler, QueueListener
 import multiprocessing
 from multiprocessing import Queue
 import sys
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from ..core.new_simulated_commissioning import SimulatedCommissioning
 
 def get_listener_and_queue(logger):
     log_queue = Queue()
@@ -28,16 +31,16 @@ def logging_init(queue):
     queue_handler.setFormatter(formatter)
     root_logger.addHandler(queue_handler)
 
-def parallel_tbba_target(SC_model, SC_class, bpm_names, shots_per_trajectory, queue, log_queue):
+def parallel_tbba_target(SC_model, SC_class, bpm_names, shots_per_trajectory, n_corr_steps, queue, log_queue):
     logging_init(log_queue)
-    SC = SC_class.model_validate(SC_model)
-    offsets_x, offsets_y = SC.tuning.do_trajectory_bba(bpm_names=bpm_names, shots_per_trajectory=shots_per_trajectory)
+    SC: "SimulatedCommissioning" = SC_class.model_validate(SC_model)
+    offsets_x, offsets_y = SC.tuning.do_trajectory_bba(bpm_names=bpm_names, shots_per_trajectory=shots_per_trajectory, n_corr_steps=n_corr_steps)
     queue.put((bpm_names, offsets_x, offsets_y))
     del SC
 
-def parallel_obba_target(SC_model, SC_class, bpm_names, shots_per_orbit, queue, log_queue):
+def parallel_obba_target(SC_model, SC_class, bpm_names, shots_per_orbit, n_corr_steps, queue, log_queue):
     logging_init(log_queue)
-    SC = SC_class.model_validate(SC_model)
-    offsets_x, offsets_y = SC.tuning.do_orbit_bba(bpm_names=bpm_names, shots_per_orbit=shots_per_orbit)
+    SC: "SimulatedCommissioning" = SC_class.model_validate(SC_model)
+    offsets_x, offsets_y = SC.tuning.do_orbit_bba(bpm_names=bpm_names, shots_per_orbit=shots_per_orbit, n_corr_steps=n_corr_steps)
     queue.put((bpm_names, offsets_x, offsets_y))
     del SC

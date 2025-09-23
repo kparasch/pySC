@@ -251,7 +251,8 @@ class Tuning(BaseModel, extra="forbid"):
             self._parent.bpm_system.bba_offsets_x[bpm_number] = bba_x
             self._parent.bpm_system.bba_offsets_y[bpm_number] = bba_y
 
-    def do_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1, skip_summary: bool = False):
+    def do_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1, skip_summary: bool = False,
+                          n_corr_steps: int = 5):
         SC = self._parent
         if bpm_names is None:
             bpm_names = SC.bpm_system.names
@@ -265,9 +266,9 @@ class Tuning(BaseModel, extra="forbid"):
         for ii, name in enumerate(bpm_names):
             true_offset_x, true_offset_y = self.bba_to_quad_true_offset(bpm_name=name)
             bpm_number = SC.bpm_system.bpm_number(name=name)
-            offset_x, offset_x_err = trajectory_bba(SC, name, plane='H', shots_per_trajectory=shots_per_trajectory)
+            offset_x, offset_x_err = trajectory_bba(SC, name, plane='H', shots_per_trajectory=shots_per_trajectory, n_corr_steps=n_corr_steps)
             logger.info(f'T. BBA: Name={name}, number={bpm_number}, new H. offset = {offset_x*1e6:.1f} +- {offset_x_err*1e6:.1f} um, true is {true_offset_x*1e6:.1f} um')
-            offset_y, offset_y_err = trajectory_bba(SC, name, plane='V', shots_per_trajectory=shots_per_trajectory)
+            offset_y, offset_y_err = trajectory_bba(SC, name, plane='V', shots_per_trajectory=shots_per_trajectory, n_corr_steps=n_corr_steps)
             logger.info(f'T. BBA: Name={name}, number={bpm_number}, new V. offset = {offset_y*1e6:.1f} +- {offset_y_err*1e6:.1f} um, true is {true_offset_y*1e6:.1f} um')
 
             true_offsets_x[ii] = true_offset_x
@@ -319,7 +320,8 @@ class Tuning(BaseModel, extra="forbid"):
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-    def do_parallel_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1, omp_num_threads: int = 2):
+    def do_parallel_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1, omp_num_threads: int = 2,
+                                   n_corr_steps: int = 5):
         SC = self._parent
         if bpm_names is None:
             bpm_names = SC.bpm_system.names
@@ -338,7 +340,8 @@ class Tuning(BaseModel, extra="forbid"):
         processes = []
         listener.start()
         for num in range(omp_num_threads):
-            p = Process(target=parallel_tbba_target, args=(SC_model, SC_class, bpm_names_chunks[num], shots_per_trajectory, queue, log_queue))
+            args = (SC_model, SC_class, bpm_names_chunks[num], shots_per_trajectory, n_corr_steps, queue, log_queue)
+            p = Process(target=parallel_tbba_target, args=args)
             processes.append(p)
             p.start()
 
@@ -362,7 +365,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
         acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
-        print(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
+        logger.info(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
         for ii, bpm_number in enumerate(bpm_numbers):
@@ -370,7 +373,7 @@ class Tuning(BaseModel, extra="forbid"):
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-    def do_parallel_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, omp_num_threads: int = 2):
+    def do_parallel_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, omp_num_threads: int = 2, n_corr_steps: int = 7):
         SC = self._parent
         if bpm_names is None:
             bpm_names = SC.bpm_system.names
@@ -389,7 +392,8 @@ class Tuning(BaseModel, extra="forbid"):
         processes = []
         listener.start()
         for num in range(omp_num_threads):
-            p = Process(target=parallel_obba_target, args=(SC_model, SC_class, bpm_names_chunks[num], shots_per_orbit, queue, log_queue))
+            args = (SC_model, SC_class, bpm_names_chunks[num], shots_per_orbit, n_corr_steps, queue, log_queue)
+            p = Process(target=parallel_obba_target, args=args)
             processes.append(p)
             p.start()
 
@@ -413,7 +417,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
         acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
-        print(f'Orbit BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
+        logger.info(f'Orbit BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
         for ii, bpm_number in enumerate(bpm_numbers):

@@ -24,7 +24,7 @@ class RNG(BaseModel):
 
     def normal_trunc(self, loc: float = 0, scale: float = 1,
                      sigma_truncate: Optional[float] = None,
-                     size: Optional[int]=None):
+                     size: Optional[int]=None) -> Union[float, np.ndarray]:
         if sigma_truncate is None:
             sigma_truncate = self.default_truncation
 
@@ -32,8 +32,9 @@ class RNG(BaseModel):
         if sigma_truncate is None:
             return self._rng.normal(loc, scale, size=size)
         else:
-            if size is None:
-                raise NotImplementedError('ERROR: Getting random array from truncated normal distribution is not implemented yet.')
+            if size is not None:
+                ## TODO: optimize this
+                return np.array([self.normal_trunc(loc, scale, sigma_truncate) for _ in range(size)])
             ret = self._rng.normal()
             while abs(ret) > sigma_truncate:
                 ret = self._rng.normal()

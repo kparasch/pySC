@@ -10,7 +10,7 @@ from .tuning_conf import configure_tuning
 from .general import scale_error_table
 
 
-def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] = None) -> SimulatedCommissioning:
+def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] = None, sigma_truncate: Optional[int] = None) -> SimulatedCommissioning:
     config_dict = load_yaml(yaml_filepath)
 
     assert 'lattice' in config_dict, f"'lattice' is missing in the configuration file: {yaml_filepath}."
@@ -44,6 +44,7 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
 
     # Create the SimulatedCommissioning instance
     SC = SimulatedCommissioning(lattice=lattice, configuration=config_dict, seed=seed)
+    SC.rng.default_truncation = sigma_truncate
 
     print('Configuring magnets...')
     configure_magnets(SC)

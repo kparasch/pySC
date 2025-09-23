@@ -47,7 +47,11 @@ class ResponseMatrix(BaseModel, extra="forbid"):
     @model_validator(mode='after')
     def initialize_and_check(self):
         self._n_outputs, self._n_inputs = self.RM.shape
-        self._singular_values = np.linalg.svd(self.RM, compute_uv=False)
+        try:
+            self._singular_values = np.linalg.svd(self.RM, compute_uv=False)
+        except np.linalg.LinAlgError:
+            logger.warning('SVD of the response matrix failed, correction will be impossible.')
+            self._singular_values = None
         self.make_masks()
         return self
 

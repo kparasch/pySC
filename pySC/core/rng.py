@@ -33,7 +33,7 @@ class RNG(BaseModel):
             return self._rng.normal(loc, scale, size=size)
         else:
             if size is not None:
-                ## TODO: optimize this
+                ## TODO: optimize this ?
                 return np.array([self.normal_trunc(loc, scale, sigma_truncate) for _ in range(size)])
             ret = self._rng.normal()
             while abs(ret) > sigma_truncate:

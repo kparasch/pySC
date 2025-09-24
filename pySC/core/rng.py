@@ -6,7 +6,7 @@ import numpy as np
 class RNG(BaseModel):
     seed: int
     rng_state: Optional[dict[str, Union[str, int, dict[str, int]]]] = None
-    default_truncation: Optional[int] = None
+    default_truncation: Optional[float] = None
     _rng = PrivateAttr(default=None)
 
     @field_serializer('rng_state')

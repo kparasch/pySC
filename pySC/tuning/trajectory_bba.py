@@ -1,6 +1,9 @@
 from pydantic import BaseModel
 from typing import TYPE_CHECKING, Dict, Literal
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
@@ -73,7 +76,14 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
             else: # it is a skew quadrupole component
                 ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
                 temp_RM = VRM[bpm_number:bpm_number+n_downstream_bpms, the_HCORR_number]
-            quad_dk_h = (max_modulation/float(np.max(np.abs(temp_RM)))) / max_dx_at_bpm
+            
+            max_response = float(np.max(np.abs(temp_RM)))
+            if max_response < 1e-10:
+                logger.warning(f'WARNING: very small response for BPM {SC.bpm_system.names[bpm_number]} from magnet {the_bba_magnet} and HCORR {SC.tuning.HCORR[the_HCORR_number]}')
+                quad_dk_h = 0
+                hcorr_delta = 0
+            else:
+                quad_dk_h = (max_modulation/max_response) / max_dx_at_bpm
 
             max_V_response = -1
             the_VCORR_number = -1
@@ -90,7 +100,13 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
             else: # it is a skew quadrupole component
                 ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
                 temp_RM = HRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]
-            quad_dk_v = (max_modulation/float(np.max(np.abs(temp_RM)))) / max_dx_at_bpm
+            max_response = float(np.max(np.abs(temp_RM)))
+            if max_response < 1e-10:
+                logger.warning(f'WARNING: very small response for BPM {SC.bpm_system.names[bpm_number]} from magnet {the_bba_magnet} and HCORR {SC.tuning.VCORR[the_VCORR_number]}')
+                quad_dk_v = 0
+                vcorr_delta = 0
+            else:
+                quad_dk_v = (max_modulation/max_response) / max_dx_at_bpm
 
             bpm_name = SC.bpm_system.names[bpm_number]
             config[bpm_name] = {'index': bpm_index,

@@ -78,7 +78,8 @@ class Tuning(BaseModel, extra="forbid"):
             json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
         return 
 
-    def bad_outputs_from_bad_bpms(self, bad_bpms: list[int], n_bpms: int, n_turns: int = 1) -> list[int]:
+    def bad_outputs_from_bad_bpms(self, bad_bpms: list[int], n_turns: int = 1) -> list[int]:
+        n_bpms = len(self._parent.bpm_system.indices)
         bad_outputs = []
         for plane in [0, 1]:
             for turn in range(n_turns):
@@ -90,8 +91,7 @@ class Tuning(BaseModel, extra="forbid"):
         RM_name = f'trajectory{n_turns}'
         self.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         RM = self.response_matrix[RM_name]
-        n_bpms = len(self._parent.bpm_system.indices)
-        RM.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms, n_bpms=n_bpms, n_turns=n_turns)
+        RM.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms, n_turns=n_turns)
 
         for _ in range(n_reps):
             trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
@@ -127,6 +127,7 @@ class Tuning(BaseModel, extra="forbid"):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         RM = self.response_matrix[RM_name]
+        RM.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms)
 
         for _ in range(n_reps):
             trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
@@ -156,6 +157,7 @@ class Tuning(BaseModel, extra="forbid"):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         RM = self.response_matrix[RM_name]
+        RM.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms)
 
         for _ in range(n_reps):
             orbit_x, orbit_y = self._parent.bpm_system.capture_orbit()
@@ -182,8 +184,8 @@ class Tuning(BaseModel, extra="forbid"):
         xy =  np.concat((x.flatten(order='F'), y.flatten(order='F')))
 
         return np.dot(xy, response) / np.dot(response, response)
-        
-        
+
+
 
     def set_multipole_scale(self, scale: float = 1):
         logger.info(f'Setting "multipoles" to {scale*100:.0f}%')

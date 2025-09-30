@@ -145,9 +145,6 @@ class Tune(BaseModel, extra="forbid"):
         hcorr_k0 = SC.magnet_settings.get(hcorr)
         vcorr_k0 = SC.magnet_settings.get(vcorr)
 
-        # measure responses
-        x0, y0 = SC.bpm_system.capture_injection()
-
         def get_average_xy(SC, n=10):
             N = len(SC.bpm_system.names)
             x_avg = np.zeros(N)
@@ -157,6 +154,10 @@ class Tune(BaseModel, extra="forbid"):
                 x_avg += x[:, 0]
                 y_avg += y[:, 0]
             return x_avg / n, y_avg / n
+        
+        # measure responses
+        x0, y0 = get_average_xy(SC, n=5)
+        #x0, y0 = SC.bpm_system.capture_injection()
 
         SC.magnet_settings.set(hcorr, hcorr_k0 + dk0)
         x1, _ = get_average_xy(SC, n=5)
@@ -219,9 +220,6 @@ class Tune(BaseModel, extra="forbid"):
         hcorr_k0 = SC.magnet_settings.get(hcorr)
         vcorr_k0 = SC.magnet_settings.get(vcorr)
 
-        # measure responses
-        x0, y0 = SC.bpm_system.capture_orbit()
-
         def get_average_xy(SC, n=10):
             N = len(SC.bpm_system.names)
             x_avg = np.zeros(N)
@@ -231,6 +229,10 @@ class Tune(BaseModel, extra="forbid"):
                 x_avg += x
                 y_avg += y
             return x_avg / n, y_avg / n
+
+        # measure responses
+        #x0, y0 = get_average_xy(SC, n=5)
+        x0, y0 = SC.bpm_system.capture_orbit()
 
         SC.magnet_settings.set(hcorr, hcorr_k0 + dk0)
         x1, _ = get_average_xy(SC, n=5)

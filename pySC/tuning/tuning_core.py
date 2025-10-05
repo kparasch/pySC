@@ -365,6 +365,9 @@ class Tuning(BaseModel, extra="forbid"):
                 offsets_y[ii] = offset_y
                 true_offsets_x[ii], true_offsets_y[ii] = SC.tuning.bba_to_quad_true_offset(bpm_name=name)
 
+        listener.stop()
+        logger.handlers.clear()
+
         acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
         acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
         logger.info(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
@@ -405,6 +408,9 @@ class Tuning(BaseModel, extra="forbid"):
             rets.append(ret)
         for p in processes:
             p.join()
+
+        listener.stop()
+        logger.handlers.clear()
 
         offsets_x = np.zeros(n_bpm)
         offsets_y = np.zeros(n_bpm)

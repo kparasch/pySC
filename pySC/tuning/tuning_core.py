@@ -331,7 +331,7 @@ class Tuning(BaseModel, extra="forbid"):
         logger.info(f'Running parallel trajectory BBA with {omp_num_threads} processes.')
         n_bpm = len(bpm_names)
         bpm_mapping = {name: ii for ii, name in enumerate(bpm_names)}
-        #split bpm_names into n_processes chunks
+        # 1. SPLIT bpm_names into n_processes chunks
         bpm_names_chunks = [bpm_names[i::omp_num_threads] for i in range(omp_num_threads)]
 
         SC_model = SC.model_dump()
@@ -347,6 +347,7 @@ class Tuning(BaseModel, extra="forbid"):
             processes.append(p)
             p.start()
 
+        # 2. RUN
         rets = []
         for p in processes:
             ret = queue.get()  
@@ -354,6 +355,7 @@ class Tuning(BaseModel, extra="forbid"):
         for p in processes:
             p.join()
 
+        # 3. GATHER
         offsets_x = np.zeros(n_bpm)
         offsets_y = np.zeros(n_bpm)
         true_offsets_x = np.zeros(n_bpm)
@@ -365,6 +367,7 @@ class Tuning(BaseModel, extra="forbid"):
                 offsets_y[ii] = offset_y
                 true_offsets_x[ii], true_offsets_y[ii] = SC.tuning.bba_to_quad_true_offset(bpm_name=name)
 
+        # 4. CLEANUP
         listener.stop()
         logger.handlers.clear()
 
@@ -386,7 +389,7 @@ class Tuning(BaseModel, extra="forbid"):
         logger.info(f'Running parallel orbit BBA with {omp_num_threads} processes.')
         n_bpm = len(bpm_names)
         bpm_mapping = {name: ii for ii, name in enumerate(bpm_names)}
-        #split bpm_names into n_processes chunks
+        # 1. SPLIT bpm_names into n_processes chunks
         bpm_names_chunks = [bpm_names[i::omp_num_threads] for i in range(omp_num_threads)]
 
         SC_model = SC.model_dump()
@@ -402,6 +405,7 @@ class Tuning(BaseModel, extra="forbid"):
             processes.append(p)
             p.start()
 
+        # 2. RUN
         rets = []
         for p in processes:
             ret = queue.get()  
@@ -409,9 +413,7 @@ class Tuning(BaseModel, extra="forbid"):
         for p in processes:
             p.join()
 
-        listener.stop()
-        logger.handlers.clear()
-
+        # 3. GATHER
         offsets_x = np.zeros(n_bpm)
         offsets_y = np.zeros(n_bpm)
         true_offsets_x = np.zeros(n_bpm)
@@ -422,6 +424,10 @@ class Tuning(BaseModel, extra="forbid"):
                 offsets_x[ii] = offset_x
                 offsets_y[ii] = offset_y
                 true_offsets_x[ii], true_offsets_y[ii] = SC.tuning.bba_to_quad_true_offset(bpm_name=name)
+
+        # 4. CLEANUP
+        listener.stop()
+        logger.handlers.clear()
 
         acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
         acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)

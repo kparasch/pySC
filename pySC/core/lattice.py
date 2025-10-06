@@ -6,6 +6,9 @@ import at
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
 
+import logging
+logger = logging.getLogger(__name__)
+
 class Lattice(BaseModel, extra="forbid"):
     """
     Base class for machine
@@ -154,18 +157,30 @@ class ATLattice(Lattice):
                 }
         return twiss
 
-    # def update_magnet(self, index: int, A : list, B : list, max_order : int) -> None:
-    #     if max_order + 1 != len(A) or max_order + 1 != len(B):
-    #         raise ValueError(f"Length of A and B must be {max_order + 1} for index {index}.")
+    def get_tune(self, method='6d', use_design=False) -> tuple[float, float]:
+        assert method in ['4d', '6d']
+        ring = self._design if use_design else self._ring
 
-    #     if type(self._ring[index]) is at.lattice.elements.Corrector:
-    #         kickangle = np.array([-B[0], A[0]]) * self._ring[index].Length
-    #         self._ring[index].KickAngle = kickangle
-    #     else:
-    #         self._ring[index].PolynomA = np.array(A, dtype=float)
-    #         self._ring[index].PolynomB = np.array(B, dtype=float)
-    #         self._ring[index].MaxOrder = max_order
-    #     return
+        if self.no_6d:
+            logger.warning("Lattice has 6d disabled, using 4d method instead.")
+            method = '4d'
+
+        if method == '4d' and not self.no_6d:
+            ring.disable_6d()
+
+        try:
+            tunes = ring.get_tune()
+            qx = tunes[0]
+            qy = tunes[1]
+        except Exception as e:
+            logger.error(f"Error computing tune, {type(e)}: {e}")
+            qx = np.nan
+            qy = np.nan
+
+        if method == '4d' and not self.no_6d:
+            ring.enable_6d()
+
+        return qx, qy
 
     def find_with_regex(self, regex: str) -> list[int]:
         """

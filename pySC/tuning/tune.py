@@ -95,7 +95,33 @@ class Tune(BaseModel, extra="forbid"):
     def correct(self, target_qx: Optional[float] = None, target_qy: Optional[float] = None,
                 kick_px: float = 10e-6, kick_py: float = 10e-6, n_turns: int = 100, n_iter: int = 1,
                 gain: float = 1, measurement_method: str = 'kick'):
-        if measurement_method not in ['kick', 'first_turn', 'orbit']:
+        '''
+        Correct the tune to the target values.
+        Parameters
+        ----------
+        target_qx : float, optional
+            Target horizontal tune. If None, use design tune.
+        target_qy : float, optional
+            Target vertical tune. If None, use design tune.
+        kick_px : float, optional
+            Kick in x for tune measurement. Default is 10e-6.
+            Relevant only for 'kick', 'first_turn' and 'orbit' methods.
+        kick_py : float, optional
+            Kick in y for tune measurement. Default is 10e-6.
+            Relevant only for 'kick' method.
+        n_turns : int, optional
+            Number of turns to track for tune measurement. Default is 100.
+            Relevant only for 'kick' method.
+        n_iter : int, optional
+            Number of correction iterations. Default is 1.
+        gain : float, optional
+            Gain for the correction. Default is 1.
+        measurement_method : str, optional
+            Method to measure the tune. Options are 'kick', 'first_turn', 'orbit', 'cheat', 'cheat4d'.
+            Default is 'kick'.
+        '''
+
+        if measurement_method not in ['kick', 'first_turn', 'orbit', 'cheat', 'cheat4d']:
             raise NotImplementedError(f'{measurement_method=} not implemented yet.')
 
         if target_qx is None:
@@ -111,6 +137,10 @@ class Tune(BaseModel, extra="forbid"):
                 qx, qy = self.estimate_from_first_turn(dk0=kick_px)
             elif measurement_method == 'orbit':
                 qx, qy = self.estimate_from_orbit(dk0=kick_px)
+            elif measurement_method == 'cheat':
+                qx, qy = self.cheat()
+            elif measurement_method == 'cheat4d':
+                qx, qy = self.cheat4d()
             else:
                 raise Exception(f'Unknown measurement_method {measurement_method}')
             if qx is None or qy is None or qx != qx or qy != qy:
@@ -154,7 +184,7 @@ class Tune(BaseModel, extra="forbid"):
                 x_avg += x[:, 0]
                 y_avg += y[:, 0]
             return x_avg / n, y_avg / n
-        
+
         # measure responses
         x0, y0 = get_average_xy(SC, n=5)
         #x0, y0 = SC.bpm_system.capture_injection()
@@ -279,3 +309,23 @@ class Tune(BaseModel, extra="forbid"):
         logger.info(f"Estimated vertical tune: Qy = {est_qy:.3f} (Δ = {delta_y:.3f})")
 
         return est_qx, est_qy
+
+    def cheat4d(self) -> tuple[float, float]:
+        SC = self._parent._parent
+        qx, qy = SC.lattice.get_tune(method='4d')
+        delta_x = qx - self.design_qx
+        delta_y = qy - self.design_qy
+        logger.info(f"Horizontal tune: Qx = {qx:.3f} (Δ = {delta_x:.3f})")
+        logger.info(f"Vertical tune: Qy = {qy:.3f} (Δ = {delta_y:.3f})")
+
+        return qx, qy
+
+    def cheat(self) -> tuple[float, float]:
+        SC = self._parent._parent
+        qx, qy = SC.lattice.get_tune(method='6d')
+        delta_x = qx - self.design_qx
+        delta_y = qy - self.design_qy
+        logger.info(f"Horizontal tune: Qx = {qx:.3f} (Δ = {delta_x:.3f})")
+        logger.info(f"Vertical tune: Qy = {qy:.3f} (Δ = {delta_y:.3f})")
+
+        return qx, qy

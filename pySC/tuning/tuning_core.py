@@ -242,7 +242,7 @@ class Tuning(BaseModel, extra="forbid"):
         else:
             raise Exception(f'Unknown {plane=}')
 
-    def fake_align_bpms(self, bpm_names: Optional[list[str]] = None):
+    def fake_align_bpms(self, bpm_names: Optional[list[str]] = None, rms_offset: float = 0.):
         SC = self._parent
         if bpm_names is None:
             bpm_names = SC.bpm_system.names
@@ -250,6 +250,9 @@ class Tuning(BaseModel, extra="forbid"):
         for bpm_name in bpm_names:
             bpm_number = SC.bpm_system.bpm_number(name=bpm_name)
             bba_x, bba_y = self.bba_to_quad_true_offset(bpm_name=bpm_name)
+            if rms_offset > 0:
+                bba_x += SC.rng.normal_trunc(loc=0, scale=rms_offset)
+                bba_y += SC.rng.normal_trunc(loc=0, scale=rms_offset)
             self._parent.bpm_system.bba_offsets_x[bpm_number] = bba_x
             self._parent.bpm_system.bba_offsets_y[bpm_number] = bba_y
 

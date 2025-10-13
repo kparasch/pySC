@@ -51,13 +51,14 @@ class ATLattice(Lattice):
     # fake field so that pydantic can distinguish
     # the different machine types
     at_simulator: None = None
+    use: str = 'RING'
     _ring: at.Lattice = PrivateAttr(default=None)
     _design: at.Lattice = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def load_lattice(self):
-        self._ring = at.load_mat(self.lattice_file)
-        self._design = at.load_mat(self.lattice_file)
+        self._ring = at.load_mat(self.lattice_file, use=self.use)
+        self._design = at.load_mat(self.lattice_file, use=self.use)
 
         if not self.no_6d:
             self._ring.enable_6d()

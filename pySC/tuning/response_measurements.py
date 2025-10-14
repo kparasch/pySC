@@ -1,6 +1,7 @@
-from typing import Union, TYPE_CHECKING
+from typing import Union, Optional, TYPE_CHECKING
 import numpy as np
 from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
+
 
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
@@ -12,7 +13,7 @@ progress = Progress(
                     TimeRemainingColumn(),
                    )
 
-def response_loop(inputs, inputs_delta, get_output, settings):
+def response_loop(inputs, inputs_delta, get_output, settings, normalize=True):
     n_inputs = len(inputs)
 
     with progress:
@@ -30,7 +31,9 @@ def response_loop(inputs, inputs_delta, get_output, settings):
             delta = inputs_delta[i]
             settings.set(control, ref_setpoint + delta)
             output = get_output()
-            RM[:, i] = (output - reference)/delta
+            RM[:, i] = (output - reference)
+            if normalize:
+                RM[:, i] /= delta
             settings.set(control, ref_setpoint)
 
             progress.update(task_id, completed=i+1, description=f'Measuring response of {control}...')
@@ -68,12 +71,14 @@ def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int 
 
     return RM
 
-def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", dkick: Union[float, list] = 1e-5, use_design: bool = False):
+def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[list] = None, VCORR: Optional[list] = None, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True):
     print('Calculating response matrix')
 
     ### set inputs
-    HCORR = SC.tuning.HCORR
-    VCORR = SC.tuning.VCORR
+    if HCORR is None:
+        HCORR = SC.tuning.HCORR
+    if VCORR is None:
+        VCORR = SC.tuning.VCORR
     CORR = HCORR + VCORR
 
     n_CORR = len(CORR)
@@ -93,11 +98,11 @@ def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", dkick: Union[float
     magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
 
     ### measure the response matrix
-    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings)
+    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize)
 
     return RM
 
-def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main', use_design: bool = False):
+def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main', use_design: bool = False, normalize: bool = True):
 
     rf_settings = SC.design_rf_settings if use_design else SC.rf_settings
     rf_system = rf_settings.systems[rf_system_name]
@@ -113,7 +118,10 @@ def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : f
     rf_system.set_frequency(frf + delta_frf)
     xy1 = get_orbit()
     rf_system.set_frequency(frf)
-    response = (xy1 - xy0)/delta_frf
+
+    response = (xy1 - xy0)
+    if normalize:
+        response /= delta_frf
 
     return response
 

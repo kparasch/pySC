@@ -10,9 +10,8 @@ import numpy as np
 from scipy.special import erf
 from scipy.stats import t
 
-from pySC.utils import logging_tools
-
-LOGGER = logging_tools.get_logger(__name__)
+import logging
+LOGGER = logging.getLogger(__name__)
 
 CONFIDENCE_LEVEL = (1 + erf(1 / np.sqrt(2))) / 2
 PI2: float = 2 * np.pi

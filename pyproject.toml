@@ -17,14 +17,14 @@ packages = ["pySC"]
 
 [project]
 name = "pySC"
-description = "Python version of Simulated Commissioning toolkit for synchrotrons (https://github.com/ThorstenHellert/SC) "
+description = "A Python Simulated Commissioning toolkit for synchrotrons (inspired by https://github.com/ThorstenHellert/SC)"
 readme = "README.md"
 requires-python = ">=3.9"
 dynamic = ["version"]
 #license = {file = "LICENSE.txt"}
 keywords = ["Accelerator", "Synchrotron", "Commissioning", ]
 maintainers = [
-    {name = "Lukáš Malina", email = "lukas.malina@desy.de"}
+    {name = "Konstantinos Paraschou", email = "konstantinos.paraschou@desy.de"}
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -43,7 +43,9 @@ dependencies = [
     "numpy>=2.0.0",
     "scipy>=1.11.4",
     "matplotlib>=3.7.3",
-    "accelerator-toolbox>=0.6.1"
+    "accelerator-toolbox>=0.6.1",
+    "pydantic",
+    "rich"
 ]
 
 [project.optional-dependencies]
@@ -58,6 +60,6 @@ doc = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/lmalina/pySC"
-Documentation = "https://lmalina.github.io/pySC/"
-Repository = "https://github.com/lmalina/pySC.git"
+Homepage = "https://github.com/kparasch/pySC"
+Documentation = ""
+Repository = "https://github.com/kparasch/pySC.git"

@@ -1,126 +1,124 @@
-import re
+# import re
 
 import numpy as np
 from matplotlib import pyplot as plt
 from numpy import ndarray, float64
-from at import Lattice
+# from at import Lattice
 from typing import Union, Optional
+import logging
 
-from pySC.utils import at_wrapper, logging_tools
-
-
-LOGGER = logging_tools.get_logger(__name__)
+LOGGER = logging.getLogger(__name__)
 
 
-def randnc(cut_off: float = 2, shape: tuple = (1,)) -> Union[ndarray, float64]:
-    """
-    Generates an array of random number(s) from normal distribution with a cut-off.
-    If shape = () a single float value is returned.
-
-    Parameters
-    ----------
-    cut_off : float
-        The cut-off value.
-    shape : tuple
-        The shape of the output array.
-
-    Returns
-    -------
-    out : Union[ndarray, float64]
-        The output array (If shape = () a single float value)
-    """
-    if np.any([s < 0 for s in shape]):
-        raise ValueError('The shape of the output array must be positive.')
-    out_shape = (1,) if np.sum(shape) < 1 else shape
-    out = np.random.randn(np.prod(out_shape))
-    outindex = np.abs(out) > np.abs(cut_off)
-    while np.sum(outindex):
-        out[outindex] = np.random.randn(np.sum(outindex))
-        outindex = np.abs(out) > np.abs(cut_off)
-    if np.sum(shape) < 1:
-        return out[0]
-    return out.reshape(out_shape)
-
-
-def ords_from_regex(ring: Lattice, regex: str) -> ndarray:
-    """
-    Returns the indices of the elements in the ring whose names match the regex.
-
-    Parameters
-    ----------
-    ring : Lattice
-        The ring to search.
-    regex : str
-        The regular expression to match.
-
-    Returns
-    -------
-    ndarray
-        The indices of the matched elements.
-    """
-    indices = np.array([ind for ind, el in enumerate(ring) if re.search(regex, el.FamName)], dtype=int)
-    for ind in indices:
-        LOGGER.debug(f'Matched: {ring[ind].FamName}')
-    return indices
+# def randnc(cut_off: float = 2, shape: tuple = (1,)) -> Union[ndarray, float64]:
+#     """
+#     Generates an array of random number(s) from normal distribution with a cut-off.
+#     If shape = () a single float value is returned.
+# 
+#     Parameters
+#     ----------
+#     cut_off : float
+#         The cut-off value.
+#     shape : tuple
+#         The shape of the output array.
+# 
+#     Returns
+#     -------
+#     out : Union[ndarray, float64]
+#         The output array (If shape = () a single float value)
+#     """
+#     if np.any([s < 0 for s in shape]):
+#         raise ValueError('The shape of the output array must be positive.')
+#     out_shape = (1,) if np.sum(shape) < 1 else shape
+#     out = np.random.randn(np.prod(out_shape))
+#     outindex = np.abs(out) > np.abs(cut_off)
+#     while np.sum(outindex):
+#         out[outindex] = np.random.randn(np.sum(outindex))
+#         outindex = np.abs(out) > np.abs(cut_off)
+#     if np.sum(shape) < 1:
+#         return out[0]
+#     return out.reshape(out_shape)
 
 
-def pinv(matrix: ndarray, num_removed: int = 0, alpha: float = 0, damping: float = 1, svd_cutoff: Optional[float] = None, plot: bool = False) -> ndarray:
-    """
-    Computes the pseudo-inverse of a matrix using the Singular Value Decomposition (SVD) method.
-
-    Parameters
-    ----------
-    matrix : ndarray
-        The matrix to be inverted.
-    num_removed : int, optional
-        The number of singular values to be removed from the matrix.
-    alpha : float, optional
-        The regularization parameter.
-    damping : float, optional
-        The damping factor.
-    plot : bool, optional
-        If True, plots the singular values and the damping factor.
-
-    Returns
-    -------
-    matrix_inv : ndarray
-        The pseudo-inverse of the matrix.
-    """
-    u_mat, s_mat, vt_mat = np.linalg.svd(matrix, full_matrices=False)
-    num_singular_values = s_mat.shape[0] - num_removed if num_removed > 0 else s_mat.shape[0]
-
-    if svd_cutoff is not None:
-        s0 = s_mat[0]
-        s_mat[s_mat < svd_cutoff * s0] = 0
-
-    available = np.sum(s_mat > 0.)
-    keep = min(num_singular_values, available)
-    d_mat = np.zeros(s_mat.shape)
-    d_mat[:available] = s_mat[:available] / (np.square(s_mat[:available]) + alpha**2) if alpha else 1/s_mat[:available]
-    d_mat = damping * d_mat
-    matrix_inv = np.dot(np.dot(np.transpose(vt_mat[:keep, :]), np.diag(d_mat[:keep])), np.transpose(u_mat[:, :keep]))
-    if plot:
-        _plot_singular_values(s_mat, d_mat)
-    return matrix_inv
+# def ords_from_regex(ring: Lattice, regex: str) -> ndarray:
+#     """
+#     Returns the indices of the elements in the ring whose names match the regex.
+# 
+#     Parameters
+#     ----------
+#     ring : Lattice
+#         The ring to search.
+#     regex : str
+#         The regular expression to match.
+# 
+#     Returns
+#     -------
+#     ndarray
+#         The indices of the matched elements.
+#     """
+#     indices = np.array([ind for ind, el in enumerate(ring) if re.search(regex, el.FamName)], dtype=int)
+#     for ind in indices:
+#         LOGGER.debug(f'Matched: {ring[ind].FamName}')
+#     return indices
 
 
-def scale_circumference(RING, circ, mode='abs'):  # TODO
-    allowed_modes = ("abs", "rel")
-    if mode not in allowed_modes:
-        raise ValueError(f'Unsupported circumference scaling mode: ``{mode}``. Allowed are {allowed_modes}.')
-    C = at_wrapper.findspos(RING)[-1]
-    D = 0
-    for ind in range(len(RING)):
-        if RING[ind].PassMethod == 'DriftPass':
-            D += RING[ind].Length
-    if mode == 'rel':
-        Dscale = 1 - (1 - circ) * C / D
-    else:  # mode == 'abs'
-        Dscale = 1 - (C - circ) / D
-    for ind in range(len(RING)):
-        if RING[ind].PassMethod == 'DriftPass':
-            RING[ind].Length = RING[ind].Length * Dscale
-    return RING
+# def pinv(matrix: ndarray, num_removed: int = 0, alpha: float = 0, damping: float = 1, svd_cutoff: Optional[float] = None, plot: bool = False) -> ndarray:
+#     """
+#     Computes the pseudo-inverse of a matrix using the Singular Value Decomposition (SVD) method.
+# 
+#     Parameters
+#     ----------
+#     matrix : ndarray
+#         The matrix to be inverted.
+#     num_removed : int, optional
+#         The number of singular values to be removed from the matrix.
+#     alpha : float, optional
+#         The regularization parameter.
+#     damping : float, optional
+#         The damping factor.
+#     plot : bool, optional
+#         If True, plots the singular values and the damping factor.
+# 
+#     Returns
+#     -------
+#     matrix_inv : ndarray
+#         The pseudo-inverse of the matrix.
+#     """
+#     u_mat, s_mat, vt_mat = np.linalg.svd(matrix, full_matrices=False)
+#     num_singular_values = s_mat.shape[0] - num_removed if num_removed > 0 else s_mat.shape[0]
+# 
+#     if svd_cutoff is not None:
+#         s0 = s_mat[0]
+#         s_mat[s_mat < svd_cutoff * s0] = 0
+# 
+#     available = np.sum(s_mat > 0.)
+#     keep = min(num_singular_values, available)
+#     d_mat = np.zeros(s_mat.shape)
+#     d_mat[:available] = s_mat[:available] / (np.square(s_mat[:available]) + alpha**2) if alpha else 1/s_mat[:available]
+#     d_mat = damping * d_mat
+#     matrix_inv = np.dot(np.dot(np.transpose(vt_mat[:keep, :]), np.diag(d_mat[:keep])), np.transpose(u_mat[:, :keep]))
+#     if plot:
+#         _plot_singular_values(s_mat, d_mat)
+#     return matrix_inv
+
+
+# def scale_circumference(RING, circ, mode='abs'):  # TODO
+#     allowed_modes = ("abs", "rel")
+#     if mode not in allowed_modes:
+#         raise ValueError(f'Unsupported circumference scaling mode: ``{mode}``. Allowed are {allowed_modes}.')
+#     C = at_wrapper.findspos(RING)[-1]
+#     D = 0
+#     for ind in range(len(RING)):
+#         if RING[ind].PassMethod == 'DriftPass':
+#             D += RING[ind].Length
+#     if mode == 'rel':
+#         Dscale = 1 - (1 - circ) * C / D
+#     else:  # mode == 'abs'
+#         Dscale = 1 - (C - circ) / D
+#     for ind in range(len(RING)):
+#         if RING[ind].PassMethod == 'DriftPass':
+#             RING[ind].Length = RING[ind].Length * Dscale
+#     return RING
 
 
 def update_transformation(element, dx=None, dy=None, dz=None, roll=None, yaw=None, pitch=None):
@@ -164,36 +162,36 @@ def update_transformation(element, dx=None, dy=None, dz=None, roll=None, yaw=Non
     return element
 
 
-def read_multipoles(fname):  # TODO sample of the input anywhere?
-    f = open(fname, 'r')
-    tab = np.array(f.read().split()).astype(float)
-    f.close()
-    if len(tab) % 3 != 0:
-        LOGGER.error('Incorrect table size.')
-        return
-    AB = tab.reshape((-1, 3))[:, 1:]
-    idx = np.where(AB == 1)
-    if len(idx[0]) != 1:
-        LOGGER.warning('Nominal order could not be (uniquely) determined. Continuing with idx=1.')
-        idx = 1
-    order, type = idx[0][0], idx[1][0]
-    if type > 2:
-        LOGGER.error('Ill-defined magnet type.')
-        return
-    return np.roll(AB, 1, axis=1), order, type  # swapping A and B
+# def read_multipoles(fname):  # TODO sample of the input anywhere?
+#     f = open(fname, 'r')
+#     tab = np.array(f.read().split()).astype(float)
+#     f.close()
+#     if len(tab) % 3 != 0:
+#         LOGGER.error('Incorrect table size.')
+#         return
+#     AB = tab.reshape((-1, 3))[:, 1:]
+#     idx = np.where(AB == 1)
+#     if len(idx[0]) != 1:
+#         LOGGER.warning('Nominal order could not be (uniquely) determined. Continuing with idx=1.')
+#         idx = 1
+#     order, type = idx[0][0], idx[1][0]
+#     if type > 2:
+#         LOGGER.error('Ill-defined magnet type.')
+#         return
+#     return np.roll(AB, 1, axis=1), order, type  # swapping A and B
 
 
-def _plot_singular_values(s_mat, d_mat):
-    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(12, 4), dpi=100, facecolor="w")
-    ax[0].semilogy(np.diag(s_mat) / np.max(np.diag(s_mat)), 'o--')
-    ax[0].set_xlabel('Number of SV')
-    ax[0].set_ylabel(r'$\sigma/\sigma_0$')
-    ax[1].plot(s_mat * d_mat, 'o--')
-    ax[1].set_xlabel('Number of SV')
-    ax[1].set_ylabel(r'$\sigma * \sigma^+$')
-    ax[1].yaxis.tick_right()
-    ax[1].yaxis.set_label_position("right")
-    fig.show()
+# def _plot_singular_values(s_mat, d_mat):
+#     fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(12, 4), dpi=100, facecolor="w")
+#     ax[0].semilogy(np.diag(s_mat) / np.max(np.diag(s_mat)), 'o--')
+#     ax[0].set_xlabel('Number of SV')
+#     ax[0].set_ylabel(r'$\sigma/\sigma_0$')
+#     ax[1].plot(s_mat * d_mat, 'o--')
+#     ax[1].set_xlabel('Number of SV')
+#     ax[1].set_ylabel(r'$\sigma * \sigma^+$')
+#     ax[1].yaxis.tick_right()
+#     ax[1].yaxis.set_label_position("right")
+#     fig.show()
 
 
 def rotation(rolls):

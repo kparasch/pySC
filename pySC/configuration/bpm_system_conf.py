@@ -22,6 +22,9 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
     bpms_calibration_error_y = []
     bpms_categories = []
 
+    if len(bpms_conf.keys()) > 1:
+        logger.fatal('More than one bpm category found in the configuration file. Not tested! Proceed with caution and ask for help!')
+
     for bpms_category in bpms_conf.keys():
         bpms_category_conf = bpms_conf[bpms_category]
 
@@ -29,8 +32,9 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
 
         # make sure indices are not already in bpms_indices
         # if they are, raise an error.
-        logger.fatal(f'At least one bpm in category {bpms_category} has already been registered.')
-        assert len(set(bpms_indices).intersection(set(indices))) == 0, f'ERROR: at least one bpm in category {bpms_category} has already been registered.'
+        if not len(set(bpms_indices).intersection(set(indices))) == 0:
+            logger.fatal(f'At least one bpm in category {bpms_category} has already been registered.')
+            raise Exception(f'ERROR: At least one bpm in category {bpms_category} has already been registered.')
         bpms_indices = bpms_indices + indices
         bpms_names = bpms_names + names
         nbpm = len(bpms_indices)

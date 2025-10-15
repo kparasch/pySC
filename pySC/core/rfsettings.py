@@ -80,6 +80,10 @@ class RFSystem(BaseModel, extra="forbid"):
         for cav in self.cavities:
             self._parent.cavities[cav].update()
 
+    @property
+    def indices(self) -> list[int]:
+        return [self._parent.cavities[cav].sim_index for cav in self.cavities]
+
 
 class RFSettings(BaseModel, extra="forbid"):
     systems: Dict[str, RFSystem] = Field(default_factory=dict)

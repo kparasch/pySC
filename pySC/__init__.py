@@ -20,3 +20,7 @@ logging.basicConfig(
     style='{',
     stream=sys.stdout
 )
+
+def disable_pySC_rich():
+    from .tuning import response_measurements
+    response_measurements.DISABLE_RICH = True

@@ -2,19 +2,34 @@ from typing import Union, Optional, TYPE_CHECKING
 import numpy as np
 from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
 
-
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
 
-progress = Progress(
-                    TextColumn("[progress.description]{task.description}"),
-                    BarColumn(),
-                    MofNCompleteColumn(),
-                    TimeRemainingColumn(),
-                   )
+
+DISABLE_RICH = False
+
+rich_progress = Progress(
+                         TextColumn("[progress.description]{task.description}"),
+                         BarColumn(),
+                         MofNCompleteColumn(),
+                         TimeRemainingColumn(),
+                        )
+
+def no_rich_progress():
+    from contextlib import nullcontext
+    progress = nullcontext()
+    progress.add_task = lambda *args, **kwargs: 1
+    progress.update = lambda *args, **kwargs: None
+    progress.remove_task = lambda *args, **kwargs: None
+    return progress
 
 def response_loop(inputs, inputs_delta, get_output, settings, normalize=True):
     n_inputs = len(inputs)
+
+    if DISABLE_RICH:
+        progress = no_rich_progress()
+    else:
+        progress = rich_progress
 
     with progress:
         task_id = progress.add_task("Measuring RM", start=True, total=n_inputs)

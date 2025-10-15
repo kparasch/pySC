@@ -56,12 +56,14 @@ def configure_supports(SC: SimulatedCommissioning):
                 if alignment == 'relative':
                     sigma = sigma / SQRT2
                 SC.support_system.data[f'L{level}'][support_index].start.dx = SC.rng.normal_trunc(0, sigma)
+                SC.support_system.data[f'L{level}'][support_index].end.dx = SC.rng.normal_trunc(0, sigma)
 
             if 'dy' in level_conf:
                 sigma = get_error(level_conf['dy'], error_table)
                 if alignment == 'relative':
                     sigma = sigma / SQRT2
                 SC.support_system.data[f'L{level}'][support_index].start.dy = SC.rng.normal_trunc(0, sigma)
+                SC.support_system.data[f'L{level}'][support_index].end.dy = SC.rng.normal_trunc(0, sigma)
 
             if 'roll' in level_conf:
                 sigma = get_error(level_conf['roll'], error_table)

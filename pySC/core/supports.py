@@ -6,11 +6,13 @@ import json
 from pydantic import BaseModel, PrivateAttr
 from typing import Optional, Union, TYPE_CHECKING
 from pathlib import Path
+import logging
 
 from ..utils.sc_tools import update_transformation
 if TYPE_CHECKING:
     from .new_simulated_commissioning import SimulatedCommissioning
 
+logger = logging.getLogger(__name__)
 
 class ElementOffset(BaseModel):
     """
@@ -165,7 +167,7 @@ class SupportSystem(BaseModel):
 
         ## for each element/endpoint find who it is supported by
         for level in all_levels:
-            print(f'Resolving supports: looping through {level}')
+            logger.info(f'Resolving supports: looping through {level}')
             for key in self.data[level].keys():
                 if level == 'L0':
                     # element offset
@@ -329,6 +331,7 @@ class SupportSystem(BaseModel):
 
     ## this should maybe belong to tuning algorithms
     def fake_align_bpms(self, bpm_indices, magnet_indices):
+        logger.fatal('Function is deprecated, use the one from SC.tuning instead.')
         for bpm_index, magnet_index in zip(bpm_indices, magnet_indices):
             magnet_dx, magnet_dy = self.get_total_offset(index=magnet_index)
             bpm_tot_dx, bpm_tot_dy = self.get_total_offset(index=bpm_index)

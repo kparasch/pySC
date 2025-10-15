@@ -52,11 +52,17 @@ class Support(BaseModel):
 
     @property
     def yaw(self):
-        return (self.end.dx - self.start.dx ) / self.length 
+        if self.length == 0:
+            return 0.
+        else:
+            return (self.end.dx - self.start.dx ) / self.length
 
     @property
     def pitch(self):
-        return (self.end.dy - self.start.dy ) / self.length
+        if self.length == 0:
+            return 0.
+        else:
+            return (self.end.dy - self.start.dy ) / self.length
 
     def __repr__(self):
         return f'({self.name}: {self.start.index}-{self.end.index})'

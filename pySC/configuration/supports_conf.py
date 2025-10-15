@@ -2,8 +2,12 @@
 from typing import  Any
 from ..core.new_simulated_commissioning import SimulatedCommissioning
 from .general import get_error, get_indices_and_names
+import logging
+
+logger = logging.getLogger(__name__)
 
 SQRT2 = 2**0.5
+ZERO_LENGTH_THRESHOLD = 1e-6
 
 def generate_element_misalignments(SC: SimulatedCommissioning, index: int, category_conf: dict[str, Any]) -> None:
     error_table = dict.get(SC.configuration, 'error_table', {}) # defaults to empty error_table if not declared
@@ -38,10 +42,14 @@ def configure_supports(SC: SimulatedCommissioning):
         if alignment not in ['absolute', 'relative']:
             raise Exception('Unknown alignment mode: {alignment}. Only "absolute" and "relative" are supported.')
 
+        zero_length_supports = []
         for index_start, index_end in zip(indices_start, indices_end):
             # If in the future I want to give names to supports (e.g. girders),
             # here I can have it pass the name from get_indices_and_names (TODO)
             support_index = SC.support_system.add_support(index_start, index_end, name=level_name, level=level)
+
+            if SC.support_system.data[f'L{level}'][support_index].length < ZERO_LENGTH_THRESHOLD:
+                zero_length_supports.append(support_index)
 
             if 'dx' in level_conf:
                 sigma = get_error(level_conf['dx'], error_table)
@@ -58,6 +66,7 @@ def configure_supports(SC: SimulatedCommissioning):
             if 'roll' in level_conf:
                 sigma = get_error(level_conf['roll'], error_table)
                 SC.support_system.data[f'L{level}'][support_index].roll = SC.rng.normal_trunc(0, sigma)
+        logger.warning(f'Found {len(zero_length_supports)} zero-length supports in level {level} ({category_name}).')
 
     SC.support_system.resolve_graph()
     SC.support_system.update_all()

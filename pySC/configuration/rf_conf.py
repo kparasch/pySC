@@ -1,14 +1,17 @@
+import logging
+
 from ..core.new_simulated_commissioning import SimulatedCommissioning
 from ..core.rfsettings import RFCavity, RFSystem
 from .general import get_error, get_indices_and_names
 
+logger = logging.getLogger(__name__)
 
 def configure_rf(SC: SimulatedCommissioning) -> None:
     rf_conf = dict.get(SC.configuration, 'rf', {})
     error_table = dict.get(SC.configuration, 'error_table', {}) # defaults to empty error_table if not declared
 
     if 'main' not in rf_conf:
-        print('WARNING: "main" rf system was not found in the configuration file.')
+        logger.warning('"main" rf system was not found in the configuration file.')
 
     for rf_category in rf_conf.keys():
         rf_category_conf = rf_conf[rf_category]
@@ -30,9 +33,9 @@ def configure_rf(SC: SimulatedCommissioning) -> None:
             frequency_delta = frequency - system_frequency
 
             if phase_delta != 0:
-                print(f'WARNING: cavities in the {rf_category} rf system do not have the same phase.')
+                logger.warning(f'Cavities in the {rf_category} rf system do not have the same phase.')
             if frequency_delta != 0:
-                print(f'WARNING: cavities in the {rf_category} rf system do not have the same frequency.')
+                logger.warning(f'Cavities in the {rf_category} rf system do not have the same frequency.')
 
             cavity = RFCavity(sim_index=index, phase_delta=phase_delta, frequency_delta=frequency_delta)
             design_cavity = RFCavity(sim_index=index, phase_delta=phase_delta, frequency_delta=frequency_delta, to_design=True)

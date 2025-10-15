@@ -1,10 +1,12 @@
+import numpy as np
+import logging
+
 from ..core.new_simulated_commissioning import SimulatedCommissioning
 from ..core.bpm_system import BPM_FIELDS_TO_INITIALISE
 from .general import get_error, get_indices_and_names
 from .supports_conf import generate_element_misalignments
-import numpy as np
-# def sort_list_with_argsort(mylist: list, argsort: list) -> list:
 
+logger = logging.getLogger(__name__)
 
 def configure_bpms(SC: SimulatedCommissioning) -> None:
     # get magnets configuration, return empty dict if not there
@@ -27,6 +29,7 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
 
         # make sure indices are not already in bpms_indices
         # if they are, raise an error.
+        logger.fatal(f'At least one bpm in category {bpms_category} has already been registered.')
         assert len(set(bpms_indices).intersection(set(indices))) == 0, f'ERROR: at least one bpm in category {bpms_category} has already been registered.'
         bpms_indices = bpms_indices + indices
         bpms_names = bpms_names + names
@@ -38,21 +41,21 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
         if 'orbit_noise' in bpms_category_conf:
             orbit_noise = get_error(bpms_category_conf['orbit_noise'], error_table)
         else:
-            print(f'WARNING: no orbit_noise was found for bpms: {bpms_category}.')
+            logger.warning(f'No orbit_noise was found for bpms: {bpms_category}.')
             orbit_noise = 0
         bpms_orbit_noise = bpms_orbit_noise + [orbit_noise] * nbpm
 
         if 'tbt_noise' in bpms_category_conf:
             tbt_noise = get_error(bpms_category_conf['tbt_noise'], error_table)
         else:
-            print(f'WARNING: no tbt_noise was found for bpms: {bpms_category}.')
+            logger.warning(f'No tbt_noise was found for bpms: {bpms_category}.')
             tbt_noise = 0
         bpms_tbt_noise = bpms_tbt_noise + [tbt_noise] * nbpm
 
         if 'calibration_error' in bpms_category_conf:
             sig = get_error(bpms_category_conf['calibration_error'], error_table)
         else:
-            print(f'WARNING: no calibration_error was found for bpms: {bpms_category}.')
+            logger.warning(f'No calibration_error was found for bpms: {bpms_category}.')
             sig = 0
 
         for _ in range(len(indices)):

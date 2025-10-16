@@ -10,6 +10,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
     magnets: Dict[MAGNET_NAME_TYPE, Magnet] = Field(default_factory=dict)
     controls: Dict[str, Control] = Field(default_factory=dict)
     links: Dict[str, ControlMagnetLink] = Field(default_factory=dict)
+    index_mapping: Dict[int, MAGNET_NAME_TYPE] = Field(default_factory=dict)
     _parent: Optional["SimulatedCommissioning"] = PrivateAttr(default=None)
 
     @model_validator(mode="after")
@@ -36,6 +37,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
         if magnet.name in self.magnets:
             raise ValueError(f"Magnet '{magnet.name}' already exists")
         self.magnets[magnet.name] = magnet
+        self.index_mapping[magnet.sim_index] = magnet.name
 
     def add_control(self, control: Control) -> None:
 

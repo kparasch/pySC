@@ -44,8 +44,7 @@ class XSuiteLattice(Lattice):
 
 class ATLattice(Lattice):
     """
-    Represents a machine in the AA (Accelerator Analysis) framework.
-    This class is used to define the properties and behaviors of a machine.
+    Represents a lattice defined with AT (Accelerator Toolbox).
     """
 
     # fake field so that pydantic can distinguish

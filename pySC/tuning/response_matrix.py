@@ -8,14 +8,14 @@ logger = logging.getLogger(__name__)
 
 class InverseResponseMatrix(BaseModel, extra="forbid"):
     matrix: NPARRAY
-    method: Literal['tikhonov', 'svd_values', 'svd_cutoff']
+    method: Literal['tikhonov', 'svd_values', 'svd_cutoff', 'micado']
     parameter: float
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def dot(self, output: np.array) -> np.array:
         return np.dot(self.matrix, output)
-    
+
     @property
     def shape(self):
         return self.matrix.shape
@@ -110,11 +110,12 @@ class ResponseMatrix(BaseModel, extra="forbid"):
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.):
         expected_shape = (self._n_inputs - len(self._bad_inputs), self._n_outputs - len(self._bad_outputs))
-        if self._inverse_RM is None:
-            self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
-        else:
-            if self._inverse_RM.method != method or self._inverse_RM.parameter != parameter or self._inverse_RM.shape != expected_shape:
+        if method != 'micado':
+            if self._inverse_RM is None:
                 self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
+            else:
+                if self._inverse_RM.method != method or self._inverse_RM.parameter != parameter or self._inverse_RM.shape != expected_shape:
+                    self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
 
         bad_output = output.copy()
         bad_output[np.isnan(bad_output)] = 0
@@ -127,9 +128,37 @@ class ResponseMatrix(BaseModel, extra="forbid"):
              + f'expected outputs: {len(self.output_names)} - {len(self._bad_outputs)}'
              + f'received outputs: {len(output)}, should be equal to {len(self.output_names)}!')
 
-        good_input = self._inverse_RM.dot(good_output)
+        if method == 'micado':
+            bad_input = self.micado(good_output, int(parameter))
+        else:
+            good_input = self._inverse_RM.dot(good_output)
 
-        bad_input = np.zeros(self._n_inputs, dtype=float)
-        bad_input[self._input_mask] = good_input
+            bad_input = np.zeros(self._n_inputs, dtype=float)
+            bad_input[self._input_mask] = good_input
         return bad_input
 
+    def micado(self, good_output: np.array, n: int):
+        all_inputs = list(range(self._n_inputs))
+        bad_input = np.zeros(self._n_inputs, dtype=float)
+        already_used_inputs = []
+
+        good_RM = self.RM[self._output_mask]
+        residual = good_output.copy()
+
+        for _ in range(n):
+            best_chi2 = np.inf
+            for ii in all_inputs:
+                if ii in already_used_inputs or ii in self._bad_inputs:
+                    continue
+                response = good_RM[:, ii]
+                trim = np.dot(response, residual) / np.dot(response, response)
+                chi2 = np.sum(np.square(residual - trim * response))
+                if chi2 < best_chi2:
+                    best_chi2 = chi2
+                    best_input = ii
+                    best_trim = trim
+            already_used_inputs.append(best_input)
+            bad_input[best_input] = best_trim
+            residual -= best_trim * good_RM[:, ii]
+
+        return bad_input

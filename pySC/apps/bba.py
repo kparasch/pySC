@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, Callable
+from pydantic import BaseModel, PrivateAttr
+from typing import Optional
 import datetime
 import logging
 import numpy as np
@@ -7,7 +7,9 @@ from enum import IntEnum
 from pathlib import Path
 
 from ..utils.file_tools import dict_to_h5
-from .tools import hysteresis_loop, get_average_orbit, MeasurementCode
+from ..tuning.tools import hysteresis_loop, get_average_orbit, MeasurementCode
+from .interface import AbstractInterface
+
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ class BBAData(BaseModel):
     def save(self, folder_to_save: Path = Path('./data')) -> Path:
         dict_to_save = self.model_dump()
         time_str = datetime.datetime.fromtimestamp(self.timestamp).strftime("%Y%m%d_%H%M%S")
-        filename = folder_to_save / Path(f'BBA_{self.bpm}_{self.plane}_{time_str}.h5')
+        filename = Path(folder_to_save) / Path(f'BBA_{self.bpm}_{self.plane}_{time_str}.h5')
         dict_to_h5(dict_to_save, filename)
         logger.debug(f'Saved data to {filename}')
         return filename
@@ -88,8 +90,7 @@ class BBA_Measurement(BaseModel):
     V_data: Optional[BBAData] = None
 
     ## TODO: make these private
-    get_orbit: Optional[Callable] = None # to be set at generation of measurement
-    settings: Optional[Callable] = None # to be set at generation of measurement
+    _interface: Optional[AbstractInterface] = PrivateAttr(default=None) # to be set at generation of measurement
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -124,7 +125,10 @@ class BBA_Measurement(BaseModel):
         logger.debug("")
 
     def one_plane_loop(self, plane: str):
+        assert self._interface is not None
         assert plane in ['H', 'V']
+
+        interface = self._interface
         if plane == 'H':
             logger.debug('Starting measurement in horizontal plane.')
             code = BBACode.HORIZONTAL
@@ -139,7 +143,7 @@ class BBA_Measurement(BaseModel):
         data = self.H_data if plane == 'H' else self.V_data
 
         logger.debug('Setting corrector to under first value (k0 - 1.2 dk0) for hysteresis')
-        self.settings.set(corrector, initial_k0l - 1.2 * data.dk0l)
+        interface.set(corrector, initial_k0l - 1.2 * data.dk0l)
         yield code
 
         k0_array = np.linspace(-data.dk0l, data.dk0l, self.n0) + initial_k0l
@@ -148,7 +152,7 @@ class BBA_Measurement(BaseModel):
 
             # set next setpoint in corrector
             logger.debug(f'{ii+1}/{self.n0} Stepping to next corrector setpoint: {k0_sp*1e6:+.1f} murad')
-            self.settings.set(corrector, k0_sp)
+            interface.set(corrector, k0_sp)
             yield code
 
             # correct vertical orbit?
@@ -162,7 +166,7 @@ class BBA_Measurement(BaseModel):
 
             # set "up" setpoint in quadrupole
             logger.debug(f'    Setting quadrupole to up setpoint: {self.initial_k1 + data.dk1} 1/m')
-            self.settings.set(self.quadrupole, self.initial_k1 + data.dk1)
+            interface.set(self.quadrupole, self.initial_k1 + data.dk1)
             yield code
 
             logger.debug('    Acquiring orbit data for quad up')
@@ -195,33 +199,32 @@ class BBA_Measurement(BaseModel):
 
             # restore quadrupole to initial setpoint
             logger.debug(f'    Restoring quadrupole to initial setpoint: {self.initial_k1}')
-            self.settings.set(self.quadrupole, self.initial_k1)
+            interface.set(self.quadrupole, self.initial_k1)
 
             logger.debug("")
         # restore corrector to initial setpoint
-        self.settings.set(corrector, initial_k0l)
+        interface.set(corrector, initial_k0l)
 
         #save data
         yield code_done
 
-    def generate(self, get_orbit, settings):
+    def generate(self, interface: AbstractInterface):
         """
         step through the measurement.
         """
-        self.get_orbit = get_orbit
-        self.settings = settings
+        self.interface = interface 
 
         timestamp = datetime.datetime.now().timestamp()
         # for restoring at the end
-        self.initial_k1 = settings.get(self.quadrupole)
+        self.initial_k1 = interface.get(self.quadrupole)
         if self.h_corrector is not None:
-            self.initial_h_k0l = settings.get(self.h_corrector)
+            self.initial_h_k0l = interface.get(self.h_corrector)
             self.H_data.initial_k0l = self.initial_h_k0l
             self.H_data.initial_k1 = self.initial_k1
             self.H_data.timestamp = timestamp
 
         if self.v_corrector is not None:
-            self.initial_v_k0l = settings.get(self.v_corrector)
+            self.initial_v_k0l = interface.get(self.v_corrector)
             self.V_data.initial_k0l = self.initial_v_k0l
             self.V_data.initial_k1 = self.initial_k1
             self.V_data.timestamp = timestamp
@@ -235,7 +238,7 @@ class BBA_Measurement(BaseModel):
         else:
             dk1 = max(self.H_data.dk1, self.V_data.dk1)
 
-        for code in hysteresis_loop(self.quadrupole, settings, dk1, n_cycles=2, bipolar=self.bipolar):
+        for code in hysteresis_loop(self.quadrupole, interface, dk1, n_cycles=2, bipolar=self.bipolar):
             yield code
 
         if self.h_corrector is not None:

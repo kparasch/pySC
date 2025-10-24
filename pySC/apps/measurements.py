@@ -1,20 +1,20 @@
 import logging
 import numpy as np
 
-from .response_matrix import ResponseMatrix
+from ..tuning.response_matrix import ResponseMatrix
 from typing import Optional, Callable, Union
 from .bba import BBA_Measurement, BBACode
 
 logger = logging.getLogger(__name__)
 
-def orbit_correction(get_orbit: Callable, settings, response_matrix: ResponseMatrix, correctors: list[str],
+def orbit_correction(interface, response_matrix: ResponseMatrix, correctors: list[str],
                      method='svd_cutoff', parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
                      gain: float = 1, apply: bool = False):
 
     if not apply and gain != 1:
         logger.warning("Gain is set but apply is False, gain will have no effect.")
 
-    orbit_x, orbit_y = get_orbit()
+    orbit_x, orbit_y = interface.get_orbit()
     orbit = np.concat((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
 
     if reference is not None:
@@ -24,16 +24,16 @@ def orbit_correction(get_orbit: Callable, settings, response_matrix: ResponseMat
     trims = response_matrix.solve(orbit, method=method, parameter=parameter)
 
     if apply:
-        data = settings.get_many(correctors)
+        data = interface.get_many(correctors)
         for i, corr in enumerate(correctors):
             data[corr] += trims[i] * gain
-        settings.set_many(data)
+        interface.set_many(data)
 
     return trims
 
-def measure_bba(get_orbit, settings, bpm_name, config: dict, shots_per_orbit: int = 1,
-              n_corr_steps: int = 7, bipolar: bool = True, skew_quad: bool = False,
-              skip_save: bool = False):
+def measure_bba(interface, bpm_name, config: dict, shots_per_orbit: int = 1,
+                n_corr_steps: int = 7, bipolar: bool = True, skew_quad: bool = False,
+                skip_save: bool = False):
 
     measurement = BBA_Measurement(bpm=bpm_name,
                                   quadrupole=config['QUAD'],
@@ -50,7 +50,7 @@ def measure_bba(get_orbit, settings, bpm_name, config: dict, shots_per_orbit: in
                                   quad_is_skew=skew_quad
                                  )
 
-    generator = measurement.generate(get_orbit=get_orbit, settings=settings)
+    generator = measurement.generate(interface=interface)
 
     # run measurement loop
     for code in generator:

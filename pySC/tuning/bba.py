@@ -3,10 +3,21 @@ from typing import Optional, Callable
 import datetime
 import logging
 import numpy as np
+from enum import IntEnum
+from pathlib import Path
+
 from ..utils.file_tools import dict_to_h5
-from .tools import hysteresis_loop, get_average_orbit
+from .tools import hysteresis_loop, get_average_orbit, MeasurementCode
 
 logger = logging.getLogger(__name__)
+
+class BBACode(IntEnum):
+    HYSTERESIS = MeasurementCode.HYSTERESIS.value
+    HYSTERESIS_DONE = MeasurementCode.HYSTERESIS_DONE.value
+    HORIZONTAL = 2
+    HORIZONTAL_DONE = 3
+    VERTICAL = 4
+    VERTICAL_DONE = 5
 
 class BBAData(BaseModel):
     """
@@ -17,11 +28,12 @@ class BBAData(BaseModel):
     bpm: str
     corrector: str 
     plane: str
-    dk0l: float  # Corrector k0 step
+    dk0l: float  # Corrector k0 (max) step
     dk1: float  # Quadrupole k1 step
     n0: int  # Number of steps in the corrector strength
     shots_per_orbit: int
     bipolar: bool = True
+    skew_quad: bool = False
 
     initial_k0l: Optional[float] = None
     initial_k1: Optional[float] = None
@@ -41,12 +53,13 @@ class BBAData(BaseModel):
     raw_bpm_x_down_err: list[list[float]] = []
     raw_bpm_y_down_err: list[list[float]] = []
 
-    def save(self):
+    def save(self, folder_to_save: Path = Path('./data')) -> Path:
         dict_to_save = self.model_dump()
         time_str = datetime.datetime.fromtimestamp(self.timestamp).strftime("%Y%m%d_%H%M%S")
-        filename = f'data/BBA_{self.bpm}_{self.plane}_{time_str}.h5'
+        filename = folder_to_save / Path(f'BBA_{self.bpm}_{self.plane}_{time_str}.h5')
         dict_to_h5(dict_to_save, filename)
-        print(f'Saved data to {filename}')
+        logger.debug(f'Saved data to {filename}')
+        return filename
 
 class BBA_Measurement(BaseModel):
     """
@@ -65,7 +78,7 @@ class BBA_Measurement(BaseModel):
     bpm_number: int = 1  # Placeholder for BPM number, can be set later
     shots_per_orbit: int = 2
     bipolar: bool = True
-    skip_save: bool = False
+    quad_is_skew: bool = False
 
     initial_h_k0l: Optional[float] = None
     initial_v_k0l: Optional[float] = None
@@ -74,7 +87,7 @@ class BBA_Measurement(BaseModel):
     H_data: Optional[BBAData] = None
     V_data: Optional[BBAData] = None
 
-    ## make these private
+    ## TODO: make these private
     get_orbit: Optional[Callable] = None # to be set at generation of measurement
     settings: Optional[Callable] = None # to be set at generation of measurement
 
@@ -84,11 +97,13 @@ class BBA_Measurement(BaseModel):
         if self.h_corrector is not None:
             self.H_data = BBAData(plane='X', bpm=self.bpm, quadrupole=self.quadrupole, 
                                   corrector=self.h_corrector, dk0l=self.dk0l_x, dk1=self.dk1_x,
-                                  n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar)
+                                  n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
+                                  skew_quad=self.quad_is_skew)
         if self.v_corrector is not None:
             self.V_data = BBAData(plane='Y', bpm=self.bpm, quadrupole=self.quadrupole, 
                                   corrector=self.v_corrector, dk0l=self.dk0l_y, dk1=self.dk1_y,
-                                  n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar)
+                                  n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
+                                  skew_quad=self.quad_is_skew)
 
 
     def print_init(self):
@@ -112,10 +127,12 @@ class BBA_Measurement(BaseModel):
         assert plane in ['H', 'V']
         if plane == 'H':
             logger.debug('Starting measurement in horizontal plane.')
-            code = 2
+            code = BBACode.HORIZONTAL
+            code_done = BBACode.HORIZONTAL_DONE
         else:
             logger.debug('Starting measurement in vertical plane.')
-            code = 4
+            code = BBACode.VERTICAL
+            code_done = BBACode.VERTICAL_DONE
 
         corrector = self.h_corrector if plane == 'H' else self.v_corrector
         initial_k0l = self.initial_h_k0l if plane == 'H' else self.initial_v_k0l
@@ -185,9 +202,7 @@ class BBA_Measurement(BaseModel):
         self.settings.set(corrector, initial_k0l)
 
         #save data
-        if not self.skip_save:
-            data.save()
-        yield code+1
+        yield code_done
 
     def generate(self, get_orbit, settings):
         """

@@ -1,10 +1,12 @@
 from __future__ import annotations
 from typing import Literal, Optional, Union, Any
 from pydantic import BaseModel, model_validator, PrivateAttr, PositiveInt, NonNegativeInt
+import logging
 from .control import Control, LinearConv
 
 MAGNET_NAME_TYPE = Union[str, int]
 
+logger = logging.getLogger(__name__)
 
 class ControlMagnetLink(BaseModel, extra="forbid"):
     link_name: str
@@ -24,6 +26,8 @@ class Magnet(BaseModel, extra="forbid"):
     max_order: NonNegativeInt
     A: Optional[list[float]] = None
     B: Optional[list[float]] = None
+    offset_A = Optional[list[float]] = None
+    offset_B = Optional[list[float]] = None
     to_design: bool = False
     length: Optional[float] = None
     _links: list[ControlMagnetLink] = PrivateAttr(default=[])
@@ -39,10 +43,10 @@ class Magnet(BaseModel, extra="forbid"):
 
         length = (max_order + 1) if max_order is not None else 0
 
-        if "A" not in data or data["A"] is None:
-            data["A"] = [0.0] * length
-        if "B" not in data or data["B"] is None:
-            data["B"] = [0.0] * length
+        keys = ["A", "B", "offset_A", "offset_B"]
+        for key in keys:
+            if key not in data or data[key] is None:
+                data[key] = [0.0] * length
 
         return data
 
@@ -61,6 +65,7 @@ class Magnet(BaseModel, extra="forbid"):
 
     @property
     def state(self):
+        ## TODO: offset is not treated here. Is this function even useful?
         magnet_name = self.name
         print(f"Magnet: {magnet_name}, max order: {self.max_order}, length: {self.length} m")
         for component, ktype in zip(["B", "A"], ["kn", "ks"]):
@@ -87,6 +92,8 @@ class Magnet(BaseModel, extra="forbid"):
 
     def update(self):
         # reset components A and B
+        self.A = self.offset_A.copy()
+        self.B = self.offset_B.copy()
         self.A = [0.0] * (self.max_order + 1)
         self.B = [0.0] * (self.max_order + 1)
 

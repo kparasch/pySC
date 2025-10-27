@@ -114,6 +114,22 @@ class MagnetSettings(BaseModel, extra="forbid"):
                         to_design=to_design,
                         length=magnet_length)
         magnet._parent = self  # Set the parent to the current settings instance
+
+        # check non-zero components that are not controlled and put them in offset_A/B.
+        for order in range(max_order+1):
+            for component_type in ["A", "B"]:
+                comp = f"{component_type}{order+1}"
+            if comp not in controlled_components or f"{comp}L" not in controlled_components:
+                value = self._parent.lattice.get_magnet_component(index=sim_index,
+                                                                  component_type=component_type,
+                                                                  order=order)
+                if value != 0:
+                    # found a non-zero component that is not controlled!
+                    getattr(magnet, f"offset_{component_type}")[order] = value 
+                    # this is equivalent to:
+                    # magnet.offset_A[order] = value or
+                    # magnet.offset_B[order] = value 
+
         self.add_magnet(magnet)
 
         # Create controls for each component

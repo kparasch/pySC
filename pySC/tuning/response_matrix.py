@@ -164,7 +164,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
                     best_trim = trim
             already_used_inputs.append(best_input)
             bad_input[best_input] = best_trim
-            residual -= best_trim * good_matrix[:, ii]
+            residual -= best_trim * good_matrix[:, best_input]
 
         return bad_input
 

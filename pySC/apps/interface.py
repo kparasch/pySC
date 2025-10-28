@@ -64,7 +64,7 @@ class pySCOrbitInterface(AbstractInterface):
         return self.SC.magnet_settings.get(name)
 
     def set(self, name: str, value: float):
-        self.SC.magnet_settings.get(name, value)
+        self.SC.magnet_settings.set(name, value)
         return
 
     def get_many(self, names: list) -> dict[str, float]:

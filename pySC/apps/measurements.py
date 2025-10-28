@@ -7,8 +7,8 @@ from .bba import BBA_Measurement, BBACode
 
 logger = logging.getLogger(__name__)
 
-def orbit_correction(interface, response_matrix: ResponseMatrix, correctors: list[str],
-                     method='svd_cutoff', parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
+def orbit_correction(interface, response_matrix: ResponseMatrix, method='svd_cutoff',
+                     parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
                      gain: float = 1, apply: bool = False):
 
     if not apply and gain != 1:
@@ -24,6 +24,8 @@ def orbit_correction(interface, response_matrix: ResponseMatrix, correctors: lis
     trims = response_matrix.solve(orbit, method=method, parameter=parameter)
 
     if apply:
+        correctors = response_matrix.input_names
+        assert correctors is not None, 'Corrector names are undefined in the response matrix'
         data = interface.get_many(correctors)
         for i, corr in enumerate(correctors):
             data[corr] += trims[i] * gain

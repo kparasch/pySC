@@ -26,8 +26,8 @@ class Magnet(BaseModel, extra="forbid"):
     max_order: NonNegativeInt
     A: Optional[list[float]] = None
     B: Optional[list[float]] = None
-    offset_A = Optional[list[float]] = None
-    offset_B = Optional[list[float]] = None
+    offset_A: Optional[list[float]] = None
+    offset_B: Optional[list[float]] = None
     to_design: bool = False
     length: Optional[float] = None
     _links: list[ControlMagnetLink] = PrivateAttr(default=[])

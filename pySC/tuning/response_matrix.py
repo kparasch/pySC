@@ -29,11 +29,8 @@ class ResponseMatrix(BaseModel, extra="forbid"):
     # values which are marked to be ignored (e.g. bad bpms are bad_outputs).
     matrix: NPARRAY
 
-    # input_indices: list[int]
-    # input_names: list[int, str]
-
-    # output_indices: list[int]
-    # output_names: list[int, str]
+    input_names: Optional[list[str]] = None
+    output_names: Optional[list[str]] = None
 
     _n_outputs: int = 0
     _n_inputs: int = 0
@@ -178,3 +175,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
                 obj['matrix'] = obj['RM']
                 del obj['RM']
             return cls.model_validate(obj)
+
+    def to_json(self, json_filename: str) -> None:
+        with open(json_filename, 'w') as fp:
+            json.dump(self.model_dump(), fp)

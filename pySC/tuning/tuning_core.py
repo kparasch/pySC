@@ -54,7 +54,7 @@ class Tuning(BaseModel, extra="forbid"):
             rm_path = Path(self.RM_folder) / Path(name + '.json')
             if rm_path.exists():
                 logger.info(f'Loading {name} RM from file: {rm_path}')
-                self.response_matrix[name] = ResponseMatrix.model_validate(json.load(open(rm_path,'r')))
+                self.response_matrix[name] = ResponseMatrix.from_json(rm_path)
             else:
                 if orbit:
                     self.calculate_model_orbit_response_matrix()
@@ -63,17 +63,24 @@ class Tuning(BaseModel, extra="forbid"):
         return
 
     def calculate_model_trajectory_response_matrix(self, n_turns=1, dkick=1e-5, save_as: str = None):
+        # assumes all bpms are dual plane
+        SC = self._parent
         RM_name = f'trajectory{n_turns}'
-        RM = measure_TrajectoryResponseMatrix(self._parent, n_turns=n_turns, dkick=dkick, use_design=True)
-        self.response_matrix[RM_name] = ResponseMatrix(matrix=RM)
+        input_names = SC.tuning.CORR
+        output_names = SC.bpm_system.names * n_turns * 2 # two: one per plane and per turn
+        RM = measure_TrajectoryResponseMatrix(SC, n_turns=n_turns, dkick=dkick, use_design=True)
+        self.response_matrix[RM_name] = ResponseMatrix(matrix=RM, input_names=input_names, output_names=output_names)
         if save_as is not None:
             json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
         return 
 
     def calculate_model_orbit_response_matrix(self, dkick=1e-5, save_as: str = None):
+        SC = self._parent
         RM_name = 'orbit'
-        RM = measure_OrbitResponseMatrix(self._parent, dkick=dkick, use_design=True)
-        self.response_matrix[RM_name] = ResponseMatrix(matrix=RM)
+        input_names = SC.tuning.CORR
+        output_names = SC.bpm_system.names * 2 # two: one per plane
+        RM = measure_OrbitResponseMatrix(SC, dkick=dkick, use_design=True)
+        self.response_matrix[RM_name] = ResponseMatrix(matrix=RM, input_names=input_names, output_names=output_names)
         if save_as is not None:
             json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
         return 

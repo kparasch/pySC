@@ -1,10 +1,8 @@
 from abc import ABC
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import numpy as np
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.new_simulated_commissioning import SimulatedCommissioning
 
 def function_is_overriden(func):
     obj = func.__self__
@@ -56,10 +54,28 @@ class AbstractInterface(BaseModel, ABC):
         '''
         raise NotImplementedError
 
-class pySCDefaultInterface(AbstractInterface):
-    def __init__(self, SC: "SimulatedCommissioning"):
-        self.get_orbit = SC.bpm_system.capture_orbit
-        self.set = SC.magnet_settings.set
-        self.get = SC.magnet_settings.get
-        self.set_many = SC.magnet_settings.set_many
-        self.get_many = SC.magnet_settings.get_many
+class pySCOrbitInterface(AbstractInterface):
+    SC: SimulatedCommissioning = Field(repr=False)
+
+    def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
+        return self.SC.bpm_system.capture_orbit()
+
+    def get(self, name: str) -> float:
+        return self.SC.magnet_settings.get(name)
+
+    def set(self, name: str, value: float):
+        self.SC.magnet_settings.get(name, value)
+        return
+
+    def get_many(self, names: list) -> dict[str, float]:
+        return self.SC.magnet_settings.get_many(names)
+
+    def set_many(self, data: dict[str, float]):
+        self.SC.magnet_settings.set_many(data)
+        return
+
+#     def __str__(self):
+#         return 'pySCDefaultInterface(SC=SC)'
+# 
+#     def __repr__(self):
+#         return self.__str__

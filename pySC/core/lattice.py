@@ -227,6 +227,9 @@ class ATLattice(Lattice):
             else:
                 value = - elem.KickAngle[0] / length
         else:
+            if hasattr(elem, 'KickAngle') and (elem.KickAngle[0] != 0 or elem.KickAngle[1] != 0):
+                logger.warning('Non-corrector element has non-zero KickAngle. Be careful. Ask for help.')
+
             value =  getattr(elem, f'Polynom{component_type}')[order]
 
         return value

@@ -4,7 +4,8 @@ from ..core.magnet import MAGNET_NAME_TYPE
 from .general import get_error, get_indices_and_names
 from .supports_conf import generate_element_misalignments
 
-def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magnet_name: MAGNET_NAME_TYPE, magnet_category_conf: dict[str, Any], to_design: bool = False) -> list[str]:
+def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magnet_name: MAGNET_NAME_TYPE,
+                                    magnet_category_conf: dict[str, Any], magnet_category_name: str, to_design: bool = False) -> list[str]:
     error_table = dict.get(SC.configuration, 'error_table', {}) # defaults to empty error_table if not declared
     new_control_list = []
 
@@ -12,6 +13,9 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
         magnet_settings = SC.design_magnet_settings
     else:
         magnet_settings = SC.magnet_settings
+
+    components_to_invert = dict.get(magnet_category_conf, 'invert', []).copy() # defaults to empty list if not declared
+    # we need to copy because we remove elements later to check for undeclared components to invert
 
     if 'components' in magnet_category_conf:
         components = []
@@ -53,9 +57,16 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
                     length = SC.lattice.get_length(index)
                     setpoint = setpoint * length
 
+            if component in components_to_invert:
+                factor *= -1
+                components_to_invert.remove(component) 
+
             magnet_settings.controls[control_name].setpoint = setpoint
             magnet_settings.links[link_name].error.factor = factor
             magnet_settings.links[link_name].error.offset = offset
+
+    assert len(components_to_invert) == 0, f"Found undeclared components in components to invert: magnets/{magnet_category_name}/invert: {components_to_invert}."
+
 
     parameters_table = dict.get(SC.configuration, 'parameters', {}) # defaults to empty error_table if not declared
     if 'limits' in magnet_category_conf:
@@ -76,23 +87,23 @@ def configure_magnets(SC: SimulatedCommissioning):
     # get magnets configuration, return empty dict if not there
     magnet_conf = dict.get(SC.configuration, 'magnets', {})
 
-    for magnet_category in magnet_conf.keys():
-        magnet_category_conf = magnet_conf[magnet_category]
+    for magnet_category_name in magnet_conf.keys():
+        magnet_category_conf = magnet_conf[magnet_category_name]
         magnet_list = []
         control_list = []
 
-        indices, magnet_names = get_indices_and_names(SC, magnet_category, magnet_category_conf)
+        indices, magnet_names = get_indices_and_names(SC, magnet_category_name, magnet_category_conf)
 
         for index, magnet_name in zip(indices, magnet_names):
             magnet_list.append(magnet_name)
             # misalignments
             generate_element_misalignments(SC, index, magnet_category_conf)
             # calibration errors
-            new_controls = generate_default_magnet_control(SC, index, magnet_name, magnet_category_conf)
-            _ = generate_default_magnet_control(SC, index, magnet_name, magnet_category_conf, to_design=True)
+            new_controls = generate_default_magnet_control(SC, index, magnet_name, magnet_category_conf, magnet_category_name=magnet_category_name)
+            _ = generate_default_magnet_control(SC, index, magnet_name, magnet_category_conf, magnet_category_name=magnet_category_name, to_design=True)
             control_list = control_list + new_controls
-        SC.magnet_arrays[magnet_category] = magnet_list
-        SC.control_arrays[magnet_category] = control_list
+        SC.magnet_arrays[magnet_category_name] = magnet_list
+        SC.control_arrays[magnet_category_name] = control_list
 
     SC.magnet_settings.connect_links()
     SC.magnet_settings.sendall()

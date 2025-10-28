@@ -71,7 +71,7 @@ class Tuning(BaseModel, extra="forbid"):
         RM = measure_TrajectoryResponseMatrix(SC, n_turns=n_turns, dkick=dkick, use_design=True)
         self.response_matrix[RM_name] = ResponseMatrix(matrix=RM, input_names=input_names, output_names=output_names)
         if save_as is not None:
-            json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
+            self.response_matrix[RM_name].to_json(save_as)
         return 
 
     def calculate_model_orbit_response_matrix(self, dkick=1e-5, save_as: str = None):
@@ -82,7 +82,7 @@ class Tuning(BaseModel, extra="forbid"):
         RM = measure_OrbitResponseMatrix(SC, dkick=dkick, use_design=True)
         self.response_matrix[RM_name] = ResponseMatrix(matrix=RM, input_names=input_names, output_names=output_names)
         if save_as is not None:
-            json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
+            self.response_matrix[RM_name].to_json(save_as)
         return 
 
     def bad_outputs_from_bad_bpms(self, bad_bpms: list[int], n_turns: int = 1) -> list[int]:

@@ -119,7 +119,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
         for order in range(max_order+1):
             for component_type in ["A", "B"]:
                 comp = f"{component_type}{order+1}"
-            if comp not in controlled_components or f"{comp}L" not in controlled_components:
+            if not (comp in controlled_components or f"{comp}L" in controlled_components):
                 value = self._parent.lattice.get_magnet_component(index=sim_index,
                                                                   component_type=component_type,
                                                                   order=order)

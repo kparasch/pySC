@@ -94,8 +94,6 @@ class Magnet(BaseModel, extra="forbid"):
         # reset components A and B
         self.A = self.offset_A.copy()
         self.B = self.offset_B.copy()
-        self.A = [0.0] * (self.max_order + 1)
-        self.B = [0.0] * (self.max_order + 1)
 
         for link in self._links:
             control = self._parent.controls[link.control_name]

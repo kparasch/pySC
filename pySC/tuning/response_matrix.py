@@ -82,10 +82,71 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         self.make_masks()
 
     def make_masks(self):
+        self._inverse_RM = None # discard inverse RM, by changing bad inputs/outputs it becomes invalid
         self._output_mask = np.ones(self._n_outputs, dtype=bool)
         self._output_mask[self._bad_outputs] = False
         self._input_mask = np.ones(self._n_inputs, dtype=bool)
         self._input_mask[self._bad_inputs] = False
+
+    def disable_inputs(self, inputs: list[str]):
+        assert self.input_names is not None, "ResponseMatrix.input_names are not defined"
+        for _input in inputs:
+            assert _input in self.input_names, f"{_input} not found in ResponseMatrix.input_names"
+
+        bad_inputs = self.bad_inputs
+        self.bad_inputs = [i for i, x in enumerate(self.input_names) if (x in inputs or x in bad_inputs)]
+
+    def enable_inputs(self, inputs: list[str]):
+        assert self.input_names is not None, "ResponseMatrix.input_names are not defined"
+        for _input in inputs:
+            assert _input in self.input_names, f"{_input} not found in ResponseMatrix.input_names"
+
+        bad_inputs = self.bad_inputs
+        new_bad_inputs = []
+        for bad_input in bad_inputs:
+            if self.input_names[bad_input] not in inputs:
+                new_bad_inputs.append(bad_input)
+        self.bad_inputs = new_bad_inputs
+
+    def disable_all_inputs(self):
+        self.disable_inputs(self.input_names)
+
+    def disable_all_inputs_but(self, inputs: list[str]):
+        self.disable_all_inputs()
+        self.enable_inputs(inputs)
+
+    def enable_all_inputs(self):
+        self.bad_inputs = []
+
+    def disable_outputs(self, outputs: list[str]):
+        assert self.output_names is not None, "ResponseMatrix.output_names are not defined"
+        for _output in outputs:
+            assert _output in self.output_names, f"{_output} not found in ResponseMatrix.output_names"
+
+        bad_outputs = self.bad_outputs
+        self.bad_outputs = [i for i, x in enumerate(self.output_names) if (x in outputs or x in bad_outputs)]
+
+    def enable_outputs(self, outputs: list[str]):
+        assert self.output_names is not None, "ResponseMatrix.output_names are not defined"
+        for _output in outputs:
+            assert _output in self.output_names, f"{_output} not found in ResponseMatrix.output_names"
+
+        bad_outputs = self.bad_outputs
+        new_bad_outputs = []
+        for bad_output in bad_outputs:
+            if self.output_names[bad_output] not in outputs:
+                new_bad_outputs.append(bad_output)
+        self.bad_outputs = new_bad_outputs
+
+    def disable_all_outputs(self):
+        self.disable_outputs(self.output_names)
+
+    def disable_all_outputs_but(self, outputs: list[str]):
+        self.disable_all_inputs()
+        self.enable_inputs(outputs)
+
+    def enable_all_outputs(self):
+        self.bad_outputs = []
 
     def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0.):
         logging.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=}.')
@@ -113,6 +174,8 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter)
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.):
+        assert len(self.bad_outputs) != self.matrix.shape[0], 'All outputs are disabled!'
+        assert len(self.bad_inputs) != self.matrix.shape[1], 'All inputs are disabled!'
         expected_shape = (self._n_inputs - len(self._bad_inputs), self._n_outputs - len(self._bad_outputs))
         if method != 'micado':
             if self._inverse_RM is None:

@@ -1,8 +1,10 @@
 from pydantic import BaseModel, PrivateAttr, model_validator, ConfigDict
 from typing import Optional, Literal
-from ..core.numpy_type import NPARRAY
 import numpy as np
 import logging
+import json
+
+from ..core.numpy_type import NPARRAY
 
 logger = logging.getLogger(__name__)
 
@@ -162,3 +164,9 @@ class ResponseMatrix(BaseModel, extra="forbid"):
             residual -= best_trim * good_RM[:, ii]
 
         return bad_input
+
+    @classmethod
+    def from_json(cls, json_filename: str) -> "ResponseMatrix":
+        with open(json_filename, 'r') as fp:
+            obj = json.load(fp)
+            return cls.model_validate(obj)

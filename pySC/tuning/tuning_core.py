@@ -65,7 +65,7 @@ class Tuning(BaseModel, extra="forbid"):
     def calculate_model_trajectory_response_matrix(self, n_turns=1, dkick=1e-5, save_as: str = None):
         RM_name = f'trajectory{n_turns}'
         RM = measure_TrajectoryResponseMatrix(self._parent, n_turns=n_turns, dkick=dkick, use_design=True)
-        self.response_matrix[RM_name] = ResponseMatrix(RM=RM)
+        self.response_matrix[RM_name] = ResponseMatrix(matrix=RM)
         if save_as is not None:
             json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
         return 
@@ -73,7 +73,7 @@ class Tuning(BaseModel, extra="forbid"):
     def calculate_model_orbit_response_matrix(self, dkick=1e-5, save_as: str = None):
         RM_name = 'orbit'
         RM = measure_OrbitResponseMatrix(self._parent, dkick=dkick, use_design=True)
-        self.response_matrix[RM_name] = ResponseMatrix(RM=RM)
+        self.response_matrix[RM_name] = ResponseMatrix(matrix=RM)
         if save_as is not None:
             json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
         return 

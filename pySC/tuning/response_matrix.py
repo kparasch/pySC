@@ -27,7 +27,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
     #outputs -> rows -> axis = 0
     # here, good and bad in the names of the variables mean that bad output/input includes inside
     # values which are marked to be ignored (e.g. bad bpms are bad_outputs).
-    RM: NPARRAY
+    matrix: NPARRAY
 
     # input_indices: list[int]
     # input_names: list[int, str]
@@ -46,11 +46,16 @@ class ResponseMatrix(BaseModel, extra="forbid"):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
+    @property
+    def RM(self):
+        logger.warning('ResponseMatrix.RM is deprecated! Please use ResponseMatrix.matrix instead.')
+        return self.matrix
+
     @model_validator(mode='after')
     def initialize_and_check(self):
-        self._n_outputs, self._n_inputs = self.RM.shape
+        self._n_outputs, self._n_inputs = self.matrix.shape
         try:
-            self._singular_values = np.linalg.svd(self.RM, compute_uv=False)
+            self._singular_values = np.linalg.svd(self.matrix, compute_uv=False)
         except np.linalg.LinAlgError:
             logger.warning('SVD of the response matrix failed, correction will be impossible.')
             self._singular_values = None
@@ -87,7 +92,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
 
     def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0.):
         logging.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=}.')
-        matrix = self.RM[self._output_mask, :][:, self._input_mask]
+        matrix = self.matrix[self._output_mask, :][:, self._input_mask]
         U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)
 
         if method == 'svd_cutoff':
@@ -144,7 +149,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         bad_input = np.zeros(self._n_inputs, dtype=float)
         already_used_inputs = []
 
-        good_RM = self.RM[self._output_mask]
+        good_matrix = self.matrix[self._output_mask]
         residual = good_output.copy()
 
         for _ in range(n):
@@ -152,7 +157,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
             for ii in all_inputs:
                 if ii in already_used_inputs or ii in self._bad_inputs:
                     continue
-                response = good_RM[:, ii]
+                response = good_matrix[:, ii]
                 trim = np.dot(response, residual) / np.dot(response, response)
                 chi2 = np.sum(np.square(residual - trim * response))
                 if chi2 < best_chi2:
@@ -161,7 +166,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
                     best_trim = trim
             already_used_inputs.append(best_input)
             bad_input[best_input] = best_trim
-            residual -= best_trim * good_RM[:, ii]
+            residual -= best_trim * good_matrix[:, ii]
 
         return bad_input
 
@@ -169,4 +174,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
     def from_json(cls, json_filename: str) -> "ResponseMatrix":
         with open(json_filename, 'r') as fp:
             obj = json.load(fp)
+            if 'RM' in obj: ## for backwards compatibility, to be removed when RM is completely phased out
+                obj['matrix'] = obj['RM']
+                del obj['RM']
             return cls.model_validate(obj)

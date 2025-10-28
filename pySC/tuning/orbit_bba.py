@@ -35,9 +35,9 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
         bba_magnets = SC.tuning.bba_magnets
         bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
 
-        d1, d2 = RM.RM.shape
-        HRM = RM.RM[:d1//2, :d2//2]
-        VRM = RM.RM[d1//2:, d2//2:]
+        d1, d2 = RM.matrix.shape
+        HRM = RM.matrix[:d1//2, :d2//2]
+        VRM = RM.matrix[d1//2:, d2//2:]
 
         for bpm_number in range(len(SC.bpm_system.indices)):
             bpm_index = SC.bpm_system.indices[bpm_number]

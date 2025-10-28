@@ -125,16 +125,17 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         bad_output[np.isnan(bad_output)] = 0
         good_output = bad_output[self._output_mask]
 
-        if self._inverse_RM.shape != expected_shape:
-            raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 
-             + f'inverse RM shape = {self._inverse_RM.shape},\n'
-             + f'expected inputs: {len(self.input_names)} - {len(self._bad_inputs)},\n'
-             + f'expected outputs: {len(self.output_names)} - {len(self._bad_outputs)}'
-             + f'received outputs: {len(output)}, should be equal to {len(self.output_names)}!')
 
         if method == 'micado':
             bad_input = self.micado(good_output, int(parameter))
         else:
+            if self._inverse_RM.shape != expected_shape:
+                raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 
+                 + f'inverse RM shape = {self._inverse_RM.shape},\n'
+                 + f'expected inputs: {len(self.input_names)} - {len(self._bad_inputs)},\n'
+                 + f'expected outputs: {len(self.output_names)} - {len(self._bad_outputs)}'
+                 + f'received outputs: {len(output)}, should be equal to {len(self.output_names)}!')
+
             good_input = self._inverse_RM.dot(good_output)
 
             bad_input = np.zeros(self._n_inputs, dtype=float)

@@ -11,6 +11,9 @@ def orbit_correction(interface, response_matrix: ResponseMatrix, method='svd_cut
                      parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
                      gain: float = 1, apply: bool = False):
 
+    correctors = response_matrix.input_names
+    assert correctors is not None, 'Corrector names are undefined in the response matrix'
+
     if not apply and gain != 1:
         logger.warning("Gain is set but apply is False, gain will have no effect.")
 
@@ -21,14 +24,14 @@ def orbit_correction(interface, response_matrix: ResponseMatrix, method='svd_cut
         assert len(reference) == len(orbit), "Reference orbit has wrong length"
         orbit -= reference
 
-    trims = response_matrix.solve(orbit, method=method, parameter=parameter)
+    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter)
+
+    trims = {corr: trim for corr, trim in zip(correctors, trim_list) if trim != 0}
 
     if apply:
-        correctors = response_matrix.input_names
-        assert correctors is not None, 'Corrector names are undefined in the response matrix'
         data = interface.get_many(correctors)
         for i, corr in enumerate(correctors):
-            data[corr] += trims[i] * gain
+            data[corr] += trim_list[i] * gain
         interface.set_many(data)
 
     return trims

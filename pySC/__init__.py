@@ -9,6 +9,8 @@ pySC
 __version__ = "0.3.0"
 
 from .core.new_simulated_commissioning import SimulatedCommissioning
+from .configuration.generation import generate_SC
+
 import logging
 import sys
 

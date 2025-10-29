@@ -23,7 +23,7 @@ def no_rich_progress():
     progress.remove_task = lambda *args, **kwargs: None
     return progress
 
-def response_loop(inputs, inputs_delta, get_output, settings, normalize=True):
+def response_loop(inputs, inputs_delta, get_output, settings, normalize=True, bipolar=False):
     n_inputs = len(inputs)
 
     if DISABLE_RICH:
@@ -44,8 +44,15 @@ def response_loop(inputs, inputs_delta, get_output, settings, normalize=True):
         for i, control in enumerate(inputs):
             ref_setpoint = settings.get(control)
             delta = inputs_delta[i]
-            settings.set(control, ref_setpoint + delta)
+            if bipolar:
+                step = delta/2
+                settings.set(control, ref_setpoint - step)
+                reference = get_output()
+            else:
+                step = delta
+            settings.set(control, ref_setpoint + step)
             output = get_output()
+
             RM[:, i] = (output - reference)
             if normalize:
                 RM[:, i] /= delta
@@ -57,7 +64,7 @@ def response_loop(inputs, inputs_delta, get_output, settings, normalize=True):
 
     return RM
 
-def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False):
+def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = False):
     print('Calculating response matrix')
 
     ### set inputs
@@ -82,11 +89,11 @@ def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int 
     magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
 
     ### measure the response matrix
-    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings)
+    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
 
     return RM
 
-def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[list] = None, VCORR: Optional[list] = None, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True):
+def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[list] = None, VCORR: Optional[list] = None, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = True):
     print('Calculating response matrix')
 
     ### set inputs
@@ -113,11 +120,11 @@ def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[li
     magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
 
     ### measure the response matrix
-    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize)
+    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
 
     return RM
 
-def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main', use_design: bool = False, normalize: bool = True):
+def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main', use_design: bool = False, normalize: bool = True, bipolar: bool = False):
 
     rf_settings = SC.design_rf_settings if use_design else SC.rf_settings
     rf_system = rf_settings.systems[rf_system_name]
@@ -128,12 +135,16 @@ def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : f
         return np.concat((x.flatten(order='F'), y.flatten(order='F')))
 
     frf = rf_system.frequency
-    
-    xy0 = get_orbit()
-    rf_system.set_frequency(frf + delta_frf)
+    if bipolar:
+        step = delta_frf / 2
+        rf_system.set_frequency(frf - step)
+        xy0 = get_output()
+    else:
+        step = delta_frf
+        xy0 = get_output()
+    rf_system.set_frequency(frf + step)
     xy1 = get_orbit()
     rf_system.set_frequency(frf)
-
     response = (xy1 - xy0)
     if normalize:
         response /= delta_frf

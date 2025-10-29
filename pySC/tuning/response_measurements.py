@@ -138,10 +138,10 @@ def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : f
     if bipolar:
         step = delta_frf / 2
         rf_system.set_frequency(frf - step)
-        xy0 = get_output()
+        xy0 = get_orbit()
     else:
         step = delta_frf
-        xy0 = get_output()
+        xy0 = get_orbit()
     rf_system.set_frequency(frf + step)
     xy1 = get_orbit()
     rf_system.set_frequency(frf)

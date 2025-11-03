@@ -173,7 +173,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
 
         return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter)
 
-    def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.):
+    def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.) -> np.ndarray:
         assert len(self.bad_outputs) != self.matrix.shape[0], 'All outputs are disabled!'
         assert len(self.bad_inputs) != self.matrix.shape[1], 'All inputs are disabled!'
         expected_shape = (self._n_inputs - len(self._bad_inputs), self._n_outputs - len(self._bad_outputs))
@@ -205,7 +205,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
             bad_input[self._input_mask] = good_input
         return bad_input
 
-    def micado(self, good_output: np.array, n: int):
+    def micado(self, good_output: np.array, n: int) -> np.ndarray:
         all_inputs = list(range(self._n_inputs))
         bad_input = np.zeros(self._n_inputs, dtype=float)
         already_used_inputs = []

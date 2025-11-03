@@ -1,13 +1,14 @@
 import logging
 import numpy as np
+from typing import Optional, Generator, Union
 
 from ..tuning.response_matrix import ResponseMatrix
-from typing import Optional, Callable, Union
 from .bba import BBA_Measurement, BBACode
+from .interface import AbstractInterface
 
 logger = logging.getLogger(__name__)
 
-def orbit_correction(interface, response_matrix: ResponseMatrix, method='svd_cutoff',
+def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatrix, method='svd_cutoff',
                      parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
                      gain: float = 1, apply: bool = False):
 
@@ -36,9 +37,9 @@ def orbit_correction(interface, response_matrix: ResponseMatrix, method='svd_cut
 
     return trims
 
-def measure_bba(interface, bpm_name, config: dict, shots_per_orbit: int = 1,
+def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_orbit: int = 1,
                 n_corr_steps: int = 7, bipolar: bool = True, skew_quad: bool = False,
-                skip_save: bool = False):
+                skip_save: bool = False) -> Generator:
 
     measurement = BBA_Measurement(bpm=bpm_name,
                                   quadrupole=config['QUAD'],

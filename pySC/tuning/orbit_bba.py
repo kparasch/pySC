@@ -73,9 +73,11 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
 
             if the_bba_magnet.split('/')[-1][0] == 'B':
                 temp_RM = VRM[:, the_VCORR_number]
+                quad_is_skew = False
             else: # it is a skew quadrupole component
                 ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
                 temp_RM = HRM[:, the_VCORR_number]
+                quad_is_skew = True
             quad_dk_v = (max_modulation/float(np.max(np.abs(temp_RM)))) / max_dx_at_bpm
 
             bpm_name = SC.bpm_system.names[bpm_number]
@@ -90,6 +92,7 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
                                 'QUAD_dk_H': quad_dk_h,
                                 'VCORR_delta': vcorr_delta,
                                 'QUAD_dk_V': quad_dk_v,
+                                'QUAD_is_skew': quad_is_skew,
                                }
 
         return Orbit_BBA_Configuration(config=config)

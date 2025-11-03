@@ -53,7 +53,7 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
                                   bpm_number=config['number'],
                                   shots_per_orbit=shots_per_orbit,
                                   bipolar=bipolar,
-                                  quad_is_skew=skew_quad
+                                  quad_is_skew=config['QUAD_is_skew']
                                  )
 
     generator = measurement.generate(interface=interface)
@@ -65,9 +65,9 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
             measurement.H_data.save()
         if not skip_save and code is BBACode.VERTICAL_DONE:
             measurement.V_data.save()
-        # yield code ## we should probably yield
+        yield code ## we should probably yield
 
     H_data = measurement.H_data
     V_data = measurement.V_data
     ## analyze data here ? 
-    return 
+    yield BBACode.DONE

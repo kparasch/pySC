@@ -20,6 +20,7 @@ class BBACode(IntEnum):
     HORIZONTAL_DONE = 4
     VERTICAL = 5
     VERTICAL_DONE = 6
+    DONE = 7
 
 class BBAData(BaseModel):
     """

@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 class BBACode(IntEnum):
     HYSTERESIS = MeasurementCode.HYSTERESIS.value
     HYSTERESIS_DONE = MeasurementCode.HYSTERESIS_DONE.value
-    HORIZONTAL = 2
-    HORIZONTAL_DONE = 3
-    VERTICAL = 4
-    VERTICAL_DONE = 5
+    HORIZONTAL = 3
+    HORIZONTAL_DONE = 4
+    VERTICAL = 5
+    VERTICAL_DONE = 6
 
 class BBAData(BaseModel):
     """

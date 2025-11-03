@@ -7,8 +7,9 @@ from enum import IntEnum
 logger = logging.getLogger(__name__)
 
 class MeasurementCode(IntEnum):
-    HYSTERESIS = 0
-    HYSTERESIS_DONE = 1
+    INITIALIZED = 0
+    HYSTERESIS = 1
+    HYSTERESIS_DONE = 2
 
 def hysteresis_loop(name, settings, delta, n_cycles=1, bipolar=True):
     sp0 = settings.get(name)
@@ -18,19 +19,19 @@ def hysteresis_loop(name, settings, delta, n_cycles=1, bipolar=True):
 
     for _ in range(n_cycles):
         settings.set(sp0 + delta)
-        yield 0
+        yield MeasurementCode.HYSTERESIS
         if bipolar:
             logger.debug('    Going down to (sp0 - delta)')
             settings.set(sp0 - delta)
         else:
             logger.debug('    Going down to (sp0)')
             settings.set(sp0)
-        yield 0
+        yield MeasurementCode.HYSTERESIS
 
     if bipolar:
         logger.debug('    Going back to (sp0 - delta)')
         settings.set(sp0)
-    yield 1
+    yield MeasurementCode.HYSTERESIS_DONE
 
 
 def get_average_orbit(get_orbit: Callable, n_orbits: int = 10):

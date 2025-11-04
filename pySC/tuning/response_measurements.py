@@ -57,12 +57,12 @@ def response_loop(inputs, inputs_delta, get_output, settings, normalize=True, bi
             if normalize:
                 RM[:, i] /= delta
             settings.set(control, ref_setpoint)
-
+            yield RM
             progress.update(task_id, completed=i+1, description=f'Measuring response of {control}...')
         progress.update(task_id, completed=n_inputs, description='Response measured.')
         progress.remove_task(task_id)
 
-    return RM
+    yield RM
 
 def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = False):
     print('Calculating response matrix')
@@ -120,7 +120,9 @@ def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[li
     magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
 
     ### measure the response matrix
-    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
+    generator = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
+    for RM in generator:
+        pass
 
     return RM
 

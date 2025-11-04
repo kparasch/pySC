@@ -7,12 +7,17 @@ from enum import IntEnum
 from pathlib import Path
 
 from ..utils.file_tools import dict_to_h5
-from ..tuning.tools import hysteresis_loop, get_average_orbit, MeasurementCode
+from ..tuning.tools import get_average_orbit
 from .interface import AbstractInterface
 
 from ..tuning.orbit_bba import reject_bpm_outlier, reject_center_outlier, reject_slopes, get_slopes_center, get_offset
 
 logger = logging.getLogger(__name__)
+
+class MeasurementCode(IntEnum):
+    INITIALIZED = 0
+    HYSTERESIS = 1
+    HYSTERESIS_DONE = 2
 
 class BBACode(IntEnum):
     HYSTERESIS = MeasurementCode.HYSTERESIS.value
@@ -33,7 +38,7 @@ class BBAData(BaseModel):
     corrector: str 
     plane: str
     dk0l: float  # Corrector k0 (max) step
-    dk1: float  # Quadrupole k1 step
+    dk1l: float  # Quadrupole k1 step
     n0: int  # Number of steps in the corrector strength
     shots_per_orbit: int
     bipolar: bool = True
@@ -43,6 +48,7 @@ class BBAData(BaseModel):
     initial_k0l: Optional[float] = None
     initial_k1: Optional[float] = None
     timestamp: Optional[float] = None
+    original_save_path: Optional[str] = None
 
     raw_bpm_x_center: list[list[float]] = []
     raw_bpm_y_center: list[list[float]] = []
@@ -61,12 +67,35 @@ class BBAData(BaseModel):
     def save(self, folder_to_save: Optional[Path] = None) -> Path:
         if folder_to_save is None:
             folder_to_save = Path('data')
-        dict_to_save = self.model_dump()
         time_str = datetime.datetime.fromtimestamp(self.timestamp).strftime("%Y%m%d_%H%M%S")
         filename = Path(folder_to_save) / Path(f'BBA_{self.bpm}_{self.plane}_{time_str}.h5')
+        self.original_save_path = str(filename.resolve())
+        dict_to_save = self.model_dump()
         dict_to_h5(dict_to_save, filename)
-        logger.info(f'Saved data to {filename}')
+        logger.info(f'Saved data to {filename} .')
         return filename
+
+def hysteresis_loop(name, settings, delta, n_cycles=1, bipolar=True):
+    sp0 = settings.get(name)
+
+    logger.debug(f'Hysteresis loop started for {name}.')
+
+    for _ in range(n_cycles):
+        logger.debug('    Going up to (sp0 + delta)')
+        settings.set(name, sp0 + delta)
+        yield MeasurementCode.HYSTERESIS
+        if bipolar:
+            logger.debug('    Going down to (sp0 - delta)')
+            settings.set(name, sp0 - delta)
+        else:
+            logger.debug('    Going down to (sp0)')
+            settings.set(name, sp0)
+        yield MeasurementCode.HYSTERESIS
+
+    if bipolar:
+        logger.debug('    Going back to (sp0 - delta)')
+        settings.set(name, sp0)
+    yield MeasurementCode.HYSTERESIS_DONE
 
 class BBA_Measurement(BaseModel):
     """
@@ -78,9 +107,9 @@ class BBA_Measurement(BaseModel):
     h_corrector: Optional[str]
     v_corrector: Optional[str]
     dk0l_x: float
-    dk1_x: float
+    dk1l_x: float
     dk0l_y: float
-    dk1_y: float
+    dk1l_y: float
     n0: int = 7  # Number of steps in the corrector strength
     bpm_number: int
     shots_per_orbit: int = 2
@@ -89,7 +118,7 @@ class BBA_Measurement(BaseModel):
 
     initial_h_k0l: Optional[float] = None
     initial_v_k0l: Optional[float] = None
-    initial_k1: Optional[float] = None
+    initial_k1l: Optional[float] = None
 
     H_data: Optional[BBAData] = None
     V_data: Optional[BBAData] = None
@@ -101,12 +130,12 @@ class BBA_Measurement(BaseModel):
         # Initialize BBAData instances for horizontal and vertical procedures
         if self.h_corrector is not None:
             self.H_data = BBAData(plane='X', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
-                                  corrector=self.h_corrector, dk0l=self.dk0l_x, dk1=self.dk1_x,
+                                  corrector=self.h_corrector, dk0l=self.dk0l_x, dk1l=self.dk1l_x,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
                                   skew_quad=self.quad_is_skew)
         if self.v_corrector is not None:
             self.V_data = BBAData(plane='Y', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
-                                  corrector=self.v_corrector, dk0l=self.dk0l_y, dk1=self.dk1_y,
+                                  corrector=self.v_corrector, dk0l=self.dk0l_y, dk1l=self.dk1l_y,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
                                   skew_quad=self.quad_is_skew)
 
@@ -117,14 +146,14 @@ class BBA_Measurement(BaseModel):
         logger.debug(f"    Quadrupole = {self.quadrupole}")
         logger.debug(f"    H. corrector = {self.h_corrector}")
         logger.debug(f"        dk0l = {self.dk0l_x*1e6:.1f} urad")
-        logger.debug(f"        dk1 = {self.dk1_x:.3f} 1/m^2")
+        logger.debug(f"        dk1l = {self.dk1l_x:.3f} 1/m")
         logger.debug(f"    V. corrector = {self.v_corrector}")
         logger.debug(f"        dk0l = {self.dk0l_y*1e6:.1f} urad")
-        logger.debug(f"        dk1 = {self.dk1_y:.3f} 1/m^2")
+        logger.debug(f"        dk1l = {self.dk1l_y:.3f} 1/m")
         logger.debug(f"    number of points = {self.n0}")
         logger.debug(f"    Initial H. k0l = {self.initial_h_k0l*1e6:.1f} urad")
         logger.debug(f"    Initial V. k0l = {self.initial_v_k0l*1e6:.1f} urad")
-        logger.debug(f"    Initial k1 = {self.initial_k1:.3f} 1/m^2")
+        logger.debug(f"    Initial k1l = {self.initial_k1l:.3f} 1/m")
         logger.debug(f"    Bipolar = {self.bipolar}")
         logger.debug("")
 
@@ -170,8 +199,8 @@ class BBA_Measurement(BaseModel):
             data.raw_bpm_y_center_err.append(list(orbit_y_err))
 
             # set "up" setpoint in quadrupole
-            logger.debug(f'    Setting quadrupole to up setpoint: {self.initial_k1 + data.dk1} 1/m')
-            interface.set(self.quadrupole, self.initial_k1 + data.dk1)
+            logger.debug(f'    Setting quadrupole to up setpoint: {self.initial_k1l + data.dk1l} 1/m')
+            interface.set(self.quadrupole, self.initial_k1l + data.dk1l)
             yield code
 
             logger.debug('    Acquiring orbit data for quad up')
@@ -183,8 +212,8 @@ class BBA_Measurement(BaseModel):
 
             if self.bipolar:
                 # set "down" setpoint in quadrupole
-                logger.debug(f'    Setting quadrupole to down setpoint: {self.initial_k1 - data.dk1}')
-                interface.set(self.quadrupole, self.initial_k1 - data.dk1)
+                logger.debug(f'    Setting quadrupole to down setpoint: {self.initial_k1l - data.dk1l}')
+                interface.set(self.quadrupole, self.initial_k1l - data.dk1l)
                 yield code
 
                 logger.debug('    Acquiring orbit data for quad down')
@@ -203,8 +232,8 @@ class BBA_Measurement(BaseModel):
 
 
             # restore quadrupole to initial setpoint
-            logger.debug(f'    Restoring quadrupole to initial setpoint: {self.initial_k1}')
-            interface.set(self.quadrupole, self.initial_k1)
+            logger.debug(f'    Restoring quadrupole to initial setpoint: {self.initial_k1l}')
+            interface.set(self.quadrupole, self.initial_k1l)
 
             logger.debug("")
         # restore corrector to initial setpoint
@@ -221,27 +250,27 @@ class BBA_Measurement(BaseModel):
 
         timestamp = datetime.datetime.now().timestamp()
         # for restoring at the end
-        self.initial_k1 = interface.get(self.quadrupole)
+        self.initial_k1l = interface.get(self.quadrupole)
         if self.h_corrector is not None:
             self.initial_h_k0l = interface.get(self.h_corrector)
             self.H_data.initial_k0l = self.initial_h_k0l
-            self.H_data.initial_k1 = self.initial_k1
+            self.H_data.initial_k1 = self.initial_k1l
             self.H_data.timestamp = timestamp
 
         if self.v_corrector is not None:
             self.initial_v_k0l = interface.get(self.v_corrector)
             self.V_data.initial_k0l = self.initial_v_k0l
-            self.V_data.initial_k1 = self.initial_k1
+            self.V_data.initial_k1 = self.initial_k1l
             self.V_data.timestamp = timestamp
 
         self.print_init()
 
         if self.h_corrector is None:
-            dk1 = self.V_data.dk1
+            dk1 = self.V_data.dk1l
         elif self.v_corrector is None:
-            dk1 = self.H_data.dk1
+            dk1 = self.H_data.dk1l
         else:
-            dk1 = max(self.H_data.dk1, self.V_data.dk1)
+            dk1 = max(self.H_data.dk1l, self.V_data.dk1l)
 
         for code in hysteresis_loop(self.quadrupole, interface, dk1, n_cycles=2, bipolar=self.bipolar):
             yield code
@@ -260,6 +289,26 @@ class BBA_Measurement(BaseModel):
         for code in generator:
             logger.debug(f'    Got code: {code}')
 
+
+class BBAAnalysis(BaseModel):
+    offset: float
+    offset_error: float
+
+    slopes: list[float]
+    centers: list[float]
+
+    modulation: list[list[float]]
+    position: list[list[float]]
+
+    rejected_outliers: int
+    rejected_slopes: int
+    rejected_centers: int
+
+    @classmethod
+    def analyze(cls, data: BBAData):
+        return BBAAnalysis()
+
+
 def analyze_bba_data(data: BBAData):
     bpm_number = data.bpm_number
     nbpms = len(data.raw_bpm_x_center[0])
@@ -277,7 +326,7 @@ def analyze_bba_data(data: BBAData):
             orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
             orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
 
-    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1)
+    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
     mask_bpm_outlier = reject_bpm_outlier(orbits)
     mask_slopes = reject_slopes(slopes)
     mask_center = reject_center_outlier(center)

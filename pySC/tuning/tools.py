@@ -5,34 +5,6 @@ from enum import IntEnum
 
 logger = logging.getLogger(__name__)
 
-class MeasurementCode(IntEnum):
-    INITIALIZED = 0
-    HYSTERESIS = 1
-    HYSTERESIS_DONE = 2
-
-def hysteresis_loop(name, settings, delta, n_cycles=1, bipolar=True):
-    sp0 = settings.get(name)
-
-    logger.debug(f'Hysteresis loop started for {name}.')
-    logger.debug('    Going up to (sp0 + delta)')
-
-    for _ in range(n_cycles):
-        settings.set(name, sp0 + delta)
-        yield MeasurementCode.HYSTERESIS
-        if bipolar:
-            logger.debug('    Going down to (sp0 - delta)')
-            settings.set(name, sp0 - delta)
-        else:
-            logger.debug('    Going down to (sp0)')
-            settings.set(name, sp0)
-        yield MeasurementCode.HYSTERESIS
-
-    if bipolar:
-        logger.debug('    Going back to (sp0 - delta)')
-        settings.set(name, sp0)
-    yield MeasurementCode.HYSTERESIS_DONE
-
-
 def get_average_orbit(get_orbit: Callable, n_orbits: int = 10):
     orbit_x, orbit_y = get_orbit()
     all_orbit_x = np.zeros((len(orbit_x), n_orbits))

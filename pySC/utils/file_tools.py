@@ -1,6 +1,9 @@
 import h5py
 import numpy
 
+PYTHON_NONE = 'python-None'
+ENCODING = 'utf-8'
+
 class obj_from_dict:
     def __init__(self, mydict):
         for key in mydict.keys():
@@ -12,9 +15,13 @@ def h5_to_dict(filename, group=None):
         grp = fid 
     else:
         grp = fid[group]
-    mydict={}
+    mydict = {}
     for key in grp.keys():
         mydict[key] = grp[key][()]
+        if type(mydict[key]) is bytes:
+            mydict[key] = str(mydict[key], encoding=ENCODING)
+        if type(mydict[key]) is str and mydict[key] == PYTHON_NONE:
+            mydict[key] = None
     return mydict
 
 def h5_to_obj(filename, group=None):
@@ -45,7 +52,10 @@ def dict_to_h5(dict_save, filename, compression_opts=9, group=None, readwrite_op
                 dset = grp.create_dataset(kk, shape=dict_save[kk].shape, dtype=dict_save[kk].dtype, compression='gzip', compression_opts=compression_opts)
                 dset[...] = dict_save[kk]
             else:
-                grp[kk] = dict_save[kk]
+                if dict_save[kk] is None:
+                    grp[kk] = PYTHON_NONE
+                else:
+                    grp[kk] = dict_save[kk]
 
 def print_h5(filename):
     def print_this(x,y): 

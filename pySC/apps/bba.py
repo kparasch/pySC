@@ -10,6 +10,7 @@ from ..utils.file_tools import dict_to_h5
 from ..tuning.tools import hysteresis_loop, get_average_orbit, MeasurementCode
 from .interface import AbstractInterface
 
+from ..tuning.orbit_bba import reject_bpm_outlier, reject_center_outlier, reject_slopes, get_slopes_center, get_offset
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ class BBAData(BaseModel):
     shots_per_orbit: int
     bipolar: bool = True
     skew_quad: bool = False
+    bpm_number: int
 
     initial_k0l: Optional[float] = None
     initial_k1: Optional[float] = None
@@ -56,12 +58,14 @@ class BBAData(BaseModel):
     raw_bpm_x_down_err: list[list[float]] = []
     raw_bpm_y_down_err: list[list[float]] = []
 
-    def save(self, folder_to_save: Path = Path('./data')) -> Path:
+    def save(self, folder_to_save: Optional[Path] = None) -> Path:
+        if folder_to_save is None:
+            folder_to_save = Path('data')
         dict_to_save = self.model_dump()
         time_str = datetime.datetime.fromtimestamp(self.timestamp).strftime("%Y%m%d_%H%M%S")
         filename = Path(folder_to_save) / Path(f'BBA_{self.bpm}_{self.plane}_{time_str}.h5')
         dict_to_h5(dict_to_save, filename)
-        logger.debug(f'Saved data to {filename}')
+        logger.info(f'Saved data to {filename}')
         return filename
 
 class BBA_Measurement(BaseModel):
@@ -78,7 +82,7 @@ class BBA_Measurement(BaseModel):
     dk0l_y: float
     dk1_y: float
     n0: int = 7  # Number of steps in the corrector strength
-    bpm_number: int = 1  # Placeholder for BPM number, can be set later
+    bpm_number: int
     shots_per_orbit: int = 2
     bipolar: bool = True
     quad_is_skew: bool = False
@@ -90,19 +94,18 @@ class BBA_Measurement(BaseModel):
     H_data: Optional[BBAData] = None
     V_data: Optional[BBAData] = None
 
-    ## TODO: make these private
     _interface: Optional[AbstractInterface] = PrivateAttr(default=None) # to be set at generation of measurement
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Initialize BBAData instances for horizontal and vertical procedures
         if self.h_corrector is not None:
-            self.H_data = BBAData(plane='X', bpm=self.bpm, quadrupole=self.quadrupole, 
+            self.H_data = BBAData(plane='X', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
                                   corrector=self.h_corrector, dk0l=self.dk0l_x, dk1=self.dk1_x,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
                                   skew_quad=self.quad_is_skew)
         if self.v_corrector is not None:
-            self.V_data = BBAData(plane='Y', bpm=self.bpm, quadrupole=self.quadrupole, 
+            self.V_data = BBAData(plane='Y', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
                                   corrector=self.v_corrector, dk0l=self.dk0l_y, dk1=self.dk1_y,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
                                   skew_quad=self.quad_is_skew)
@@ -149,6 +152,7 @@ class BBA_Measurement(BaseModel):
 
         k0_array = np.linspace(-data.dk0l, data.dk0l, self.n0) + initial_k0l
 
+        get_orbit = self._interface.get_orbit
         for ii, k0_sp in enumerate(k0_array):
 
             # set next setpoint in corrector
@@ -159,7 +163,7 @@ class BBA_Measurement(BaseModel):
             # correct vertical orbit?
 
             logger.debug('    Acquiring orbit data for quad zero')
-            orbit_x, orbit_y, orbit_x_err, orbit_y_err = get_average_orbit(n_orbits=self.shots_per_orbit)
+            orbit_x, orbit_y, orbit_x_err, orbit_y_err = get_average_orbit(get_orbit=get_orbit, n_orbits=self.shots_per_orbit)
             data.raw_bpm_x_center.append(list(orbit_x))
             data.raw_bpm_y_center.append(list(orbit_y))
             data.raw_bpm_x_center_err.append(list(orbit_x_err))
@@ -171,7 +175,7 @@ class BBA_Measurement(BaseModel):
             yield code
 
             logger.debug('    Acquiring orbit data for quad up')
-            orbit_x, orbit_y, orbit_x_err, orbit_y_err = get_average_orbit(n_orbits=self.shots_per_orbit)
+            orbit_x, orbit_y, orbit_x_err, orbit_y_err = get_average_orbit(get_orbit=get_orbit, n_orbits=self.shots_per_orbit)
             data.raw_bpm_x_up.append(list(orbit_x))
             data.raw_bpm_y_up.append(list(orbit_y))
             data.raw_bpm_x_up_err.append(list(orbit_x_err))
@@ -180,12 +184,12 @@ class BBA_Measurement(BaseModel):
             if self.bipolar:
                 # set "down" setpoint in quadrupole
                 logger.debug(f'    Setting quadrupole to down setpoint: {self.initial_k1 - data.dk1}')
-                self.settings.set(self.quadrupole, self.initial_k1 - data.dk1)
+                interface.set(self.quadrupole, self.initial_k1 - data.dk1)
                 yield code
 
                 logger.debug('    Acquiring orbit data for quad down')
                 # orbit_x, orbit_y = get_pydoocs_orbit()
-                orbit_x, orbit_y, orbit_x_err, orbit_y_err = get_average_orbit(n_orbits=self.shots_per_orbit)
+                orbit_x, orbit_y, orbit_x_err, orbit_y_err = get_average_orbit(get_orbit=get_orbit, n_orbits=self.shots_per_orbit)
                 data.raw_bpm_x_down.append(list(orbit_x))
                 data.raw_bpm_y_down.append(list(orbit_y))
                 data.raw_bpm_x_down_err.append(list(orbit_x_err))
@@ -213,7 +217,7 @@ class BBA_Measurement(BaseModel):
         """
         step through the measurement.
         """
-        self.interface = interface 
+        self._interface = interface 
 
         timestamp = datetime.datetime.now().timestamp()
         # for restoring at the end
@@ -255,3 +259,29 @@ class BBA_Measurement(BaseModel):
             generator = self.generate()
         for code in generator:
             logger.debug(f'    Got code: {code}')
+
+def analyze_bba_data(data: BBAData):
+    bpm_number = data.bpm_number
+    nbpms = len(data.raw_bpm_x_center[0])
+    orbits = np.full((data.n0, 2, nbpms), np.nan)
+    bpm_pos = np.full((data.n0, 2), np.nan)
+    for ii in range(data.n0):
+        if data.plane == 'X':
+            bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
+            bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
+            orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+            orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+        else:
+            bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
+            bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
+            orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+            orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+
+    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1)
+    mask_bpm_outlier = reject_bpm_outlier(orbits)
+    mask_slopes = reject_slopes(slopes)
+    mask_center = reject_center_outlier(center)
+    final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+
+    offset, offset_err = get_offset(center, center_err, final_mask)
+    return offset, offset_err

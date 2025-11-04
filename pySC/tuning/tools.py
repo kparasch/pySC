@@ -17,19 +17,19 @@ def hysteresis_loop(name, settings, delta, n_cycles=1, bipolar=True):
     logger.debug('    Going up to (sp0 + delta)')
 
     for _ in range(n_cycles):
-        settings.set(sp0 + delta)
+        settings.set(name, sp0 + delta)
         yield MeasurementCode.HYSTERESIS
         if bipolar:
             logger.debug('    Going down to (sp0 - delta)')
-            settings.set(sp0 - delta)
+            settings.set(name, sp0 - delta)
         else:
             logger.debug('    Going down to (sp0)')
-            settings.set(sp0)
+            settings.set(name, sp0)
         yield MeasurementCode.HYSTERESIS
 
     if bipolar:
         logger.debug('    Going back to (sp0 - delta)')
-        settings.set(sp0)
+        settings.set(name, sp0)
     yield MeasurementCode.HYSTERESIS_DONE
 
 

@@ -3,9 +3,9 @@ from typing import Optional
 import datetime
 import logging
 import numpy as np
-from enum import IntEnum
 from pathlib import Path
 
+from .codes import BBACode
 from ..utils.file_tools import dict_to_h5
 from ..tuning.tools import get_average_orbit
 from .interface import AbstractInterface
@@ -13,20 +13,6 @@ from .interface import AbstractInterface
 from ..tuning.orbit_bba import reject_bpm_outlier, reject_center_outlier, reject_slopes, get_slopes_center, get_offset
 
 logger = logging.getLogger(__name__)
-
-class MeasurementCode(IntEnum):
-    INITIALIZED = 0
-    HYSTERESIS = 1
-    HYSTERESIS_DONE = 2
-
-class BBACode(IntEnum):
-    HYSTERESIS = MeasurementCode.HYSTERESIS.value
-    HYSTERESIS_DONE = MeasurementCode.HYSTERESIS_DONE.value
-    HORIZONTAL = 3
-    HORIZONTAL_DONE = 4
-    VERTICAL = 5
-    VERTICAL_DONE = 6
-    DONE = 7
 
 class BBAData(BaseModel):
     """
@@ -83,19 +69,19 @@ def hysteresis_loop(name, settings, delta, n_cycles=1, bipolar=True):
     for _ in range(n_cycles):
         logger.debug('    Going up to (sp0 + delta)')
         settings.set(name, sp0 + delta)
-        yield MeasurementCode.HYSTERESIS
+        yield BBACode.HYSTERESIS
         if bipolar:
             logger.debug('    Going down to (sp0 - delta)')
             settings.set(name, sp0 - delta)
         else:
             logger.debug('    Going down to (sp0)')
             settings.set(name, sp0)
-        yield MeasurementCode.HYSTERESIS
+        yield BBACode.HYSTERESIS
 
     if bipolar:
         logger.debug('    Going back to (sp0 - delta)')
         settings.set(name, sp0)
-    yield MeasurementCode.HYSTERESIS_DONE
+    yield BBACode.HYSTERESIS_DONE
 
 class BBA_Measurement(BaseModel):
     """
@@ -282,6 +268,8 @@ class BBA_Measurement(BaseModel):
         if self.v_corrector is not None:
             for code in self.one_plane_loop('V'):
                 yield code
+
+        yield BBACode.DONE
 
     def run(self, generator=None):
         if generator is None:

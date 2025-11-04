@@ -5,6 +5,7 @@ from pathlib import Path
 
 from ..tuning.response_matrix import ResponseMatrix
 from .bba import BBA_Measurement, BBACode
+from .response import ResponseMeasurement, ResponseCode
 from .interface import AbstractInterface
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,35 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
             measurement.V_data.save(folder_to_save=folder_to_save)
         yield code, measurement 
 
-    H_data = measurement.H_data
-    V_data = measurement.V_data
-    ## analyze data here ? 
-    yield BBACode.DONE, measurement
+def measure_ORM(interface: AbstractInterface, corrector_names: list[str], delta: Union[float, list[float]],
+                shots_per_orbit: int = 1, bipolar=True, skip_save: bool = False, save_every: Optional[int] = None):
+
+    folder_to_save = None
+    if folder_to_save is None:
+        folder_to_save = Path('data')
+
+    if not skip_save:
+        assert folder_to_save.exists(), f'Path {folder_to_save.resolve()} does not exist.'
+        assert folder_to_save.is_dir(), f'Path {folder_to_save.resolve()} is not a directory.'
+
+    def get_output():
+        orbit_x, orbit_y = interface.get_orbit()
+        orbit = np.concat((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
+        return orbit
+
+    n_outputs = len(get_output())
+    measurement = ResponseMeasurement(inputs_delta=delta,
+                                      shots_per_orbit=shots_per_orbit,
+                                      bipolar=bipolar,
+                                      input_names=corrector_names,
+                                      n_outputs=n_outputs)
+
+    generator = measurement.generate(interface=interface, get_output=get_output)
+    for code in generator:
+        if not skip_save and code is ResponseCode.MEASURING:
+            if save_every is not None and measurement.last_number % save_every == 0:
+                measurement.response_data.save(folder_to_save=folder_to_save)
+
+        if not skip_save and code is ResponseCode.DONE:
+            measurement.response_data.save(folder_to_save=folder_to_save)
+        yield code, measurement

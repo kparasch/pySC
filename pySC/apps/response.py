@@ -35,7 +35,7 @@ def no_rich_progress():
 class ResponseData(BaseModel):
     matrix: NPARRAY
 
-    inputs_delta: Union[float, list[float]]
+    inputs_delta: list[float]
     shots_per_orbit: int = 1
     bipolar: bool = True
 

@@ -26,4 +26,6 @@ logging.basicConfig(
 
 def disable_pySC_rich():
     from .tuning import response_measurements
+    from .apps import response
     response_measurements.DISABLE_RICH = True
+    response.DISABLE_RICH = True

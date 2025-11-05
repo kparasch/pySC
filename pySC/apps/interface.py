@@ -60,6 +60,9 @@ class pySCOrbitInterface(AbstractInterface):
     def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
         return self.SC.bpm_system.capture_orbit()
 
+    def get_ref_orbit(self) -> tuple[np.ndarray, np.ndarray]:
+        return self.SC.bpm_system.reference_x, self.SC.bpm_system.reference_y
+
     def get(self, name: str) -> float:
         return self.SC.magnet_settings.get(name)
 

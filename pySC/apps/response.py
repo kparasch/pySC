@@ -71,7 +71,7 @@ class ResponseMeasurement(BaseModel):
     output_names: Optional[list[str]] = None
 
     last_input: Optional[str] = None
-    last_number: Optional[int] = None
+    last_number: int = -1
     timestamp: Optional[float] = None
 
     response_data: Optional[ResponseData] = None

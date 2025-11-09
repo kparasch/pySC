@@ -6,6 +6,7 @@ from pathlib import Path
 from ..tuning.response_matrix import ResponseMatrix
 from .bba import BBA_Measurement, BBACode
 from .response import ResponseMeasurement, ResponseCode
+from .dispersion import DispersionMeasurement, DispersionCode
 from .interface import AbstractInterface
 
 logger = logging.getLogger(__name__)
@@ -111,4 +112,26 @@ def measure_ORM(interface: AbstractInterface, corrector_names: list[str], delta:
 
         if not skip_save and code is ResponseCode.DONE:
             measurement.response_data.save(folder_to_save=folder_to_save)
+        yield code, measurement
+
+
+def measure_dispersion(interface: AbstractInterface, delta: float, shots_per_orbit: int = 1,
+                       bipolar=True, skip_save: bool = False) -> Generator:
+
+    folder_to_save = None
+    if folder_to_save is None:
+        folder_to_save = Path('data')
+
+    if not skip_save:
+        assert folder_to_save.exists(), f'Path {folder_to_save.resolve()} does not exist.'
+        assert folder_to_save.is_dir(), f'Path {folder_to_save.resolve()} is not a directory.'
+
+    measurement = DispersionMeasurement(delta=delta,
+                                        shots_per_orbit=shots_per_orbit,
+                                        bipolar=bipolar)
+
+    generator = measurement.generate(interface=interface, get_output=interface.get_orbit)
+    for code in generator:
+        if not skip_save and code is DispersionCode.DONE:
+            measurement.dispersion_data.save(folder_to_save=folder_to_save)
         yield code, measurement

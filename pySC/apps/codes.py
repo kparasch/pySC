@@ -18,3 +18,8 @@ class ResponseCode(IntEnum):
     INITIALIZED = MeasurementCode.INITIALIZED.value
     MEASURING = 3
     DONE = 4
+
+class DispersionCode(IntEnum):
+    INITIALIZED = MeasurementCode.INITIALIZED.value
+    MEASURING = 3
+    DONE = 4

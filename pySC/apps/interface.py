@@ -77,6 +77,13 @@ class pySCOrbitInterface(AbstractInterface):
         self.SC.magnet_settings.set_many(data)
         return
 
+    def get_rf_main_frequency(self) -> float:
+        return self.SC.rf_settings.main.frequency
+
+    def set_rf_main_frequency(self, frequency: float):
+        self.SC.rf_settings.main.set_frequency(frequency)
+        return
+
 #     def __str__(self):
 #         return 'pySCDefaultInterface(SC=SC)'
 # 

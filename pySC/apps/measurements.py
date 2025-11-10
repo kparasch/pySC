@@ -41,9 +41,8 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
     return trims
 
 def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_orbit: int = 1,
-                n_corr_steps: int = 7, bipolar: bool = True, skip_save: bool = False) -> Generator:
+                n_corr_steps: int = 7, bipolar: bool = True, skip_save: bool = False, folder_to_save: Optional[Path] = None) -> Generator:
 
-    folder_to_save = None
     if folder_to_save is None:
         folder_to_save = Path('data')
 
@@ -82,9 +81,9 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
         yield code, measurement 
 
 def measure_ORM(interface: AbstractInterface, corrector_names: list[str], delta: Union[float, list[float]],
-                shots_per_orbit: int = 1, bipolar=True, skip_save: bool = False, save_every: Optional[int] = None):
+                shots_per_orbit: int = 1, bipolar=True, skip_save: bool = False, save_every: Optional[int] = None,
+                folder_to_save: Optional[Path] = None):
 
-    folder_to_save = None
     if folder_to_save is None:
         folder_to_save = Path('data')
 
@@ -113,9 +112,8 @@ def measure_ORM(interface: AbstractInterface, corrector_names: list[str], delta:
 
 
 def measure_dispersion(interface: AbstractInterface, delta: float, shots_per_orbit: int = 1,
-                       bipolar=True, skip_save: bool = False) -> Generator:
+                       bipolar=True, skip_save: bool = False, folder_to_save: Optional[Path] = None) -> Generator:
 
-    folder_to_save = None
     if folder_to_save is None:
         folder_to_save = Path('data')
 

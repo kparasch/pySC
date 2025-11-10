@@ -322,3 +322,29 @@ def analyze_bba_data(data: BBAData):
 
     offset, offset_err = get_offset(center, center_err, final_mask)
     return offset, offset_err
+
+def get_bba_analysis_data(data: BBAData):
+    bpm_number = data.bpm_number
+    nbpms = len(data.raw_bpm_x_center[0])
+    orbits = np.full((data.n0, 2, nbpms), np.nan)
+    bpm_pos = np.full((data.n0, 2), np.nan)
+    for ii in range(data.n0):
+        if data.plane == 'X':
+            bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
+            bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
+            orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+            orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+        else:
+            bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
+            bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
+            orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+            orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+
+    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
+    mask_bpm_outlier = reject_bpm_outlier(orbits)
+    mask_slopes = reject_slopes(slopes)
+    mask_center = reject_center_outlier(center)
+    final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+
+    offset, offset_err = get_offset(center, center_err, final_mask)
+    return bpm_pos, orbits, slopes, center, final_mask, offset

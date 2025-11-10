@@ -92,19 +92,16 @@ def measure_ORM(interface: AbstractInterface, corrector_names: list[str], delta:
         assert folder_to_save.exists(), f'Path {folder_to_save.resolve()} does not exist.'
         assert folder_to_save.is_dir(), f'Path {folder_to_save.resolve()} is not a directory.'
 
-    def get_output():
-        orbit_x, orbit_y = interface.get_orbit()
-        orbit = np.concat((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
-        return orbit
+    orbit_x, orbit_y = interface.get_orbit()
+    n_outputs = len(orbit_x) + len(orbit_y)
 
-    n_outputs = len(get_output())
     measurement = ResponseMeasurement(inputs_delta=delta,
                                       shots_per_orbit=shots_per_orbit,
                                       bipolar=bipolar,
                                       input_names=corrector_names,
                                       n_outputs=n_outputs)
 
-    generator = measurement.generate(interface=interface, get_output=get_output)
+    generator = measurement.generate(interface=interface, get_output=interface.get_orbit)
     for code in generator:
         if not skip_save and code is ResponseCode.MEASURING:
             if save_every is not None and measurement.last_number % save_every == 0:

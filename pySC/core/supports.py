@@ -82,6 +82,7 @@ class SupportSystem(BaseModel):
 
     def add_support(self, index_start, index_end, level=1, name=None):
         assert level >= 1, 'Level must be larger or equal to 1'
+        logger.debug(f'Adding support with {index_start=}, {index_end=} in {level=}')
         key = f'L{level}'
         if key not in self.data.keys():
             self.data[key] = {}
@@ -93,10 +94,12 @@ class SupportSystem(BaseModel):
             name = 'Support'
 
         support = Support(start=SupportEndpoint(index=index_start), end=SupportEndpoint(index=index_end), name=name)
-        support.start.s = float(self._parent.lattice.ring.get_s_pos(index_start)[0])
-        support.end.s = float(self._parent.lattice.ring.get_s_pos(index_end)[0])
+        SC = self._parent
+        twiss_s = SC.lattice.twiss['s']
+        support.start.s = float(twiss_s[index_start])
+        support.end.s = float(twiss_s[index_end])
 
-        support.length = (support.end.s - support.start.s) % float(self._parent.lattice.ring.circumference)
+        support.length = (support.end.s - support.start.s) % float(twiss_s[-1])
 
         index_for_support = len(self.data[key])
 
@@ -114,7 +117,7 @@ class SupportSystem(BaseModel):
         if hasattr(self._parent, 'bpm_system') and index in self._parent.bpm_system.indices:
             new_element.is_bpm = True
             new_element.bpm_number = self._parent.bpm_system.bpm_number(index=index)
-        new_element.s = float(self._parent.lattice.ring.get_s_pos(index)[0])
+        new_element.s = float(self._parent.lattice.twiss['s'][index])
         self.data['L0'][int(index)] = new_element
 
     def look_for_support(self, my_level, my_index):
@@ -239,10 +242,12 @@ class SupportSystem(BaseModel):
         corr_s2 = 0
 
         ## if support goes through start of ring we need to add corrections
+        SC = self._parent
+        circumference = SC.lattice.twiss['s'][-1]
         if support.start.index > support.end.index:
-            corr_s2 = self._parent.lattice.ring.circumference
+            corr_s2 = circumference
             if s < s1:
-                corr_s = self._parent.lattice.ring.circumference
+                corr_s = circumference
         ####
 
         dx1, dy1 = self.get_total_offset(supp_index, supp_level, endpoint='start')
@@ -320,8 +325,7 @@ class SupportSystem(BaseModel):
                 self._parent.bpm_system.rolls[eo.bpm_number] = roll
                 self._parent.bpm_system.update_rot_matrices()
             else:
-                update_transformation(element=self._parent.lattice.ring[eo.index],
-                                      dx=dx, dy=dy, dz=dz,
+                self._parent.lattice.update_misalignment(index=eo.index, dx=dx, dy=dy, dz=dz,
                                       roll=roll, yaw=yaw, pitch=pitch)
 
     def update_all(self) -> None:

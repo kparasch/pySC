@@ -25,7 +25,7 @@ def get_indices_with_regex(SC: SimulatedCommissioning, category_name: str, categ
 
     if 'exclude' in category_conf:
         exclude_indices = SC.lattice.find_with_regex(category_conf['exclude']) 
-        indices = list(set(indices) - set(exclude_indices))
+        indices = sorted(list(set(indices) - set(exclude_indices)))
         logger.info(f"Found {len(indices)} ({category_name}) matching regex '{category_conf['regex']}', excluding regex '{category_conf['exclude']}'")
     else:
         logger.info(f"Found {len(indices)} ({category_name}) matching regex '{category_conf['regex']}'")

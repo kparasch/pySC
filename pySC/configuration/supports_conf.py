@@ -78,7 +78,8 @@ def configure_supports(SC: SimulatedCommissioning):
             if 'roll' in level_conf:
                 sigma = get_error(level_conf['roll'], error_table)
                 this_support.roll = SC.rng.normal_trunc(0, sigma)
-        logger.warning(f'Found {len(zero_length_supports)} zero-length supports in level {level} ({category_name}).')
+        if len(zero_length_supports):
+            logger.warning(f'Found {len(zero_length_supports)} zero-length supports in level {level} ({category_name}).')
 
     SC.support_system.resolve_graph()
     SC.support_system.update_all()

@@ -6,6 +6,7 @@ import at
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
 
+from ..utils.sc_tools import update_transformation
 import logging
 logger = logging.getLogger(__name__)
 
@@ -32,15 +33,6 @@ class Lattice(BaseModel, extra="forbid"):
     def twiss(self):
         return self._twiss
 
-
-class XSuiteLattice(Lattice):
-    """
-    Not implemented.
-    """
-
-    # fake field so that pydantic can distinguish
-    # the different machine types
-    xsuite_simulator: None = None
 
 class ATLattice(Lattice):
     """
@@ -126,7 +118,7 @@ class ATLattice(Lattice):
         If no indices are provided, returns all twiss parameters.
         """
         if indices is None:
-            indices = range(len(self._design))
+            indices = range(len(self._design)+1)
         ring = self._design if use_design else self._ring
         _, ringdata, elemdata = at.get_optics(ring, refpts=indices, get_chrom=True)
 
@@ -148,8 +140,8 @@ class ATLattice(Lattice):
                  'bety': elemdata.beta[:, 1],
                  'alfx': elemdata.alpha[:, 0],
                  'alfy': elemdata.alpha[:, 1],
-                 'mux': elemdata.mu[:, 0],
-                 'muy': elemdata.mu[:, 1],
+                 'mux': elemdata.mu[:, 0]/2./np.pi,
+                 'muy': elemdata.mu[:, 1]/2./np.pi,
                  'dx' : elemdata.dispersion[:, 0],
                  'dpx': elemdata.dispersion[:, 1],
                  'dy' : elemdata.dispersion[:, 2],
@@ -292,3 +284,13 @@ class ATLattice(Lattice):
         elem.TimeLag = timelag
         elem.Frequency = frequency
         return
+
+    def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
+                            dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
+                            pitch: Optional[float] = None, use_design=True) -> None:
+        if use_design:
+            elem = self._design[index]
+        else:
+            elem = self._ring[index]
+
+        update_transformation(elem, dx=dx, dy=dy, dz=dz, roll=roll, yaw=yaw, pitch=pitch)

@@ -17,6 +17,7 @@ import sys
 logging.basicConfig(
     #format='%(asctime)s.%(msecs)03d:%(levelname)s:%(name)s:\t%(message)s',
     format="{asctime} | {levelname} | {message}",
+    #format="{asctime} | {levelname} | {name} | {message}",
     datefmt="%d %b% %Y, %H:%M:%S",
     level=logging.INFO,
     style='{',

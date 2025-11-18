@@ -287,7 +287,7 @@ class ATLattice(Lattice):
 
     def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
                             dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
-                            pitch: Optional[float] = None, use_design=True) -> None:
+                            pitch: Optional[float] = None, use_design: bool = False) -> None:
         if use_design:
             elem = self._design[index]
         else:

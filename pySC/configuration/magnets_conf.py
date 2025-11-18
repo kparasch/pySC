@@ -1,5 +1,6 @@
 from typing import Any
 from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.lattice import ATLattice
 from ..core.magnet import MAGNET_NAME_TYPE
 from .general import get_error, get_indices_and_names
 from .supports_conf import generate_element_misalignments
@@ -43,9 +44,13 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
                 factor = SC.rng.normal_trunc(1, sig)
 
             component_type, order = magnet_settings.validate_one_component(component)
-            if component == 'B1' and SC.lattice.is_dipole(index):
-                # when we have a dipole with bending angle it is a special case,
+            if type(SC.lattice) is ATLattice and component == 'B1' and SC.lattice.is_dipole(index):
+                # in AT when we have a dipole with bending angle it is a special case,
                 # setpoint points to bending angle, but B1 multipole (PolynomB[0]) should be changed
+                # TODO: maybe put this on the side of ATLattice?? 
+                #   when we do get we return BendingAngle/length + PolynomB[0],
+                #   when we do set we subtract BendingAngle/length from setpoint and then set it to PolynomB[0]
+                # in XSuite, h controls the reference frame and k0 the strength of the dipole. We can just act on k0.
                 bending_angle = SC.lattice.get_bending_angle(index)
                 offset = - bending_angle / magnet_length
                 setpoint = bending_angle / magnet_length

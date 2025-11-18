@@ -2,7 +2,8 @@ from pydantic import BaseModel, model_validator, Field
 from typing import Optional
 import json
 
-from .lattice import ATLattice, XSuiteLattice
+from .lattice import ATLattice
+from .xsuite_lattice import XSuiteLattice
 from .magnetsettings import MagnetSettings
 from .supports import SupportSystem
 from .bpm_system import BPMSystem

@@ -149,7 +149,7 @@ class ResponseMatrix(BaseModel, extra="forbid"):
         self.bad_outputs = []
 
     def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0.):
-        logging.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=}.')
+        logger.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=}.')
         matrix = self.matrix[self._output_mask, :][:, self._input_mask]
         U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)
 

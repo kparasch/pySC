@@ -5,7 +5,6 @@ import logging
 import numpy as np
 from enum import IntEnum
 from pathlib import Path
-from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
 from contextlib import nullcontext
 
 from .codes import ResponseCode
@@ -18,19 +17,24 @@ DISABLE_RICH = False
 
 logger = logging.getLogger(__name__)
 
-rich_progress = Progress(
-                         TextColumn("[progress.description]{task.description}"),
-                         BarColumn(),
-                         MofNCompleteColumn(),
-                         TimeRemainingColumn(),
-                        )
-
 def no_rich_progress():
     progress = nullcontext()
     progress.add_task = lambda *args, **kwargs: 1
     progress.update = lambda *args, **kwargs: None
     progress.remove_task = lambda *args, **kwargs: None
     return progress
+
+try:
+    from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
+    rich_progress = Progress(
+                             TextColumn("[progress.description]{task.description}"),
+                             BarColumn(),
+                             MofNCompleteColumn(),
+                             TimeRemainingColumn(),
+                            )
+except ModuleNotFoundError:
+    rich_progress = no_rich_progress()
+    DISABLE_RICH = True
 
 class ResponseData(BaseModel):
     matrix: Optional[NPARRAY] = None

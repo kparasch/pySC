@@ -1,19 +1,11 @@
 from typing import Union, Optional, TYPE_CHECKING
 import numpy as np
-from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
 
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
 
 
 DISABLE_RICH = False
-
-rich_progress = Progress(
-                         TextColumn("[progress.description]{task.description}"),
-                         BarColumn(),
-                         MofNCompleteColumn(),
-                         TimeRemainingColumn(),
-                        )
 
 def no_rich_progress():
     from contextlib import nullcontext
@@ -22,6 +14,19 @@ def no_rich_progress():
     progress.update = lambda *args, **kwargs: None
     progress.remove_task = lambda *args, **kwargs: None
     return progress
+
+try:
+    from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
+    rich_progress = Progress(
+                             TextColumn("[progress.description]{task.description}"),
+                             BarColumn(),
+                             MofNCompleteColumn(),
+                             TimeRemainingColumn(),
+                            )
+except ModuleNotFoundError:
+    rich_progress = no_rich_progress()
+    DISABLE_RICH = True
+
 
 def response_loop(inputs, inputs_delta, get_output, settings, normalize=True, bipolar=False):
     n_inputs = len(inputs)

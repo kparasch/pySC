@@ -22,7 +22,7 @@ class InverseResponseMatrix(BaseModel, extra="forbid"):
     def shape(self):
         return self.matrix.shape
 
-class ResponseMatrix(BaseModel, extra="forbid"):
+class ResponseMatrix(BaseModel):
     #inputs -> columns -> axis = 1
     #outputs -> rows -> axis = 0
     # here, good and bad in the names of the variables mean that bad output/input includes inside

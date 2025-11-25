@@ -213,7 +213,7 @@ class ResponseMatrix(BaseModel):
         if method == 'micado':
             bad_input = self.micado(good_output, int(parameter))
             if zerosum:
-                logger.warning('Zerosum option is incompatible with the MICADO algorithm and will be ignored.')
+                logger.warning('Zerosum option is incompatible with the micado method and will be ignored.')
         else:
             if self._inverse_RM.shape != expected_shape:
                 raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 

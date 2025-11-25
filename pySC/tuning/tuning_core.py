@@ -94,7 +94,7 @@ class Tuning(BaseModel, extra="forbid"):
                     bad_outputs.append(bpm + turn * n_bpms + plane * n_turns * n_bpms)
         return bad_outputs
 
-    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False):
+    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False, zerosum=False):
         RM_name = f'trajectory{n_turns}'
         self.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         RM = self.response_matrix[RM_name]
@@ -112,7 +112,7 @@ class Tuning(BaseModel, extra="forbid"):
             else:
                 reference = np.zeros_like(trajectory)
 
-            trims = RM.solve(trajectory - reference, method=method, parameter=parameter)
+            trims = RM.solve(trajectory - reference, method=method, parameter=parameter, zerosum=zerosum)
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):
@@ -130,7 +130,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_pseudo_orbit_at_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1):
+    def correct_pseudo_orbit_at_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, zerosum=False):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         RM = self.response_matrix[RM_name]
@@ -142,7 +142,7 @@ class Tuning(BaseModel, extra="forbid"):
             pseudo_orbit_y = np.nanmean(trajectory_y, axis=1)
             pseudo_orbit = np.concat((pseudo_orbit_x, pseudo_orbit_y))
 
-            trims = RM.solve(pseudo_orbit, method=method, parameter=parameter)
+            trims = RM.solve(pseudo_orbit, method=method, parameter=parameter, zerosum=zerosum)
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):
@@ -160,7 +160,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1):
+    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, zerosum=False):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         RM = self.response_matrix[RM_name]
@@ -170,7 +170,7 @@ class Tuning(BaseModel, extra="forbid"):
             orbit_x, orbit_y = self._parent.bpm_system.capture_orbit()
             orbit = np.concat((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
 
-            trims = RM.solve(orbit, method=method, parameter=parameter)
+            trims = RM.solve(orbit, method=method, parameter=parameter, zerosum=zerosum)
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):

@@ -12,6 +12,7 @@ class InverseResponseMatrix(BaseModel, extra="forbid"):
     matrix: NPARRAY
     method: Literal['tikhonov', 'svd_values', 'svd_cutoff', 'micado']
     parameter: float
+    zerosum: bool = True
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -31,6 +32,7 @@ class ResponseMatrix(BaseModel):
 
     input_names: Optional[list[str]] = None
     output_names: Optional[list[str]] = None
+    inputs_plane: Optional[list[Literal['H','V']]] = None
 
     _n_outputs: int = PrivateAttr(default=0)
     _n_inputs: int = PrivateAttr(default=0)
@@ -57,6 +59,13 @@ class ResponseMatrix(BaseModel):
             logger.warning('SVD of the response matrix failed, correction will be impossible.')
             self._singular_values = None
         self.make_masks()
+
+        if self.inputs_plane is None:
+            Nh = self._n_inputs // 2
+            if Nh % 2 != 0:
+                logger.warning('Plane of inputs is undefined and number of inputs in response matrix is not even.\
+                                Misinterpretation of the input plane is guaranteed!')
+            self.inputs_plane = ['H'] * Nh + ['V'] * (self._n_inputs - Nh)
         return self
 
     @property
@@ -148,10 +157,19 @@ class ResponseMatrix(BaseModel):
     def enable_all_outputs(self):
         self.bad_outputs = []
 
-    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0.):
-        logger.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=}.')
+    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., zerosum: bool = False):
+        logger.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=} with {zerosum=}.')
         matrix = self.matrix[self._output_mask, :][:, self._input_mask]
-        U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)
+
+        if zerosum:
+            # select only horizontal plane to zero-sum the inputs. Should we do for any plane?
+            zerosummed_matrix = np.zeros([matrix.shape[0] + 1, matrix.shape[1]])
+            zerosummed_matrix[:matrix.shape[0], :matrix.shape[1]]
+            horizontal_mask = np.array(self.inputs_plane)[self._input_mask] == 'H'
+            zerosummed_matrix[-1][horizontal_mask] = 1
+            U, s_mat, Vh = np.linalg.svd(zerosummed_matrix, full_matrices=False)
+        else:
+            U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)
 
         if method == 'svd_cutoff':
             cutoff = parameter
@@ -173,16 +191,16 @@ class ResponseMatrix(BaseModel):
 
         return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter)
 
-    def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.) -> np.ndarray:
+    def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0., zerosum: bool = False) -> np.ndarray:
         assert len(self.bad_outputs) != self.matrix.shape[0], 'All outputs are disabled!'
         assert len(self.bad_inputs) != self.matrix.shape[1], 'All inputs are disabled!'
         expected_shape = (self._n_inputs - len(self._bad_inputs), self._n_outputs - len(self._bad_outputs))
         if method != 'micado':
             if self._inverse_RM is None:
-                self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
+                self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum)
             else:
-                if self._inverse_RM.method != method or self._inverse_RM.parameter != parameter or self._inverse_RM.shape != expected_shape:
-                    self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter)
+                if self._inverse_RM.method != method or self._inverse_RM.parameter != parameter or self._inverse_RM.zerosum != zerosum or self._inverse_RM.shape != expected_shape:
+                    self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum)
 
         bad_output = output.copy()
         bad_output[np.isnan(bad_output)] = 0
@@ -191,6 +209,8 @@ class ResponseMatrix(BaseModel):
 
         if method == 'micado':
             bad_input = self.micado(good_output, int(parameter))
+            if zerosum:
+                logger.warning('Zerosum option is incompatible with the MICADO algorithm and will be ignored.')
         else:
             if self._inverse_RM.shape != expected_shape:
                 raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 
@@ -199,7 +219,12 @@ class ResponseMatrix(BaseModel):
                  + f'expected outputs: {len(self.output_names)} - {len(self._bad_outputs)}'
                  + f'received outputs: {len(output)}, should be equal to {len(self.output_names)}!')
 
-            good_input = self._inverse_RM.dot(good_output)
+            if zerosum:
+                zerosum_good_output = np.zeros(len(good_output) + 1)
+                zerosum_good_output[:-1] = good_output
+                good_input = self._inverse_RM.dot(zerosum_good_output)
+            else:
+                good_input = self._inverse_RM.dot(good_output)
 
             bad_input = np.zeros(self._n_inputs, dtype=float)
             bad_input[self._input_mask] = good_input

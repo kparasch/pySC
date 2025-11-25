@@ -164,7 +164,7 @@ class ResponseMatrix(BaseModel):
         if zerosum:
             # select only horizontal plane to zero-sum the inputs. Should we do for any plane?
             zerosummed_matrix = np.zeros([matrix.shape[0] + 1, matrix.shape[1]])
-            zerosummed_matrix[:matrix.shape[0], :matrix.shape[1]]
+            zerosummed_matrix[:matrix.shape[0], :matrix.shape[1]] = matrix
             horizontal_mask = np.array(self.inputs_plane)[self._input_mask] == 'H'
             zerosummed_matrix[-1][horizontal_mask] = 1
             U, s_mat, Vh = np.linalg.svd(zerosummed_matrix, full_matrices=False)
@@ -195,6 +195,9 @@ class ResponseMatrix(BaseModel):
         assert len(self.bad_outputs) != self.matrix.shape[0], 'All outputs are disabled!'
         assert len(self.bad_inputs) != self.matrix.shape[1], 'All inputs are disabled!'
         expected_shape = (self._n_inputs - len(self._bad_inputs), self._n_outputs - len(self._bad_outputs))
+        if zerosum:
+            expected_shape = (expected_shape[0], expected_shape[1] + 1)
+
         if method != 'micado':
             if self._inverse_RM is None:
                 self._inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum)
@@ -215,9 +218,9 @@ class ResponseMatrix(BaseModel):
             if self._inverse_RM.shape != expected_shape:
                 raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 
                  + f'inverse RM shape = {self._inverse_RM.shape},\n'
-                 + f'expected inputs: {len(self.input_names)} - {len(self._bad_inputs)},\n'
-                 + f'expected outputs: {len(self.output_names)} - {len(self._bad_outputs)}'
-                 + f'received outputs: {len(output)}, should be equal to {len(self.output_names)}!')
+                 + f'expected inputs: {self._n_inputs} - {len(self._bad_inputs)},\n'
+                 + f'expected outputs: {self._n_outputs} - {len(self._bad_outputs)}\n'
+                 + f'received outputs: {len(output)}, should be equal to {self._n_outputs}!')
 
             if zerosum:
                 zerosum_good_output = np.zeros(len(good_output) + 1)

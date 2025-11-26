@@ -43,7 +43,8 @@ class ResponseMatrix(BaseModel):
     _bad_outputs: list[int] = PrivateAttr(default=[])
     _bad_inputs: list[int] = PrivateAttr(default=[])
 
-    _output_mask: NPARRAY = np.array([])
+    _output_mask: Optional[NPARRAY] = PrivateAttr(default=None)
+    _input_mask: Optional[NPARRAY] = PrivateAttr(default=None)
     _inverse_RM: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
     _inverse_RM_H: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
     _inverse_RM_V: Optional[InverseResponseMatrix] = PrivateAttr(default=None)

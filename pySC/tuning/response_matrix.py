@@ -66,15 +66,15 @@ class ResponseMatrix(BaseModel):
         if self.inputs_plane is None:
             Nh = self._n_inputs // 2
             if Nh % 2 != 0:
-                logger.warning('Plane of inputs is undefined and number of inputs in response matrix is not even.\
-                                Misinterpretation of the input plane is guaranteed!')
+                logger.warning('Plane of inputs is undefined and number of inputs in response matrix is not even.'
+                                'Misinterpretation of the input plane is guaranteed!')
             self.inputs_plane = ['H'] * Nh + ['V'] * (self._n_inputs - Nh)
 
         if self.outputs_plane is None:
             Nh = self._n_outputs // 2
             if Nh % 2 != 0:
-                logger.warning('Plane of outputs is undefined and number of outputs in response matrix is not even.\
-                                Misinterpretation of the output plane is guaranteed!')
+                logger.warning('Plane of outputs is undefined and number of outputs in response matrix is not even.'
+                                'Misinterpretation of the output plane is guaranteed!')
             self.outputs_plane = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
 
         return self
@@ -82,6 +82,22 @@ class ResponseMatrix(BaseModel):
     @property
     def singular_values(self) -> np.array:
         return self._singular_values
+
+    def get_matrix_in_plane(self, plane: Optional[Literal['H','V']] = None):
+        if plane is None:
+            return self.matrix
+        else:
+            output_plane_mask = np.array(self.outputs_plane) == plane
+            input_plane_mask = np.array(self.inputs_plane) == plane
+            return self.matrix[output_plane_mask, :][:, input_plane_mask]
+
+    @property
+    def matrix_h(self) -> np.array:
+        return self.get_matrix_in_plane(plane='H')
+
+    @property
+    def matrix_v(self) -> np.array:
+        return self.get_matrix_in_plane(plane='V')
 
     @property
     def bad_inputs(self) -> list[int]:

@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from typing import Optional, Generator, Union
+from typing import Optional, Generator, Union, Literal
 from pathlib import Path
 
 from ..tuning.response_matrix import ResponseMatrix
@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 
 def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatrix, method='svd_cutoff',
                      parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
-                     gain: float = 1, zerosum: bool = False, apply: bool = False):
+                     gain: float = 1, zerosum: bool = False, plane: Optional[Literal['H', 'V']] = None,
+                     apply: bool = False):
 
     correctors = response_matrix.input_names
     assert correctors is not None, 'Corrector names are undefined in the response matrix'
@@ -28,7 +29,7 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
         assert len(reference) == len(orbit), "Reference orbit has wrong length"
         orbit -= reference
 
-    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter, zerosum=zerosum)
+    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter, zerosum=zerosum, plane=plane)
 
     trims = {corr: trim for corr, trim in zip(correctors, trim_list) if trim != 0}
 

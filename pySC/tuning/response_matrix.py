@@ -32,7 +32,8 @@ class ResponseMatrix(BaseModel):
 
     input_names: Optional[list[str]] = None
     output_names: Optional[list[str]] = None
-    inputs_plane: Optional[list[Literal['H','V']]] = None
+    inputs_plane: Optional[list[Literal['H', 'V']]] = None
+    outputs_plane: Optional[list[Literal['H', 'V']]] = None
 
     _n_outputs: int = PrivateAttr(default=0)
     _n_inputs: int = PrivateAttr(default=0)
@@ -66,6 +67,14 @@ class ResponseMatrix(BaseModel):
                 logger.warning('Plane of inputs is undefined and number of inputs in response matrix is not even.\
                                 Misinterpretation of the input plane is guaranteed!')
             self.inputs_plane = ['H'] * Nh + ['V'] * (self._n_inputs - Nh)
+
+        if self.outputs_plane is None:
+            Nh = self._n_outputs // 2
+            if Nh % 2 != 0:
+                logger.warning('Plane of outputs is undefined and number of outputs in response matrix is not even.\
+                                Misinterpretation of the output plane is guaranteed!')
+            self.outputs_plane = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
+
         return self
 
     @property

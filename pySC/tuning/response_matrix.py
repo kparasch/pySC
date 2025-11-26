@@ -6,6 +6,8 @@ import json
 
 from ..core.numpy_type import NPARRAY
 
+PLANE_TYPE = Literal['H', 'V']
+
 logger = logging.getLogger(__name__)
 
 class InverseResponseMatrix(BaseModel, extra="forbid"):
@@ -32,8 +34,8 @@ class ResponseMatrix(BaseModel):
 
     input_names: Optional[list[str]] = None
     output_names: Optional[list[str]] = None
-    inputs_plane: Optional[list[Literal['H', 'V']]] = None
-    outputs_plane: Optional[list[Literal['H', 'V']]] = None
+    inputs_plane: Optional[list[PLANE_TYPE]] = None
+    outputs_plane: Optional[list[PLANE_TYPE]] = None
 
     _n_outputs: int = PrivateAttr(default=0)
     _n_inputs: int = PrivateAttr(default=0)
@@ -83,7 +85,7 @@ class ResponseMatrix(BaseModel):
     def singular_values(self) -> np.array:
         return self._singular_values
 
-    def get_matrix_in_plane(self, plane: Optional[Literal['H','V']] = None):
+    def get_matrix_in_plane(self, plane: Optional[PLANE_TYPE] = None):
         if plane is None:
             return self.matrix
         else:
@@ -186,7 +188,7 @@ class ResponseMatrix(BaseModel):
     def enable_all_outputs(self):
         self.bad_outputs = []
 
-    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., zerosum: bool = False, plane: Optional[Literal['H', 'V']] = None):
+    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., zerosum: bool = False, plane: Optional[PLANE_TYPE] = None):
         logger.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=} with {zerosum=}.')
         assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
         if plane is None:

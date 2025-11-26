@@ -186,8 +186,7 @@ class ResponseMatrix(BaseModel):
             # select only horizontal plane to zero-sum the inputs. Should we do for any plane?
             zerosummed_matrix = np.zeros([matrix.shape[0] + 1, matrix.shape[1]])
             zerosummed_matrix[:matrix.shape[0], :matrix.shape[1]] = matrix
-            horizontal_mask = np.array(self.inputs_plane)[self._input_mask] == 'H'
-            zerosummed_matrix[-1][horizontal_mask] = 1
+            zerosummed_matrix[-1][:] = 1
             U, s_mat, Vh = np.linalg.svd(zerosummed_matrix, full_matrices=False)
         else:
             U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)

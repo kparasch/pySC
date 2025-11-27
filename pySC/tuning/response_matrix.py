@@ -15,6 +15,7 @@ class InverseResponseMatrix(BaseModel, extra="forbid"):
     method: Literal['tikhonov', 'svd_values', 'svd_cutoff', 'micado']
     parameter: float
     zerosum: bool = True
+    rf: bool = False
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -36,7 +37,7 @@ class ResponseMatrix(BaseModel):
     output_names: Optional[list[str]] = None
     inputs_plane: Optional[list[PLANE_TYPE]] = None
     outputs_plane: Optional[list[PLANE_TYPE]] = None
-    dispersion: Optional[NPARRAY] = None
+    rf_response: Optional[NPARRAY] = None
 
     _n_outputs: int = PrivateAttr(default=0)
     _n_inputs: int = PrivateAttr(default=0)
@@ -81,8 +82,8 @@ class ResponseMatrix(BaseModel):
                                 'Misinterpretation of the output plane is guaranteed!')
             self.outputs_plane = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
 
-        if self.dispersion is None:
-            self.dispersion = np.zeros(self._n_outputs)
+        if self.rf_response is None:
+            self.rf_response = np.zeros(self._n_outputs)
 
         return self
 
@@ -90,20 +91,20 @@ class ResponseMatrix(BaseModel):
     def singular_values(self) -> np.array:
         return self._singular_values
 
-    def set_dispersion(self, dispersion: np.array, plane=None) -> None:
+    def set_rf_response(self, rf_response: np.array, plane=None) -> None:
         assert plane is None or plane in ['H', 'V'], f"Unknown plane: {plane}."
-        len_disp = len(dispersion)
+        len_rf = len(rf_response)
         if plane is None:
-            assert len_disp == self._n_outputs, f"Incorrect dispersion length: {len_disp} (instead of {self._n_outputs})."
-            self.dispersion = np.array(dispersion)
+            assert len_rf == self._n_outputs, f"Incorrect rf_response length: {len_rf} (instead of {self._n_outputs})."
+            self.rf_response = np.array(rf_response)
         else:
             output_plane_mask = self.get_output_plane_mask(plane=plane)
             n_plane = sum(output_plane_mask)
-            assert len_disp == n_plane, f"Incorrect dispersion length for plane {plane}: {len_disp} (instead of {n_plane})."
-            self.dispersion[output_plane_mask] = np.array(dispersion)
+            assert len_rf == n_plane, f"Incorrect rf_response length for plane {plane}: {len_rf} (instead of {n_plane})."
+            self.rf_response[output_plane_mask] = np.array(rf_response)
         return
 
-    def get_matrix_in_plane(self, plane: Optional[PLANE_TYPE] = None):
+    def get_matrix_in_plane(self, plane: Optional[PLANE_TYPE] = None) -> np.array:
         if plane is None:
             return self.matrix
         else:
@@ -111,10 +112,10 @@ class ResponseMatrix(BaseModel):
             input_plane_mask = self.get_input_plane_mask(plane)
             return self.matrix[output_plane_mask, :][:, input_plane_mask]
 
-    def get_input_plane_mask(self, plane: Literal[PLANE_TYPE]):
+    def get_input_plane_mask(self, plane: Literal[PLANE_TYPE]) -> np.array:
         return np.array(self.inputs_plane) == plane
 
-    def get_output_plane_mask(self, plane: Literal[PLANE_TYPE]):
+    def get_output_plane_mask(self, plane: Literal[PLANE_TYPE]) -> np.array:
         return np.array(self.outputs_plane) == plane
 
     @property

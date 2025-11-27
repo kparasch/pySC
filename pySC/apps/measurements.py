@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatrix, method='svd_cutoff',
                      parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
                      gain: float = 1, zerosum: bool = False, plane: Optional[Literal['H', 'V']] = None,
-                     apply: bool = False):
+                     rf: bool  = False, apply: bool = False):
 
     correctors = response_matrix.input_names
     assert correctors is not None, 'Corrector names are undefined in the response matrix'
@@ -29,15 +29,21 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
         assert len(reference) == len(orbit), "Reference orbit has wrong length"
         orbit -= reference
 
-    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter, zerosum=zerosum, plane=plane)
+    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter, zerosum=zerosum, plane=plane, rf=rf)
 
-    trims = {corr: trim for corr, trim in zip(correctors, trim_list) if trim != 0}
+    trims = {corr: trim for corr, trim in zip(correctors, trim_list, strict=False) if trim != 0}
+    # if rf is selected, trim_list will be larger than correctors by one element. The last element is the rf frequency.
+    if rf:
+        trims['rf'] = trim_list[-1]
 
     if apply:
         data = interface.get_many(correctors)
         for i, corr in enumerate(correctors):
             data[corr] += trim_list[i] * gain
         interface.set_many(data)
+        if rf and trims['rf'] != 0:
+            f_rf = interface.get_main_rf_frequency()
+            interface.set_main_rf_frequency(f_rf + trims['rf'])
 
     return trims
 

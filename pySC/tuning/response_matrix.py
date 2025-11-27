@@ -84,6 +84,11 @@ class ResponseMatrix(BaseModel):
 
         if self.rf_response is None:
             self.rf_response = np.zeros(self._n_outputs)
+        else:
+            if len(self.rf_response) != self._n_outputs:
+                logger.warning(f'RF response does not have the correct length: {len(self.rf_response)} (should have been {self._n_outputs}).')
+                logger.warning('RF response will be removed.')
+                self.rf_response = np.zeros(self._n_outputs)
 
         return self
 
@@ -213,7 +218,8 @@ class ResponseMatrix(BaseModel):
     def enable_all_outputs(self):
         self.bad_outputs = []
 
-    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., zerosum: bool = False, plane: Optional[PLANE_TYPE] = None):
+    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., zerosum: bool = False,
+                            rf: bool = False, plane: Optional[PLANE_TYPE] = None):
         logger.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=} with {zerosum=}.')
         assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
         if plane is None:
@@ -225,15 +231,29 @@ class ResponseMatrix(BaseModel):
             tot_input_mask = np.logical_and(self._input_mask, input_plane_mask)
             matrix = self.matrix[tot_output_mask, :][:, tot_input_mask]
 
-        if zerosum:
-            # select only horizontal plane to zero-sum the inputs. Should we do for any plane?
-            zerosummed_matrix = np.zeros([matrix.shape[0] + 1, matrix.shape[1]])
-            zerosummed_matrix[:matrix.shape[0], :matrix.shape[1]] = matrix
-            zerosummed_matrix[-1][:] = 1
-            U, s_mat, Vh = np.linalg.svd(zerosummed_matrix, full_matrices=False)
-        else:
-            U, s_mat, Vh = np.linalg.svd(matrix, full_matrices=False)
+        if zerosum or rf:
+            rows, cols = matrix.shape
+            print(matrix.shape)
+            if zerosum:
+                rows += 1
+            if rf:
+                cols += 1
+            matrix_to_invert = np.zeros((rows, cols), dtype=float)
+            matrix_to_invert[:matrix.shape[0], :matrix.shape[1]] = matrix
+            if zerosum:
+                matrix_to_invert[-1, :matrix.shape[1]]
+            if rf:
+                rf_response = self.rf_response
+                print(len(rf_response))
+                if plane is not None:
+                    rf_response = rf_response[tot_output_mask] # tot_output_mask will have been defined earlier always.
 
+                print(len(rf_response))
+                matrix_to_invert[:matrix.shape[0], -1] = rf_response
+        else:
+            matrix_to_invert = matrix
+
+        U, s_mat, Vh = np.linalg.svd(matrix_to_invert, full_matrices=False)
         if method == 'svd_cutoff':
             cutoff = parameter
             s0 = s_mat[0]
@@ -255,7 +275,7 @@ class ResponseMatrix(BaseModel):
         return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter)
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.,
-              zerosum: bool = False, plane: Optional[Literal['H', 'V']] = None) -> np.ndarray:
+              zerosum: bool = False, rf: bool = False, plane: Optional[Literal['H', 'V']] = None) -> np.ndarray:
         assert len(self.bad_outputs) != self.matrix.shape[0], 'All outputs are disabled!'
         assert len(self.bad_inputs) != self.matrix.shape[1], 'All inputs are disabled!'
         assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
@@ -271,6 +291,8 @@ class ResponseMatrix(BaseModel):
         if zerosum:
             expected_shape = (expected_shape[0], expected_shape[1] + 1)
 
+        if rf:
+            expected_shape = (expected_shape[0] + 1, expected_shape[1])
 
 
         if method != 'micado':
@@ -282,11 +304,11 @@ class ResponseMatrix(BaseModel):
                 active_inverse_RM = self._inverse_RM_V
 
             if active_inverse_RM is None:
-                active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum, plane=plane)
+                active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum, plane=plane, rf=rf)
             else:
                 if (active_inverse_RM.method != method or active_inverse_RM.parameter != parameter or
                     active_inverse_RM.zerosum != zerosum or active_inverse_RM.shape != expected_shape):
-                    active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum, plane=plane)
+                    active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum, plane=plane, rf=rf)
 
             # cache it
             if plane is None:
@@ -310,13 +332,14 @@ class ResponseMatrix(BaseModel):
             bad_input = self.micado(good_output, int(parameter))
             if zerosum:
                 logger.warning('Zerosum option is incompatible with the micado method and will be ignored.')
+            if rf:
+                logger.warning('Rf option is incompatible with the micado method and will be ignored.')
         else:
             if active_inverse_RM.shape != expected_shape:
                 raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 
                  + f'inverse RM shape = {active_inverse_RM.shape},\n'
-                 + f'expected inputs: {self._n_inputs} - {len(self._bad_inputs)},\n'
-                 + f'expected outputs: {self._n_outputs} - {len(self._bad_outputs)}\n'
-                 + f'received outputs: {len(output)}, should be equal to {self._n_outputs}!')
+                 + f'expected inputs = {expected_shape[0]},\n'
+                 + f'expected outputs = {expected_shape[1]},')
 
             if zerosum:
                 zerosum_good_output = np.zeros(len(good_output) + 1)
@@ -325,11 +348,22 @@ class ResponseMatrix(BaseModel):
             else:
                 good_input = active_inverse_RM.dot(good_output)
 
-            bad_input = np.zeros(self._n_inputs, dtype=float)
+            if rf: # split rf from the other inputs
+                rf_input = good_input[-1]
+                good_input = good_input[:-1]
+
+            final_input_length = self._n_inputs
+            if rf:
+                final_input_length += 1
+
+            bad_input = np.zeros(final_input_length, dtype=float)
             input_plane_mask = np.ones_like(self._input_mask, dtype=bool)
             if plane in ['H', 'V']:
                 input_plane_mask = np.array(self.inputs_plane) == plane
-            bad_input[np.logical_and(self._input_mask, input_plane_mask)] = good_input
+            bad_input[:self._n_inputs][np.logical_and(self._input_mask, input_plane_mask)] = good_input
+
+            if rf:
+                bad_input[-1] = rf_input
         return bad_input
 
     def micado(self, good_output: np.array, n: int) -> np.ndarray:

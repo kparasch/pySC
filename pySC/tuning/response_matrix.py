@@ -36,6 +36,7 @@ class ResponseMatrix(BaseModel):
     output_names: Optional[list[str]] = None
     inputs_plane: Optional[list[PLANE_TYPE]] = None
     outputs_plane: Optional[list[PLANE_TYPE]] = None
+    dispersion: Optional[NPARRAY] = None
 
     _n_outputs: int = PrivateAttr(default=0)
     _n_inputs: int = PrivateAttr(default=0)
@@ -80,19 +81,41 @@ class ResponseMatrix(BaseModel):
                                 'Misinterpretation of the output plane is guaranteed!')
             self.outputs_plane = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
 
+        if self.dispersion is None:
+            self.dispersion = np.zeros(self._n_outputs)
+
         return self
 
     @property
     def singular_values(self) -> np.array:
         return self._singular_values
 
+    def set_dispersion(self, dispersion: np.array, plane=None) -> None:
+        assert plane is None or plane in ['H', 'V'], f"Unknown plane: {plane}."
+        len_disp = len(dispersion)
+        if plane is None:
+            assert len_disp == self._n_outputs, f"Incorrect dispersion length: {len_disp} (instead of {self._n_outputs})."
+            self.dispersion = np.array(dispersion)
+        else:
+            output_plane_mask = self.get_output_plane_mask(plane=plane)
+            n_plane = sum(output_plane_mask)
+            assert len_disp == n_plane, f"Incorrect dispersion length for plane {plane}: {len_disp} (instead of {n_plane})."
+            self.dispersion[output_plane_mask] = np.array(dispersion)
+        return
+
     def get_matrix_in_plane(self, plane: Optional[PLANE_TYPE] = None):
         if plane is None:
             return self.matrix
         else:
-            output_plane_mask = np.array(self.outputs_plane) == plane
-            input_plane_mask = np.array(self.inputs_plane) == plane
+            output_plane_mask = self.get_output_plane_mask(plane)
+            input_plane_mask = self.get_input_plane_mask(plane)
             return self.matrix[output_plane_mask, :][:, input_plane_mask]
+
+    def get_input_plane_mask(self, plane: Literal[PLANE_TYPE]):
+        return np.array(self.inputs_plane) == plane
+
+    def get_output_plane_mask(self, plane: Literal[PLANE_TYPE]):
+        return np.array(self.outputs_plane) == plane
 
     @property
     def matrix_h(self) -> np.array:
@@ -195,8 +218,8 @@ class ResponseMatrix(BaseModel):
         if plane is None:
             matrix = self.matrix[self._output_mask, :][:, self._input_mask]
         elif plane in ['H', 'V']:
-            output_plane_mask = np.array(self.outputs_plane) == plane
-            input_plane_mask = np.array(self.inputs_plane) == plane
+            output_plane_mask = self.get_output_plane_mask(plane)
+            input_plane_mask = self.get_input_plane_mask(plane)
             tot_output_mask = np.logical_and(self._output_mask, output_plane_mask)
             tot_input_mask = np.logical_and(self._input_mask, input_plane_mask)
             matrix = self.matrix[tot_output_mask, :][:, tot_input_mask]

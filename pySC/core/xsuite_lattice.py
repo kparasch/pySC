@@ -51,7 +51,7 @@ class XSuiteLattice(Lattice):
                 if hasattr(el, 'k0_from_h'):
                     el.k0_from_h = False
                 if el.__class__ is xt.Cavity:
-                    el.absolute_time = 1
+                    el.absolute_time = 0
 
         self._index_to_name = {ii: name for ii, name in enumerate(line.element_names)}
 
@@ -340,9 +340,10 @@ class XSuiteLattice(Lattice):
         ## TODO: use defferred expressions for cavity parameters
         name = self._index_to_name[index]
         if use_design:
-            elem = self._design.element_dict[name]
+            line = self._design
         else:
-            elem = self._ring.element_dict[name]
+            line = self._ring
+        elem = line.element_dict[name]
 
         assert elem.__class__ is xt.Cavity, f"Class of element {name} is not xt.Cavity, it is instead: {elem.__class__}"
 
@@ -356,15 +357,38 @@ class XSuiteLattice(Lattice):
         ## TODO: use defferred expressions for cavity parameters
         name = self._index_to_name[index]
         if use_design:
-            elem = self._design.element_dict[name]
+            line = self._design
         else:
-            elem = self._ring.element_dict[name]
+            line = self._ring
+        env = line.env
+        element_name = self._index_to_name[index]
+        element_class = line.element_dict[element_name].__class__
 
-        assert elem.__class__ is xt.Cavity, f"Class of element {name} is not xt.Cavity, it is instead: {elem.__class__}"
+        assert element_class is xt.Cavity, f"Class of element {name} is not xt.Cavity, it is instead: {element_class}"
 
-        elem.voltage = voltage
-        elem.lag = phase
-        elem.frequency = frequency
+        voltage_before, phase_before, frequency_before = self.get_cavity_voltage_phase_frequency(index, use_design=use_design)
+        voltage_difference = voltage - voltage_before
+        phase_difference = phase - phase_before
+        frequency_difference = frequency - frequency_before
+
+        expression_name_voltage = f"pySC_rf_{index}_voltage"
+        if expression_name_voltage not in env.vars:
+            line.vars[expression_name_voltage] = 0.0
+            env.ref[element_name].voltage += env.ref['pySC'] * env.ref[expression_name_voltage]
+
+        expression_name_phase = f"pySC_rf_{index}_phase"
+        if expression_name_phase not in env.vars:
+            line.vars[expression_name_phase] = 0.0
+            env.ref[element_name].lag += env.ref['pySC'] * env.ref[expression_name_phase]
+
+        expression_name_frequency = f"pySC_rf_{index}_frequency"
+        if expression_name_frequency not in env.vars:
+            line.vars[expression_name_frequency] = 0.0
+            env.ref[element_name].frequency += env.ref['pySC'] * env.ref[expression_name_frequency]
+
+        env[expression_name_voltage] += voltage_difference
+        env[expression_name_phase] += phase_difference
+        env[expression_name_frequency] += frequency_difference
         return
 
     def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,

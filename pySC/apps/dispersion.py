@@ -109,7 +109,7 @@ class DispersionMeasurement(BaseModel):
         yield DispersionCode.MEASURING
 
         if bipolar:
-            logging.info("Stepping frequency down.")
+            logger.debug("Stepping frequency down.")
             self._interface.set_rf_main_frequency(frequency - self.delta / 2)
 
             x_down, y_down, x_down_err, y_down_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
@@ -119,10 +119,10 @@ class DispersionMeasurement(BaseModel):
             self.dispersion_data.raw_orbit_y_err_down = y_down_err
             yield DispersionCode.MEASURING
 
-            logging.debug("Stepping frequency up.")
+            logger.debug("Stepping frequency up.")
             self._interface.set_rf_main_frequency(frequency + self.delta / 2)
         else:
-            logging.debug("Stepping frequency up.")
+            logger.debug("Stepping frequency up.")
             self._interface.set_rf_main_frequency(frequency + self.delta)
 
         x_up, y_up, x_up_err, y_up_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
@@ -132,7 +132,7 @@ class DispersionMeasurement(BaseModel):
         self.dispersion_data.raw_orbit_y_err_up = y_up_err
         yield DispersionCode.MEASURING
 
-        logging.debug("Setting original frequency.")
+        logger.debug("Setting original frequency.")
         self._interface.set_rf_main_frequency(frequency)
         self.calculate_response()
         yield DispersionCode.DONE

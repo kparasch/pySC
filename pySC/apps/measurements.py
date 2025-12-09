@@ -42,8 +42,8 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
             data[corr] += trim_list[i] * gain
         interface.set_many(data)
         if rf and trims['rf'] != 0:
-            f_rf = interface.get_main_rf_frequency()
-            interface.set_main_rf_frequency(f_rf + trims['rf'])
+            f_rf = interface.get_rf_main_frequency()
+            interface.set_rf_main_frequency(f_rf + trims['rf'])
 
     return trims
 

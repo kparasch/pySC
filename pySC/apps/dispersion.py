@@ -45,7 +45,7 @@ class DispersionData(BaseModel):
 
     @property
     def frequency_response(self) -> Tuple[NPARRAY]:
-        return self.frequency_response_x, self.frequency_response_x
+        return self.frequency_response_x, self.frequency_response_y
 
     @property
     def not_normalized_frequency_response(self) -> Tuple[NPARRAY]:

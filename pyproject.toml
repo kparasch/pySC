@@ -45,7 +45,9 @@ dependencies = [
     "matplotlib>=3.7.3",
     "accelerator-toolbox>=0.6.1",
     "pydantic",
-    "rich"
+    "PyYAML>=6.0.2",
+    "rich",
+    "h5py"
 ]
 
 [project.optional-dependencies]

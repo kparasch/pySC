@@ -248,6 +248,9 @@ class SupportSystem(BaseModel):
         dx1, dy1 = self.get_total_offset(supp_index, supp_level, endpoint='start')
         dx2, dy2 = self.get_total_offset(supp_index, supp_level, endpoint='end')
 
+        if support.length == 0.: #ZERO_LENGTH_THRESHOLD here??
+            return np.array([dx1, dy1])
+
         dx = (dx2 - dx1)/(s2 - s1 + corr_s2) * (s - s1 + corr_s) + dx1
         dy = (dy2 - dy1)/(s2 - s1 + corr_s2) * (s - s1 + corr_s) + dy1
         return np.array([dx, dy])

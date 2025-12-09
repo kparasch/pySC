@@ -38,6 +38,7 @@ class ResponseMatrix(BaseModel):
     inputs_plane: Optional[list[PLANE_TYPE]] = None
     outputs_plane: Optional[list[PLANE_TYPE]] = None
     rf_response: Optional[NPARRAY] = None
+    rf_weight: float = 1
 
     _n_outputs: int = PrivateAttr(default=0)
     _n_inputs: int = PrivateAttr(default=0)
@@ -233,7 +234,6 @@ class ResponseMatrix(BaseModel):
 
         if zerosum or rf:
             rows, cols = matrix.shape
-            print(matrix.shape)
             if zerosum:
                 rows += 1
             if rf:
@@ -244,12 +244,10 @@ class ResponseMatrix(BaseModel):
                 matrix_to_invert[-1, :matrix.shape[1]]
             if rf:
                 rf_response = self.rf_response
-                print(len(rf_response))
                 if plane is not None:
                     rf_response = rf_response[tot_output_mask] # tot_output_mask will have been defined earlier always.
 
-                print(len(rf_response))
-                matrix_to_invert[:matrix.shape[0], -1] = rf_response
+                matrix_to_invert[:matrix.shape[0], -1] = self.rf_weight*rf_response
         else:
             matrix_to_invert = matrix
 
@@ -329,7 +327,7 @@ class ResponseMatrix(BaseModel):
 
 
         if method == 'micado':
-            bad_input = self.micado(good_output, int(parameter))
+            bad_input = self.micado(good_output, int(parameter), plane=plane)
             if zerosum:
                 logger.warning('Zerosum option is incompatible with the micado method and will be ignored.')
             if rf:
@@ -366,12 +364,19 @@ class ResponseMatrix(BaseModel):
                 bad_input[-1] = rf_input
         return bad_input
 
-    def micado(self, good_output: np.array, n: int) -> np.ndarray:
+    def micado(self, good_output: np.array, n: int, plane: Optional[PLANE_TYPE] = None) -> np.ndarray:
         all_inputs = list(range(self._n_inputs))
         bad_input = np.zeros(self._n_inputs, dtype=float)
         already_used_inputs = []
+        if plane is None:
+            tot_output_mask = self._output_mask
+        else:
+            output_plane_mask = self.get_output_plane_mask(plane)
+            tot_output_mask = np.logical_and(self._output_mask, output_plane_mask)
+            input_plane_mask = self.get_input_plane_mask(plane)
+            all_inputs = np.array(all_inputs, dtype=int)[input_plane_mask]
+        good_matrix = self.matrix[tot_output_mask]
 
-        good_matrix = self.matrix[self._output_mask]
         residual = good_output.copy()
 
         for _ in range(n):

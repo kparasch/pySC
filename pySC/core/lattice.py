@@ -78,7 +78,7 @@ class ATLattice(Lattice):
 
     def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False, coordinates: Optional[list] = None) -> nparray:
         new_bunch = bunch.copy()
-        new_bunch[:,4], new_bunch[:,5] = new_bunch[:,5], new_bunch[:,4]  # swap zeta and delta for AT
+        new_bunch[:,4], new_bunch[:,5] = new_bunch[:,5].copy(), new_bunch[:,4].copy()  # swap zeta and delta for AT
         if use_design:
             ring = self._design
         else:

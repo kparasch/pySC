@@ -9,6 +9,7 @@ from .bpm_system_conf import configure_bpms
 from .rf_conf import configure_rf
 from .supports_conf import configure_supports
 from .tuning_conf import configure_tuning
+from .injection_conf import configure_injection
 from .general import scale_error_table
 
 logger = logging.getLogger(__name__)
@@ -70,4 +71,7 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
 
     logger.info('Configuring tuning...')
     configure_tuning(SC)
+
+    logger.info('Configuring injection...')
+    configure_injection(SC)
     return SC

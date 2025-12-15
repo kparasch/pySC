@@ -31,27 +31,27 @@ def configure_injection(SC: "SimulatedCommissioning") -> None:
         SC.injection.alfy = twiss['alfy'][0]
 
     if 'emit_x' in injection_conf:
-        SC.injection.gemit_x = injection_conf['emit_x']
+        SC.injection.gemit_x = float(injection_conf['emit_x'])
     else:
         logger.warning('emit_x not specified in injection configuration. Using default value of 1.')
     if 'emit_y' in injection_conf:
-        SC.injection.gemit_y = injection_conf['emit_y']
+        SC.injection.gemit_y = float(injection_conf['emit_y'])
     else:
         logger.warning('emit_y not specified in injection configuration. Using default value of 1.')
     if 'bunch_length' in injection_conf:
-        SC.injection.bunch_length = injection_conf['bunch_length']
+        SC.injection.bunch_length = float(injection_conf['bunch_length'])
     else:
         logger.warning('bunch_length (in m, r.m.s.) not specified in injection configuration. Using default value of 1.')
     if 'energy_spread' in injection_conf:
-        SC.injection.energy_spread = injection_conf['energy_spread']
+        SC.injection.energy_spread = float(injection_conf['energy_spread'])
     else:
         logger.warning('energy_spread not specified in injection configuration. Using default value of 1.')
 
     for var in ['x', 'px', 'y', 'py', 'tau', 'delta', 'betx', 'alfx', 'bety', 'alfy']:
         if var in injection_conf:
-            setattr(SC.injection, var, injection_conf[var])
+            setattr(SC.injection, var, float(injection_conf[var]))
 
     for var in ['x_error_syst', 'px_error_syst', 'y_error_syst', 'py_error_syst', 'tau_error_syst', 'delta_error_syst',
                 'x_error_stat', 'px_error_stat', 'y_error_stat', 'py_error_stat', 'tau_error_stat', 'delta_error_stat']:
         if var in injection_conf:
-            setattr(SC.injection, var, injection_conf[var])
+            setattr(SC.injection, var, float(injection_conf[var]))

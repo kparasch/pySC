@@ -69,7 +69,11 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
                 if response[imax] > max_H_response:
                     max_H_response = float(response[imax])
                     the_HCORR_number = int(imax)
-            hcorr_delta = max_dx_at_bpm/max_H_response
+            if max_H_response <= 0:
+                logger.warning(f'WARNING: zero H response for BPM {SC.bpm_system.names[bpm_number]}!')
+                hcorr_delta = 0
+            else:
+                hcorr_delta = max_dx_at_bpm/max_H_response
 
             if the_bba_magnet.split('/')[-1][0] == 'B':
                 temp_RM = HRM[bpm_number:bpm_number+n_downstream_bpms, the_HCORR_number]
@@ -93,7 +97,11 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
                 if response[imax] > max_V_response:
                     max_V_response = float(response[imax])
                     the_VCORR_number = int(imax)
-            vcorr_delta = max_dx_at_bpm/max_V_response
+            if max_V_response <= 0:
+                logger.warning(f'WARNING: zero V response for BPM {SC.bpm_system.names[bpm_number]}!')
+                vcorr_delta = 0
+            else:
+                vcorr_delta = max_dx_at_bpm/max_V_response
 
             if the_bba_magnet.split('/')[-1][0] == 'B':
                 temp_RM = VRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]

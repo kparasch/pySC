@@ -182,6 +182,31 @@ class ATLattice(Lattice):
 
         return qx, qy
 
+    def get_chromaticity(self, method='6d', use_design=False) -> tuple[float, float]:
+        assert method in ['4d', '6d']
+        ring = self._design if use_design else self._ring
+
+        if self.no_6d:
+            logger.warning("Lattice has 6d disabled, using 4d method instead.")
+            method = '4d'
+
+        if method == '4d' and not self.no_6d:
+            ring.disable_6d()
+
+        try:
+            chroms = ring.get_chrom()
+            dqx = chroms[0]
+            dqy = chroms[1]
+        except Exception as e:
+            logger.error(f"Error computing chromaticity, {type(e)}: {e}")
+            dqx = np.nan
+            dqy = np.nan
+
+        if method == '4d' and not self.no_6d:
+            ring.enable_6d()
+
+        return dqx, dqy
+
     def find_with_regex(self, regex: str) -> list[int]:
         """
         Find elements in the ring that match the given regular expression.

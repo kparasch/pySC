@@ -6,6 +6,7 @@ from .trajectory_bba import Trajectory_BBA_Configuration, trajectory_bba, get_ma
 from .orbit_bba import Orbit_BBA_Configuration, orbit_bba
 from .parallel import parallel_tbba_target, parallel_obba_target, get_listener_and_queue
 from .tune import Tune
+from .chromaticity import Chromaticity
 from .rf_tuning import RF_tuning
 
 import numpy as np
@@ -26,6 +27,7 @@ class Tuning(BaseModel, extra="forbid"):
     multipoles: list[str] = []
 
     tune: Tune = Tune() ## TODO: generate config from yaml file
+    chromaticity: Chromaticity = Chromaticity() ## TODO: generate config from yaml file
     rf: RF_tuning = RF_tuning() ## TODO: generate config from yaml file
 
     bba_magnets: list[str] = []

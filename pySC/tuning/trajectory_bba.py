@@ -32,7 +32,7 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
  #                       max_modulation=600e-6, max_dx_at_bpm=1.5e-3
 
         config = {}
-        n_turns = 2
+        n_turns = 1
         RM_name = f'trajectory{n_turns}'
         SC.tuning.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         RM = SC.tuning.response_matrix[RM_name]
@@ -40,9 +40,11 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         bba_magnets = SC.tuning.bba_magnets
         bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
 
-        d1, d2 = RM.RM.shape
-        HRM = RM.RM[:d1//2, :d2//2]
-        VRM = RM.RM[d1//2:, d2//2:]
+        #d1, d2 = RM.RM.shape
+        nh = len(SC.tuning.HCORR)
+        nbpm = len(SC.bpm_system.indices)
+        HRM = RM.RM[:nbpm, :nh]
+        VRM = RM.RM[nbpm:, nh:]
 
         for bpm_number in range(len(SC.bpm_system.indices)):
             bpm_index = SC.bpm_system.indices[bpm_number]
@@ -64,11 +66,10 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
             max_H_response = -1
             the_HCORR_number = -1
             for nn in HCORR_numbers:
-                response = np.abs(HRM[bpm_number])
-                imax = np.argmax(response)
-                if response[imax] > max_H_response:
-                    max_H_response = float(response[imax])
-                    the_HCORR_number = int(imax)
+                response = np.abs(HRM[bpm_number, nn])
+                if response > max_H_response:
+                    max_H_response = float(response)
+                    the_HCORR_number = int(nn)
             if max_H_response <= 0:
                 logger.warning(f'WARNING: zero H response for BPM {SC.bpm_system.names[bpm_number]}!')
                 hcorr_delta = 0
@@ -92,11 +93,10 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
             max_V_response = -1
             the_VCORR_number = -1
             for nn in VCORR_numbers:
-                response = np.abs(VRM[bpm_number])
-                imax = np.argmax(response)
-                if response[imax] > max_V_response:
-                    max_V_response = float(response[imax])
-                    the_VCORR_number = int(imax)
+                response = np.abs(VRM[bpm_number, nn])
+                if response > max_V_response:
+                    max_V_response = float(response)
+                    the_VCORR_number = int(nn)
             if max_V_response <= 0:
                 logger.warning(f'WARNING: zero V response for BPM {SC.bpm_system.names[bpm_number]}!')
                 vcorr_delta = 0
@@ -216,13 +216,18 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
     settings.set(corr, corr_sp0)
     settings.set(quad, quad_sp0)
 
-    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, quad_delta)
-    mask_bpm_outlier = reject_bpm_outlier(orbits)
-    mask_slopes = reject_slopes(slopes)
-    mask_center = reject_center_outlier(center)
-    final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+    try:
+        slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, quad_delta)
+        mask_bpm_outlier = reject_bpm_outlier(orbits)
+        mask_slopes = reject_slopes(slopes)
+        mask_center = reject_center_outlier(center)
+        final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
 
-    offset, offset_err = get_offset(center, center_err, final_mask)
+        offset, offset_err = get_offset(center, center_err, final_mask)
+    except Exception as exc:
+        print(exc)
+        logger.warning(f'Failed to compute trajectory BBA for BPM {bpm_name}')
+        offset, offset_err = np.nan, np.nan
  
     return offset, offset_err
 

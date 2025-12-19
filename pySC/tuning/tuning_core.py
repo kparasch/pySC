@@ -89,6 +89,42 @@ class Tuning(BaseModel, extra="forbid"):
                     bad_outputs.append(bpm + turn * n_bpms + plane * n_turns * n_bpms)
         return bad_outputs
 
+    def wiggle_last_corrector(self, max_steps: int = 100, max_sp: float = 500e-6) -> None:
+        SC = self._parent
+        def first_turn_transmission(SC):
+            x, _ = SC.bpm_system.capture_injection()
+            bad_readings = sum(np.isnan(x))
+            good_frac = (len(x) - bad_readings) / len(SC.bpm_system.indices)
+            last_good_bpm = np.where(~np.isnan(x))[0][-1]
+            last_good_bpm_index = SC.bpm_system.indices[last_good_bpm]
+            return good_frac, last_good_bpm_index
+
+        initial_transmission, last_good_bpm_index = first_turn_transmission(SC)
+        if initial_transmission < 1.:
+            for corr in SC.tuning.HCORR:
+                hcor_name = corr.split('/')[0]
+                hcor_index = SC.magnet_settings.magnets[hcor_name].sim_index
+                if hcor_index < last_good_bpm_index:
+                    last_hcor = corr
+            for corr in SC.tuning.VCORR:
+                vcor_name = corr.split('/')[0]
+                vcor_index = SC.magnet_settings.magnets[vcor_name].sim_index
+                if vcor_index < last_good_bpm_index:
+                    last_vcor = corr
+
+            for _ in range(max_steps):
+                SC.magnet_settings.set(last_hcor, SC.rng.uniform(-max_sp, max_sp))
+                SC.magnet_settings.set(last_vcor, SC.rng.uniform(-max_sp, max_sp))
+                transmission, _ = first_turn_transmission(SC)
+                if transmission > initial_transmission:
+                    logger.info(f"Wiggling improved first-turn transmission from {initial_transmission} to {transmission}.")
+                    return
+            logger.info("Wiggling failed. Reached maximum number of steps.")
+        else:
+            logger.info("No need to wiggle, full transmission through first-turn.")
+
+        return
+
     def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False):
         RM_name = f'trajectory{n_turns}'
         self.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)

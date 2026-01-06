@@ -25,8 +25,16 @@ class Tune(BaseModel, extra="forbid"):
         return np.mod(self._parent._parent.lattice.twiss['qx'], 1)
 
     @property
+    def integer_qx(self):
+        return np.floor(self._parent._parent.lattice.twiss['qx'])
+
+    @property
     def design_qy(self):
         return np.mod(self._parent._parent.lattice.twiss['qy'], 1)
+
+    @property
+    def integer_qy(self):
+        return np.floor(self._parent._parent.lattice.twiss['qy'])
 
     def tune_response(self, quads: list[str], dk: float = 1e-5):
         SC = self._parent._parent
@@ -117,18 +125,23 @@ class Tune(BaseModel, extra="forbid"):
         gain : float, optional
             Gain for the correction. Default is 1.
         measurement_method : str, optional
-            Method to measure the tune. Options are 'kick', 'first_turn', 'orbit', 'cheat', 'cheat4d'.
+            Method to measure the tune. Options are 'kick', 'first_turn', 'orbit',
+             'cheat', 'cheat4d', 'cheat_with_integer'.
             Default is 'kick'.
         '''
 
-        if measurement_method not in ['kick', 'first_turn', 'orbit', 'cheat', 'cheat4d']:
+        if measurement_method not in ['kick', 'first_turn', 'orbit', 'cheat', 'cheat4d', 'cheat_with_integer']:
             raise NotImplementedError(f'{measurement_method=} not implemented yet.')
 
         if target_qx is None:
             target_qx = self.design_qx
+            if measurement_method == 'cheat_with_integer':
+                target_qx += self.integer_qx
 
         if target_qy is None:
             target_qy = self.design_qy
+            if measurement_method == 'cheat_with_integer':
+                target_qy += self.integer_qy
 
         for _ in range(n_iter):
             if measurement_method == 'kick':
@@ -141,6 +154,8 @@ class Tune(BaseModel, extra="forbid"):
                 qx, qy = self.cheat()
             elif measurement_method == 'cheat4d':
                 qx, qy = self.cheat4d()
+            elif measurement_method == 'cheat_with_integer':
+                qx, qy = self.cheat_with_integer()
             else:
                 raise Exception(f'Unknown measurement_method {measurement_method}')
             if qx is None or qy is None or qx != qx or qy != qy:
@@ -325,6 +340,18 @@ class Tune(BaseModel, extra="forbid"):
         qx, qy = SC.lattice.get_tune(method='6d')
         delta_x = qx - self.design_qx
         delta_y = qy - self.design_qy
+        logger.info(f"Horizontal tune: Qx = {qx:.3f} (Δ = {delta_x:.3f})")
+        logger.info(f"Vertical tune: Qy = {qy:.3f} (Δ = {delta_y:.3f})")
+
+        return qx, qy
+
+    def cheat_with_integer(self) -> tuple[float, float]:
+        SC = self._parent._parent
+        twiss = SC.lattice.get_twiss()
+        qx = twiss['qx']
+        qy = twiss['qy']
+        delta_x = qx - self.design_qx - self.integer_qx
+        delta_y = qy - self.design_qy - self.integer_qy
         logger.info(f"Horizontal tune: Qx = {qx:.3f} (Δ = {delta_x:.3f})")
         logger.info(f"Vertical tune: Qy = {qy:.3f} (Δ = {delta_y:.3f})")
 

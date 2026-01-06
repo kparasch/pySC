@@ -1,7 +1,7 @@
 from typing import Dict, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field, model_validator, PrivateAttr
 from .magnet import Magnet, ControlMagnetLink, MAGNET_NAME_TYPE
-from .control import Control
+from .control import Control, LinearConv
 
 if TYPE_CHECKING:
     from .new_simulated_commissioning import SimulatedCommissioning
@@ -153,6 +153,38 @@ class MagnetSettings(BaseModel, extra="forbid"):
                 is_integrated=is_integrated
             )
             self.add_link(link)
+
+    def add_knob(self, knob_name: str, control_names: list, weights: Optional[list[float]] = None) -> None:
+        knob = Control(name=knob_name, setpoint=0)
+
+        if weights is None:
+            weights = [1]*len(control_names)
+
+        if len(control_names) != len(weights):
+            raise Exception('Control names and weights have unequal lengths.')
+
+        self.add_control(knob)
+        for control_name, weight in zip(control_names, weights):
+            control = self.controls[control_name]
+            for link in control._links:
+                if type(link.error) is LinearConv:
+                    new_error = LinearConv(factor=weight*link.error.factor, offset=weight*link.error.offset)
+                else:
+                    raise Exception(f'Unknown error type: {type(link.error).__name__}')
+
+                new_link = ControlMagnetLink(
+                    link_name=f"{knob_name}->{link.link_name}",
+                    magnet_name=link.magnet_name,
+                    control_name=knob_name,
+                    component=link.component,
+                    order=link.order,
+                    error=new_error,
+                    is_integrated=link.is_integrated,
+                )
+                self.add_link(new_link)
+
+        self.connect_links()
+
 
     def connect_links(self) -> None:
         # Clear any previous links

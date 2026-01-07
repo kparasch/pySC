@@ -1,7 +1,7 @@
 from typing import Dict, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field, model_validator, PrivateAttr
 from .magnet import Magnet, ControlMagnetLink, MAGNET_NAME_TYPE
-from .control import Control, LinearConv
+from .control import Control, LinearConv, IndivControl, KnobControl
 
 if TYPE_CHECKING:
     from .new_simulated_commissioning import SimulatedCommissioning
@@ -136,6 +136,14 @@ class MagnetSettings(BaseModel, extra="forbid"):
         for component in controlled_components:
             control_name = f"{magnet.name}/{component}"
             control = Control(name=control_name, setpoint=0.0)
+
+            # attach information which describes what the control is supposed to do 
+            # (to be used by tuning algorithms)
+            is_integrated = True if component[-1] == 'L' else False
+            order = int(component[1:-1]) if is_integrated else int(component[1:])
+            control.info = IndivControl(magnet_name=magnet.name, component=component[0],
+                                        order=order, is_integrated=is_integrated)
+
             self.add_control(control)
 
         # Create links for each component
@@ -156,6 +164,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
 
     def add_knob(self, knob_name: str, control_names: list, weights: Optional[list[float]] = None) -> None:
         knob = Control(name=knob_name, setpoint=0)
+        knob.info = KnobControl(control_names=control_names, weights=weights)
 
         if weights is None:
             weights = [1]*len(control_names)

@@ -51,6 +51,8 @@ class ATLattice(Lattice):
     # the different machine types
     at_simulator: None = None
     use: str = 'RING'
+    orbit_guess: Optional[list[float]] = None
+    use_orbit_guess: bool = False
     _ring: at.Lattice = PrivateAttr(default=None)
     _design: at.Lattice = PrivateAttr(default=None)
 
@@ -62,6 +64,9 @@ class ATLattice(Lattice):
         if not self.no_6d:
             self._ring.enable_6d()
             self._design.enable_6d()
+
+        if self.orbit_guess is None:
+            self.orbit_guess = [0] * 6
 
         self._twiss = self.get_twiss(use_design=True)
 
@@ -75,6 +80,19 @@ class ATLattice(Lattice):
     def omp_num_threads(self, value: int):
         self._omp_num_threads = value
         at.lattice.DConstant.patpass_poolsize = value
+
+    def update_orbit_guess(self, n_turns=1000):
+        bunch = np.zeros([1,6])
+        out = self.track(bunch, n_turns=n_turns, coordinates=['x','px','y','py','delta','tau'])
+        guess = np.nanmean(out, axis=3).flatten()
+        logger.info('Found orbit guess:')
+        logger.info(f'  x = {guess[0]}')
+        logger.info(f'  px = {guess[1]}')
+        logger.info(f'  y = {guess[2]}')
+        logger.info(f'  py = {guess[3]}')
+        logger.info(f'  tau = {guess[5]}')
+        logger.info(f'  delta = {guess[4]}')
+        self.orbit_guess = list(guess)
 
     def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False, coordinates: Optional[list] = None) -> nparray:
         new_bunch = bunch.copy()
@@ -117,7 +135,12 @@ class ATLattice(Lattice):
         if indices is None:
             indices = range(len(self._design))
         ring = self._design if use_design else self._ring
-        _, orbit = at.find_orbit(ring, refpts=indices)
+        if self.use_orbit_guess:
+            assert self.no_6d is False, "Using orbit guesses with a 4D lattice is not checked/implemented."
+            _, orbit = at.find_orbit(ring, refpts=indices, guess=np.array(self.orbit_guess))
+        else:
+            _, orbit = at.find_orbit(ring, refpts=indices)
+
         return orbit[:, [0,2]].T
 
     def get_twiss(self, indices: Optional[list[int]] = None, use_design=False) -> dict:
@@ -128,7 +151,13 @@ class ATLattice(Lattice):
         if indices is None:
             indices = range(len(self._design))
         ring = self._design if use_design else self._ring
-        _, ringdata, elemdata = at.get_optics(ring, refpts=indices, get_chrom=True)
+        if self.use_orbit_guess:
+            assert self.no_6d is False, "Using orbit guesses with a 4D lattice is not checked/implemented."
+            orbit0, _ = at.find_orbit(ring, refpts=indices, guess=np.array(self.orbit_guess))
+        else:
+            orbit0, _ = at.find_orbit(ring, refpts=indices)
+
+        _, ringdata, elemdata = at.get_optics(ring, refpts=indices, get_chrom=True, orbit=orbit0)
 
         qs = ringdata['tune'][2] if not self.no_6d else 0 # doesn't exist when ring has 6d disabled
 

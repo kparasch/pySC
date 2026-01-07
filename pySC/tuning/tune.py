@@ -169,7 +169,7 @@ class Tune(BaseModel, extra="forbid"):
             dqx = qx - target_qx
             dqy = qy - target_qy
             logger.info(f"Delta tune: delta_q1={dqx:.4f}, delta_q2={dqy:.4f}")
-            self.trim_tune(dqx=-gain*dqx, dqy=-gain*dqy)
+            self.trim(dqx=-gain*dqx, dqy=-gain*dqy)
         return
 
     def get_design_corrector_response_injection(self, corr: str, dk0: float = 1e-6):
@@ -225,15 +225,15 @@ class Tune(BaseModel, extra="forbid"):
         ### do fit based on knobs
 
         def x_chi2(delta):
-            SC.tuning.tune.trim_tune(delta, 0, use_design=True)
+            SC.tuning.tune.trim(delta, 0, use_design=True)
             dx_ideal, _ = self.get_design_corrector_response_injection(hcorr)
-            SC.tuning.tune.trim_tune(-delta, 0, use_design=True)
+            SC.tuning.tune.trim(-delta, 0, use_design=True)
             return np.sum((dx0 - dx_ideal)**2)
 
         def y_chi2(delta):
-            SC.tuning.tune.trim_tune(0, delta, use_design=True)
+            SC.tuning.tune.trim(0, delta, use_design=True)
             _, dy_ideal = self.get_design_corrector_response_injection(vcorr)
-            SC.tuning.tune.trim_tune(0, -delta, use_design=True)
+            SC.tuning.tune.trim(0, -delta, use_design=True)
             return np.sum((dy0 - dy_ideal)**2)
 
         x_res = scipy.optimize.minimize_scalar(x_chi2, (-0.1, 0.1), method='Brent')
@@ -306,15 +306,15 @@ class Tune(BaseModel, extra="forbid"):
         ### do fit based on knobs
 
         def x_chi2(delta):
-            SC.tuning.tune.trim_tune(delta, 0, use_design=True)
+            SC.tuning.tune.trim(delta, 0, use_design=True)
             dx_ideal, _ = self.get_design_corrector_response_orbit(hcorr, dk0=dk0)
-            SC.tuning.tune.trim_tune(-delta, 0, use_design=True)
+            SC.tuning.tune.trim(-delta, 0, use_design=True)
             return np.sum((dx0 - dx_ideal)**2)
 
         def y_chi2(delta):
-            SC.tuning.tune.trim_tune(0, delta, use_design=True)
+            SC.tuning.tune.trim(0, delta, use_design=True)
             _, dy_ideal = self.get_design_corrector_response_orbit(vcorr, dk0=dk0)
-            SC.tuning.tune.trim_tune(0, -delta, use_design=True)
+            SC.tuning.tune.trim(0, -delta, use_design=True)
             return np.sum((dy0 - dy_ideal)**2)
 
         x_res = scipy.optimize.minimize_scalar(x_chi2, (-0.1, 0.1), method='Brent')

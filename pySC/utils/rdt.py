@@ -39,6 +39,12 @@ def feeddown(AB: np.ndarray[complex], r0: complex, n: int):
         value += AB[k] * binomial_coeff(k, n) * (r0 ** (k - n))
     return value 
 
+def omega(x):
+    if x%2:
+        return 0
+    else:
+        return 1
+
 def get_integrated_strengths_with_feeddown(SC: "SimulatedCommissioning", use_design: bool = False):
     twiss = SC.lattice.get_twiss(use_design=use_design)
     if use_design:
@@ -87,6 +93,55 @@ def calculate_c_minus(SC: Optional["SimulatedCommissioning"] = None, use_design:
     if twiss is None:
         assert SC is not None
         twiss = SC.lattice.get_twiss(use_design=use_design)
-    integrand = ks1l * np.sqrt(twiss['betx']*twiss['bety']) * np.exp(-1.j*(twiss['mux'] - twiss['muy']))
-    c_minus = -np.sum(integrand)/2./np.pi
+    Delta = twiss['qx'] - twiss['qy']
+    integrand = ks1l * np.sqrt(twiss['betx']*twiss['bety']) * np.exp(+1.j*(twiss['mux'] - twiss['muy'] - np.pi*Delta))
+    #integrand = ks1l * np.sqrt(twiss['betx']*twiss['bety']) * np.exp(-1.j*(twiss['mux'] - twiss['muy'] - 2*np.pi*Delta*twiss['s']/circumference))
+    c_minus = np.sum(integrand)/2./np.pi
     return c_minus
+
+def hjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0, l: int = 0, m: int = 0, use_design: bool = False,
+          integrated_strengths: Optional[dict] = None, twiss: Optional[dict] = None):
+    n = j+k+l+m
+    assert n > 0
+
+    if integrated_strengths is None:
+        assert SC is not None
+        integrated_strengths = get_integrated_strengths_with_feeddown(SC, use_design=use_design)
+    if twiss is None:
+        assert SC is not None
+        twiss = SC.lattice.get_twiss(use_design=use_design)
+
+    K = integrated_strengths['norm'][n-1]
+    J = integrated_strengths['skew'][n-1]
+    h = - (K * omega(l+m) + 1j * J * omega(l+m+1))/(FACTORIAL[j] * FACTORIAL[k] * FACTORIAL[l] * FACTORIAL[m] * 2**(n)) * (1.j)**(l+m) * twiss['betx']**((j+k)/2) * twiss['bety']**((l+m)/2)
+    return h
+
+
+def fjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0, l: int = 0, m: int = 0,
+          use_design: bool = False, integrated_strengths: Optional[dict] = None, twiss: Optional[dict] = None, normalized: bool = True):
+
+    assert j + k + l + m > 0
+
+    if twiss is None:
+        assert SC is not None
+        twiss = SC.lattice.get_twiss(use_design=use_design)
+
+    qx = twiss['qx']
+    qy = twiss['qy']
+    denom = 1 - np.exp(1.j * 2 * np.pi * ((j-k) * qx + (l-m) * qy))
+    h = hjklm(SC=SC, j=j, k=k, l=l, m=m, use_design=use_design, integrated_strengths=integrated_strengths, twiss=twiss)
+    mask = h != 0
+    hm = h[mask]
+    mux = twiss['mux'][mask]
+    muy = twiss['muy'][mask]
+    ii = 0
+    f = np.zeros_like(twiss['s'], dtype=complex)
+    for ii in range(len(twiss['s'])):
+        dphix = 2*np.pi*np.abs(twiss['mux'][ii] - mux)
+        dphiy = 2*np.pi*np.abs(twiss['muy'][ii] - muy)
+        expo = np.exp(1.j * ( (j-k) * dphix + (l-m) * dphiy))
+        f[ii] = np.sum(hm * expo)
+    if normalized:
+        return f / denom
+    else:
+        return f

@@ -70,6 +70,10 @@ class Tune(BaseModel, extra="forbid"):
         return
 
     def trim_tune(self, dqx: float = 0, dqy: float = 0, use_design: bool = False) -> None:
+        logger.warning('Deprecation: please use .trim instead of .trim_tune.')
+        return self.trim(dqx=dqx, dqy=dqy, use_design=use_design)
+
+    def trim(self, dqx: float = 0, dqy: float = 0, use_design: bool = False) -> None:
         SC = self._parent._parent
         if self.inverse_tune_response_matrix is None:
             logger.info('Did not find inverse tune response matrix. Building now.')

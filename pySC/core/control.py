@@ -22,6 +22,9 @@ class KnobControl(BaseModel, extra="forbid"):
     control_names: list[str]
     weights: Optional[list[float]] = None
 
+class KnobData(BaseModel, extra="forbid"):
+    data: dict[str, KnobControl] = {}
+
 class Control(BaseModel, extra="forbid"):
     name: str
     setpoint: float

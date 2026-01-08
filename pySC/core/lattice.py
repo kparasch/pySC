@@ -346,3 +346,19 @@ class ATLattice(Lattice):
         elem.TimeLag = timelag
         elem.Frequency = frequency
         return
+
+    def one_turn_matrix(self, use_design=False):
+        ring = self._design if use_design else self._ring
+
+        if self.use_orbit_guess:
+            assert self.no_6d is False, "Using orbit guesses with a 4D lattice is not checked/implemented."
+            orbit0, _ = at.find_orbit(ring, guess=np.array(self.orbit_guess))
+        else:
+            orbit0, _ = at.find_orbit(ring)
+
+        if self.no_6d:
+            M = ring.find_m44(orbit=orbit0)[0]
+        else:
+            M = ring.find_m66(orbit=orbit0)[0]
+
+        return M

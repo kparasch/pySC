@@ -29,6 +29,11 @@ FACTORIAL = np.array([
 2432902008176640000,
 ])
 
+S4 = np.array([[0., 1., 0., 0.],
+              [-1., 0., 0., 0.],
+              [ 0., 0., 0., 1.],
+              [ 0., 0.,-1., 0.]])
+
 def binomial_coeff(n:int, k: int):
     return FACTORIAL[n] / (FACTORIAL[k] * FACTORIAL[n-k])
 
@@ -85,18 +90,18 @@ def get_integrated_strengths_with_feeddown(SC: "SimulatedCommissioning", use_des
 
     return integrated_strengths
 
-def calculate_c_minus(SC: Optional["SimulatedCommissioning"] = None, use_design: bool = False, integrated_strengths : Optional[dict] = None, twiss: Optional[dict] = None):
-    if integrated_strengths is None:
-        assert SC is not None
-        integrated_strengths = get_integrated_strengths_with_feeddown(SC, use_design=use_design)
-    ks1l = integrated_strengths['skew'][1]
-    if twiss is None:
-        assert SC is not None
-        twiss = SC.lattice.get_twiss(use_design=use_design)
-    Delta = twiss['qx'] - twiss['qy']
-    integrand = ks1l * np.sqrt(twiss['betx']*twiss['bety']) * np.exp(+1.j*(twiss['mux'] - twiss['muy'] - np.pi*Delta))
-    #integrand = ks1l * np.sqrt(twiss['betx']*twiss['bety']) * np.exp(-1.j*(twiss['mux'] - twiss['muy'] - 2*np.pi*Delta*twiss['s']/circumference))
-    c_minus = np.sum(integrand)/2./np.pi
+def calculate_c_minus(SC: Optional["SimulatedCommissioning"] = None, use_design: bool = False):
+
+    M = SC.lattice.one_turn_matrix(use_design=use_design)
+    W, _, _, q1, q2 = linear_normal_form(M)
+
+    c_r1 = np.sqrt(W[2,0]**2 + W[2,1]**2) / W[0,0]
+    c_r2 = np.sqrt(W[0,2]**2 + W[0,3]**2) / W[2,2]
+    c_phi1 = np.arctan2(W[2,1], W[2,0])
+
+    cmin_amp = (2 * np.sqrt(c_r1*c_r2) * np.abs(q1 - q2) / (1 + c_r1 * c_r2))
+    c_minus = cmin_amp * np.exp(1j * c_phi1)
+
     return c_minus
 
 def hjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0, l: int = 0, m: int = 0, use_design: bool = False,
@@ -145,3 +150,98 @@ def fjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0,
         return f / denom
     else:
         return f
+
+
+def Rot2D(mu):
+    return np.array([[ np.cos(mu), np.sin(mu)],
+                     [-np.sin(mu), np.cos(mu)]])
+
+def linear_normal_form(M):
+    w0, v0 = np.linalg.eig(M[:4,:4])
+
+    a0 = np.real(v0)
+    b0 = np.imag(v0)
+
+    index_list = [0,1,2,3]
+
+    ##### Sort modes in pairs of conjugate modes #####
+
+    conj_modes = np.zeros([2,2], dtype=int)
+
+    conj_modes[0,0] = index_list[0]
+    del index_list[0]
+
+    min_index = 0 
+    min_diff = abs(np.imag(w0[conj_modes[0,0]] + w0[index_list[min_index]]))
+    for i in range(1,len(index_list)):
+        diff = abs(np.imag(w0[conj_modes[0,0]] + w0[index_list[i]]))
+        if min_diff > diff:
+            min_diff = diff
+            min_index = i
+
+    conj_modes[0,1] = index_list[min_index]
+    del index_list[min_index]
+
+    conj_modes[1,0] = index_list[0]
+    conj_modes[1,1] = index_list[1]
+
+    ##################################################
+    #### Select mode from pairs with positive (real @ S @ imag) #####
+
+    modes = np.empty(2, dtype=int)
+    for ii,ind in enumerate(conj_modes):
+        if np.matmul(np.matmul(a0[:,ind[0]], S4), b0[:,ind[0]]) > 0:
+            modes[ii] = ind[0]
+        else:
+            modes[ii] = ind[1]
+
+    ##################################################
+    #### Sort modes such that (1,2) is close to (x,y) ####
+
+    if abs(v0[:,modes[1]])[2] < abs(v0[:,modes[0]])[2]:
+        modes[0], modes[1] = modes[1], modes[0]
+
+    ##################################################
+    #### Rotate eigenvectors to the Courant-Snyder parameterization ####
+    phase0 = np.log(v0[0,modes[0]]).imag
+    phase1 = np.log(v0[2,modes[1]]).imag
+
+    v0[:,modes[0]] *= np.exp(-1.j*phase0)
+    v0[:,modes[1]] *= np.exp(-1.j*phase1)
+
+    ##################################################
+    #### Construct W #################################
+
+    a1 = v0[:,modes[0]].real
+    a2 = v0[:,modes[1]].real
+    b1 = v0[:,modes[0]].imag
+    b2 = v0[:,modes[1]].imag
+
+    n1 = 1./np.sqrt(np.matmul(np.matmul(a1, S4), b1))
+    n2 = 1./np.sqrt(np.matmul(np.matmul(a2, S4), b2))
+
+    a1 *= n1
+    a2 *= n2
+
+    b1 *= n1
+    b2 *= n2
+
+    W = np.array([a1,b1,a2,b2]).T
+    W[abs(W) < 1.e-14] = 0. # Set very small numbers to zero.
+    invW = np.matmul(np.matmul(S4.T, W.T), S4)
+
+    ##################################################
+    #### Get tunes and rotation matrix in the normalized coordinates ####
+
+    mu1 = np.log(w0[modes[0]]).imag
+    mu2 = np.log(w0[modes[1]]).imag
+
+    q1 = mu1/(2.*np.pi)
+    q2 = mu2/(2.*np.pi)
+
+    R = np.zeros_like(W)
+    R[0:2,0:2] = Rot2D(mu1)
+    R[2:4,2:4] = Rot2D(mu2)
+    ##################################################    
+
+    return W, invW, R, q1, q2

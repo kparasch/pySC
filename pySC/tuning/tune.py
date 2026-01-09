@@ -4,7 +4,7 @@ import numpy as np
 import logging
 import scipy.optimize
 
-from ..core.numpy_type import NPARRAY
+from ..core.types import NPARRAY
 
 if TYPE_CHECKING:
     from .tuning_core import Tuning

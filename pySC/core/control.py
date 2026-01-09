@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pydantic import BaseModel, PrivateAttr, PositiveInt
 from typing import Optional, Literal, Union, TYPE_CHECKING
+from .types import BaseModelWithSave
 
 if TYPE_CHECKING:
     from .magnet import ControlMagnetLink
@@ -22,7 +23,7 @@ class KnobControl(BaseModel, extra="forbid"):
     control_names: list[str]
     weights: Optional[list[float]] = None
 
-class KnobData(BaseModel, extra="forbid"):
+class KnobData(BaseModelWithSave, extra="forbid"):
     data: dict[str, KnobControl] = {}
 
 class Control(BaseModel, extra="forbid"):

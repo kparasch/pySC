@@ -1,6 +1,6 @@
 from pydantic import BaseModel, PrivateAttr, ConfigDict, model_validator
 from typing import TYPE_CHECKING, Optional, Union
-from .numpy_type import NPARRAY
+from .types import NPARRAY
 import numpy as np
 import warnings
 

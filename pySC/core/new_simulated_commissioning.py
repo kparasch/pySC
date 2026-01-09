@@ -1,6 +1,8 @@
 from pydantic import BaseModel, model_validator, Field
 from typing import Optional
 import json
+import numpy as np
+import logging
 
 from .lattice import ATLattice, XSuiteLattice
 from .magnetsettings import MagnetSettings
@@ -13,6 +15,8 @@ from .injection import InjectionSettings
 from .rng import RNG
 from ..control_system.server import start_server as _start_server
 from .control import KnobData
+
+logger = logging.getLogger(__name__)
 
 class SimulatedCommissioning(BaseModel, extra="forbid"):
     lattice: ATLattice | XSuiteLattice
@@ -107,3 +111,4 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
             tdata = knob_data.data[knob_name]
             self.magnet_settings.add_knob(knob_name=knob_name, control_names=tdata.control_names, weights=tdata.weights)
             self.design_magnet_settings.add_knob(knob_name=knob_name, control_names=tdata.control_names, weights=tdata.weights)
+            logger.info(f'Imported knob {knob_name} with sum(|weights|) = {np.sum(np.abs(tdata.weights)):.2e}')

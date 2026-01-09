@@ -58,8 +58,8 @@ class CMinus(BaseModel, extra="forbid"):
             self.knob_imag: KnobControl(control_names=self.controls, weights=list(c_minus_imag_knob))
             })
 
-        logger.info(f"{self.knob_real}: sum(|weights|)={np.sum(np.abs(c_minus_real_knob)):e}")
-        logger.info(f"{self.knob_imag}: sum(|weights|)={np.sum(np.abs(c_minus_imag_knob)):e}")
+        logger.info(f"{self.knob_real}: sum(|weights|)={np.sum(np.abs(c_minus_real_knob)):.2e}")
+        logger.info(f"{self.knob_imag}: sum(|weights|)={np.sum(np.abs(c_minus_imag_knob)):.2e}")
         return knob_data
 
     def trim(self, real: float = 0, imag: float = 0, use_design: bool = False) -> None:

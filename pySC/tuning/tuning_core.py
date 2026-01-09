@@ -29,7 +29,7 @@ class Tuning(BaseModel, extra="forbid"):
 
     tune: Tune = Tune() ## TODO: generate config from yaml file
     chromaticity: Chromaticity = Chromaticity() ## TODO: generate config from yaml file
-    c_minus: CMinus = CMinus() ## TODO: generate config from yaml file
+    c_minus: CMinus = CMinus()
     rf: RF_tuning = RF_tuning() ## TODO: generate config from yaml file
 
     bba_magnets: list[str] = []

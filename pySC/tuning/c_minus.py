@@ -79,7 +79,7 @@ class CMinus(BaseModel, extra="forbid"):
         return
 
     def correct(self, target_c_minus_real: float = 0, target_c_minus_imag: float = 0,
-                n_iter: int = 1, gain: float = 1, measurement_method: str = 'cheat'):
+                n_iter: int = 1, gain: float = 1, measurement_method: str = 'cheat') -> None:
         '''
         Correct c_minus to the target values.
         Parameters
@@ -114,7 +114,7 @@ class CMinus(BaseModel, extra="forbid"):
             self.trim(real=-gain*delta_real, imag=-gain*delta_imag)
         return
 
-    def cheat(self, use_design: bool = False) -> tuple[float, float]:
+    def cheat(self, use_design: bool = False) -> complex:
         SC = self._parent._parent
         try:
             c_minus = rdt.calculate_c_minus(SC, use_design=use_design)

@@ -39,7 +39,6 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
         VCORR = sort_controls(SC, VCORR)
         SC.tuning.VCORR = VCORR
 
-
     if 'model_RM_folder' in tuning_conf:
         SC.tuning.RM_folder = tuning_conf['model_RM_folder']
 
@@ -52,3 +51,10 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
         bba_magnets = configure_family(SC, config_dict=tuning_conf['bba_magnets'])
         bba_magnets = sort_controls(SC, bba_magnets)
         SC.tuning.bba_magnets = bba_magnets
+
+    if 'c_minus' in tuning_conf:
+        c_minus_conf = tuning_conf['c_minus']
+        if 'controls' in c_minus_conf:
+            c_minus_controls = configure_family(SC, config_dict=c_minus_conf['controls'])
+            c_minus_controls = sort_controls(SC, c_minus_controls)
+            SC.tuning.c_minus.controls = c_minus_controls

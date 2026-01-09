@@ -1,9 +1,17 @@
 from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.control import IndivControl
 import numpy as np
 
 def sort_controls(SC: SimulatedCommissioning, control_names: list[str]) -> list[str]:
-    names = [control_name.split('/')[0] for control_name in control_names]
-    indices = [SC.magnet_settings.magnets[name].sim_index for name in names]
+    magnet_names = []
+    for control_name in control_names:
+        control = SC.magnet_settings.controls[control_name]
+        if type(control.info) is IndivControl:
+            magnet_name = control.info.magnet_name
+        else:
+            raise NotImplementedError(f"{control} is of type {type(control.info).__name__} which is not implemented.")
+        magnet_names.append(magnet_name)
+    indices = [SC.magnet_settings.magnets[name].sim_index for name in magnet_names]
     argsort = np.argsort(indices).tolist()
     sorted_control_names = [control_names[i] for i in argsort]
     return sorted_control_names

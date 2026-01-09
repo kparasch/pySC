@@ -3,7 +3,7 @@ from pydantic import BaseModel, PrivateAttr, ConfigDict
 import numpy as np
 import logging
 
-from ..core.numpy_type import NPARRAY
+from ..core.types import NPARRAY
 
 if TYPE_CHECKING:
     from .tuning_core import Tuning

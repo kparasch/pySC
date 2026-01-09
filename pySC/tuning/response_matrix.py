@@ -1,6 +1,6 @@
 from pydantic import BaseModel, PrivateAttr, model_validator, ConfigDict
 from typing import Optional, Literal
-from ..core.numpy_type import NPARRAY
+from ..core.types import NPARRAY
 import numpy as np
 import logging
 

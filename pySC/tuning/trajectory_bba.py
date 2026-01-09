@@ -227,7 +227,7 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
     except Exception as exc:
         print(exc)
         logger.warning(f'Failed to compute trajectory BBA for BPM {bpm_name}')
-        offset, offset_err = np.nan, np.nan
+        offset, offset_err = 0, np.nan
  
     return offset, offset_err
 

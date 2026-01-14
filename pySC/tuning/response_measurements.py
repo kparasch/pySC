@@ -94,7 +94,9 @@ def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int 
     magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
 
     ### measure the response matrix
-    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
+    generator = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
+    for RM in generator:
+        pass
 
     return RM
 

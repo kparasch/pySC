@@ -84,8 +84,14 @@ class pySCOrbitInterface(AbstractInterface):
         self.SC.rf_settings.main.set_frequency(frequency)
         return
 
-#     def __str__(self):
-#         return 'pySCDefaultInterface(SC=SC)'
-# 
-#     def __repr__(self):
-#         return self.__str__
+class pySCInjectionInterface(pySCOrbitInterface):
+    SC: SimulatedCommissioning = Field(repr=False)
+    n_turns: int = 1
+
+    def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
+        return self.SC.bpm_system.capture_injection(n_turns=self.n_turns)
+
+    def get_ref_orbit(self) -> tuple[np.ndarray, np.ndarray]:
+        x_ref = np.repeat(self.SC.bpm_system.reference_x[:, np.newaxis], self.n_turns, axis=1)
+        y_ref = np.repeat(self.SC.bpm_system.reference_y[:, np.newaxis], self.n_turns, axis=1)
+        return x_ref, y_ref

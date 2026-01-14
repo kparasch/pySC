@@ -45,8 +45,13 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
         else:
             use = 'RING'
 
+        if 'naming' in config_dict['lattice']:
+            naming = config_dict['lattice']['naming']
+        else:
+            naming = None
+
         logger.info(f'Loading AT lattice from {lattice_file}')
-        lattice = ATLattice(lattice_file=lattice_file, no_6d=no_6d, use=use)
+        lattice = ATLattice(lattice_file=lattice_file, no_6d=no_6d, use=use, naming=naming)
     else:
         raise NotImplementedError(f"Simulator {config_dict['lattice']['simulator']} is not implemented.")
 

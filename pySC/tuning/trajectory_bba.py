@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import TYPE_CHECKING, Dict, Literal
 import numpy as np
 import logging
+from ..core.control import IndivControl
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +16,13 @@ CENTER_OUTLIER = 1 # number of sigma
 
 def get_mag_s_pos(SC: "SimulatedCommissioning", MAG: list[str]):
     s_list = []
-    for corr in MAG:
-        corr_name = corr.split('/')[0] 
-        index = SC.magnet_settings.magnets[corr_name].sim_index
+    for control_name in MAG:
+        control = SC.magnet_settings.controls[control_name]
+        if type(control.info) is IndivControl:
+            magnet_name = control.info.magnet_name
+        else:
+            raise NotImplementedError(f"{control} is of type {type(control.info).__name__} which is not implemented.")
+        index = SC.magnet_settings.magnets[magnet_name].sim_index
         s_pos = SC.lattice.twiss['s'][index]
         s_list.append(s_pos)
     return s_list

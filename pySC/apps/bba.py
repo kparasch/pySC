@@ -306,13 +306,22 @@ def analyze_bba_data(data: BBAData):
         if data.plane == 'X':
             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
-            orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
-            orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+            if data.skew_quad:
+                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+            else:
+                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+
         else:
             bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
             bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
-            orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
-            orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+            if data.skew_quad:
+                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+            else:
+                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
 
     slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
     mask_bpm_outlier = reject_bpm_outlier(orbits)
@@ -332,13 +341,21 @@ def get_bba_analysis_data(data: BBAData):
         if data.plane == 'X':
             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
-            orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
-            orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+            if data.skew_quad:
+                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+            else:
+                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
         else:
             bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
             bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
-            orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
-            orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+            if data.skew_quad:
+                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+            else:
+                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
 
     slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
     mask_bpm_outlier = reject_bpm_outlier(orbits)

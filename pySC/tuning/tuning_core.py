@@ -7,6 +7,7 @@ from .orbit_bba import Orbit_BBA_Configuration, orbit_bba
 from .parallel import parallel_tbba_target, parallel_obba_target, get_listener_and_queue
 from .tune import Tune
 from .rf_tuning import RF_tuning
+from ..core.control import IndivControl
 
 import numpy as np
 from pathlib import Path
@@ -62,14 +63,32 @@ class Tuning(BaseModel, extra="forbid"):
                     self.calculate_model_trajectory_response_matrix(n_turns=n_turns)
         return
 
+    def get_inputs_plane(self, control_names):
+        SC = self._parent
+        inputs_plane = []
+        for corr in control_names:
+            control = SC.magnet_settings.controls[corr]
+            if type(control.info) is not IndivControl:
+                raise NotImplementedError(f'Unsupported control type for {corr} of type {type(control.info).__name__}.')
+            if control.info.component == 'B':
+                inputs_plane.append('H')
+            elif control.info.component == 'A':
+                inputs_plane.append('V')
+            else:
+                raise Exception(f'Unknown component: {control.info.component}')
+        return inputs_plane
+
     def calculate_model_trajectory_response_matrix(self, n_turns=1, dkick=1e-5, save_as: str = None):
         # assumes all bpms are dual plane
         SC = self._parent
         RM_name = f'trajectory{n_turns}'
         input_names = SC.tuning.CORR
         output_names = SC.bpm_system.names * n_turns * 2 # two: one per plane and per turn
-        RM = measure_TrajectoryResponseMatrix(SC, n_turns=n_turns, dkick=dkick, use_design=True)
-        self.response_matrix[RM_name] = ResponseMatrix(matrix=RM, input_names=input_names, output_names=output_names)
+        matrix = measure_TrajectoryResponseMatrix(SC, n_turns=n_turns, dkick=dkick, use_design=True)
+        inputs_plane  = self.get_inputs_plane(SC.tuning.CORR)
+
+        self.response_matrix[RM_name] = ResponseMatrix(matrix=matrix, output_names=output_names,
+                                                       input_names=input_names, inputs_plane=inputs_plane)
         if save_as is not None:
             self.response_matrix[RM_name].to_json(save_as)
         return 
@@ -79,8 +98,10 @@ class Tuning(BaseModel, extra="forbid"):
         RM_name = 'orbit'
         input_names = SC.tuning.CORR
         output_names = SC.bpm_system.names * 2 # two: one per plane
-        RM = measure_OrbitResponseMatrix(SC, dkick=dkick, use_design=True)
-        self.response_matrix[RM_name] = ResponseMatrix(matrix=RM, input_names=input_names, output_names=output_names)
+        matrix = measure_OrbitResponseMatrix(SC, dkick=dkick, use_design=True)
+        inputs_plane  = self.get_inputs_plane(SC.tuning.CORR)
+        self.response_matrix[RM_name] = ResponseMatrix(matrix=matrix, output_names=output_names,
+                                                       input_names=input_names, inputs_plane=inputs_plane)
         if save_as is not None:
             self.response_matrix[RM_name].to_json(save_as)
         return 
@@ -233,12 +254,15 @@ class Tuning(BaseModel, extra="forbid"):
         bpm_index = SC.bpm_system.indices[bpm_number]
         bpm_s = SC.lattice.twiss['s'][bpm_index]
 
-        bba_magnets = SC.tuning.bba_magnets
-        bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
+        bba_magnet_controls = SC.tuning.bba_magnets
+        bba_magnets_s = get_mag_s_pos(SC, bba_magnet_controls)
         bba_magnet_number = np.argmin(np.abs(bba_magnets_s - bpm_s))
-        quad = bba_magnets[bba_magnet_number]
+        quad = bba_magnet_controls[bba_magnet_number]
+        bba_control_info = SC.magnet_settings.controls[quad].info
+        assert type(bba_control_info) is IndivControl
+        bba_magnet_name = bba_control_info.magnet_name
 
-        quad_index = SC.magnet_settings.magnets[quad.split('/')[0]].sim_index
+        quad_index = SC.magnet_settings.magnets[bba_magnet_name].sim_index
         true_offset2 = SC.support_system.get_total_offset(quad_index) - SC.support_system.get_total_offset(bpm_index)
         if plane is None:
            return tuple(true_offset2)

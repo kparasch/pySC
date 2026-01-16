@@ -21,7 +21,7 @@ def get_mag_s_pos(SC: "SimulatedCommissioning", MAG: list[str]):
             raise NotImplementedError(f"{control} is of type {type(control.info).__name__} which is not implemented.")
         index = SC.magnet_settings.magnets[magnet_name].sim_index
         s_pos = SC.lattice.twiss['s'][index]
-        s_list.append(s_pos)
+        s_list.append(float(s_pos))
     return s_list
 
 class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
@@ -40,16 +40,32 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
         bba_magnets = SC.tuning.bba_magnets
         bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
 
-        d1, d2 = RM.matrix.shape
-        HRM = RM.matrix[:d1//2, :d2//2]
-        VRM = RM.matrix[d1//2:, d2//2:]
+        mask_H = np.array(RM.inputs_plane) == 'H'
+        mask_V = np.array(RM.inputs_plane) == 'V'
+        d1, _ = RM.matrix.shape
+        HRM = RM.matrix[:d1//2, mask_H]
+        VRM = RM.matrix[d1//2:, mask_V]
 
+        betx = SC.lattice.twiss['betx']
+        bety = SC.lattice.twiss['bety']
+        qx = SC.lattice.twiss['qx']
+        qy = SC.lattice.twiss['qy']
+        betx_at_bpms = betx[SC.bpm_system.indices]
+        bety_at_bpms = bety[SC.bpm_system.indices]
         for bpm_number in range(len(SC.bpm_system.indices)):
             bpm_index = SC.bpm_system.indices[bpm_number]
             bpm_s = SC.lattice.twiss['s'][bpm_index]
 
             bba_magnet_number = np.argmin(np.abs(bba_magnets_s - bpm_s))
             the_bba_magnet = bba_magnets[bba_magnet_number]
+            bba_magnet_info = SC.magnet_settings.controls[the_bba_magnet].info
+            assert type(bba_magnet_info) is IndivControl, f'BBA magnet of unsupported type: {type(bba_magnet_info)}'
+            bba_magnet_is_integrated = bba_magnet_info.is_integrated
+            bba_magnet_index = SC.magnet_settings.magnets[bba_magnet_info.magnet_name].sim_index
+            if bba_magnet_info.component == 'B':
+                quad_is_skew = False
+            else: # it is a skew quadrupole component
+                quad_is_skew = True
 
             max_H_response = -1
             the_HCORR_number = -1
@@ -60,12 +76,11 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
                 the_HCORR_number = int(imax)
             hcorr_delta = max_dx_at_bpm/max_H_response
 
-            if the_bba_magnet.split('/')[-1][0] == 'B':
-                temp_RM = HRM[:, the_HCORR_number]
+            if not quad_is_skew:
+                quad_response = np.sqrt(betx_at_bpms * betx[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qx)))
             else: # it is a skew quadrupole component
-                ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
-                temp_RM = VRM[:, the_HCORR_number]
-            quad_dk_h = (max_modulation/float(np.max(np.abs(temp_RM)))) / max_dx_at_bpm
+                quad_response = np.sqrt(bety_at_bpms * bety[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qy)))
+            quad_dkl_h = (max_modulation / float(np.max(np.abs(quad_response)))) / max_dx_at_bpm
 
             max_V_response = -1
             the_VCORR_number = -1
@@ -76,14 +91,19 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
                 the_VCORR_number = int(imax)
             vcorr_delta = max_dx_at_bpm/max_V_response
 
-            if the_bba_magnet.split('/')[-1][0] == 'B':
-                temp_RM = VRM[:, the_VCORR_number]
-                quad_is_skew = False
+            if not quad_is_skew:
+                quad_response = np.sqrt(bety_at_bpms * bety[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qy)))
             else: # it is a skew quadrupole component
-                ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
-                temp_RM = HRM[:, the_VCORR_number]
-                quad_is_skew = True
-            quad_dk_v = (max_modulation/float(np.max(np.abs(temp_RM)))) / max_dx_at_bpm
+                quad_response = np.sqrt(betx_at_bpms * betx[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qx)))
+            quad_dkl_v = (max_modulation / float(np.max(np.abs(quad_response)))) / max_dx_at_bpm
+
+            if not bba_magnet_is_integrated:
+                bba_magnet_length = SC.magnet_settings.magnets[bba_magnet_info.magnet_name].length
+                quad_dk_h = quad_dkl_h / bba_magnet_length
+                quad_dk_v = quad_dkl_v / bba_magnet_length
+            else:
+                quad_dk_h = quad_dkl_h
+                quad_dk_v = quad_dkl_v
 
             bpm_name = SC.bpm_system.names[bpm_number]
             config[bpm_name] = {'index': bpm_index,
@@ -173,10 +193,13 @@ def orbit_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: int = 7
 
         bpm_pos[i_corr, 0] = orbit_main_down[bpm_number]
         bpm_pos[i_corr, 1] = orbit_main_up[bpm_number]
-        if quad.split('/')[-1] == 'B2':
+        info = SC.magnet_settings.controls[quad].info
+        assert type(info) is IndivControl
+        assert info.order == 2
+        if info.component == 'B':
             orbits[i_corr, 0, :] = orbit_main_down - orbit_main_center
             orbits[i_corr, 1, :] = orbit_main_up - orbit_main_center
-        elif quad.split('/')[-1] == 'A2': ## skew quad
+        elif info.component == 'A':
             orbits[i_corr, 0, :] = orbit_other_down - orbit_other_center
             orbits[i_corr, 1, :] = orbit_other_up - orbit_other_center
         else:

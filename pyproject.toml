@@ -16,7 +16,7 @@ exclude = [
 packages = ["pySC"]
 
 [project]
-name = "pySC"
+name = "accelerator-commissioning"
 description = "A Python Simulated Commissioning toolkit for synchrotrons (inspired by https://github.com/ThorstenHellert/SC)"
 readme = "README.md"
 requires-python = ">=3.9"

@@ -63,5 +63,4 @@ doc = [
 
 [project.urls]
 Homepage = "https://github.com/kparasch/pySC"
-Documentation = ""
 Repository = "https://github.com/kparasch/pySC.git"

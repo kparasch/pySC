@@ -15,6 +15,7 @@ class Lattice(BaseModel, extra="forbid"):
     """
     lattice_file: str
     no_6d : bool = False
+    naming : Optional[str] = None
     _omp_num_threads = PrivateAttr(default=None)
     _ring = PrivateAttr(default=None)
     _design = PrivateAttr(default=None)
@@ -80,6 +81,16 @@ class ATLattice(Lattice):
     def omp_num_threads(self, value: int):
         self._omp_num_threads = value
         at.lattice.DConstant.patpass_poolsize = value
+
+    def get_name_from_index(self, index: int):
+        if self.naming is None:
+            return str(index)
+        else:
+            if hasattr(self.design[index], self.naming):
+                return getattr(self.design[index], self.naming)
+            else:
+                logger.warning(f'{self.design[index].FamName} at index {index} has no "{self.naming}" field. Falling back to index-based name.')
+                return str(index)
 
     def update_orbit_guess(self, n_turns=1000):
         bunch = np.zeros([1,6])

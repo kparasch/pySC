@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import TYPE_CHECKING, Dict, Literal
 import numpy as np
 import logging
+from ..core.control import IndivControl
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +16,13 @@ CENTER_OUTLIER = 1 # number of sigma
 
 def get_mag_s_pos(SC: "SimulatedCommissioning", MAG: list[str]):
     s_list = []
-    for corr in MAG:
-        corr_name = corr.split('/')[0] 
-        index = SC.magnet_settings.magnets[corr_name].sim_index
+    for control_name in MAG:
+        control = SC.magnet_settings.controls[control_name]
+        if type(control.info) is IndivControl:
+            magnet_name = control.info.magnet_name
+        else:
+            raise NotImplementedError(f"{control} is of type {type(control.info).__name__} which is not implemented.")
+        index = SC.magnet_settings.magnets[magnet_name].sim_index
         s_pos = SC.lattice.twiss['s'][index]
         s_list.append(s_pos)
     return s_list
@@ -105,9 +110,11 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
 
             if the_bba_magnet.split('/')[-1][0] == 'B':
                 temp_RM = VRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]
+                quad_is_skew = False
             else: # it is a skew quadrupole component
                 ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
                 temp_RM = HRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]
+                quad_is_skew = True
             max_response = float(np.max(np.abs(temp_RM)))
             if max_response < 1e-10:
                 logger.warning(f'WARNING: very small response for BPM {SC.bpm_system.names[bpm_number]} from magnet {the_bba_magnet} and HCORR {SC.tuning.VCORR[the_VCORR_number]}')
@@ -128,6 +135,7 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
                                 'QUAD_dk_H': quad_dk_h,
                                 'VCORR_delta': vcorr_delta,
                                 'QUAD_dk_V': quad_dk_v,
+                                'QUAD_is_skew': quad_is_skew,
                                }
 
         return Trajectory_BBA_Configuration(config=config)

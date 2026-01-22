@@ -1,19 +1,11 @@
 from typing import Union, Optional, TYPE_CHECKING
 import numpy as np
-from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
 
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
 
 
 DISABLE_RICH = False
-
-rich_progress = Progress(
-                         TextColumn("[progress.description]{task.description}"),
-                         BarColumn(),
-                         MofNCompleteColumn(),
-                         TimeRemainingColumn(),
-                        )
 
 def no_rich_progress():
     from contextlib import nullcontext
@@ -22,6 +14,19 @@ def no_rich_progress():
     progress.update = lambda *args, **kwargs: None
     progress.remove_task = lambda *args, **kwargs: None
     return progress
+
+try:
+    from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
+    rich_progress = Progress(
+                             TextColumn("[progress.description]{task.description}"),
+                             BarColumn(),
+                             MofNCompleteColumn(),
+                             TimeRemainingColumn(),
+                            )
+except ModuleNotFoundError:
+    rich_progress = no_rich_progress()
+    DISABLE_RICH = True
+
 
 def response_loop(inputs, inputs_delta, get_output, settings, normalize=True, bipolar=False):
     n_inputs = len(inputs)
@@ -57,12 +62,12 @@ def response_loop(inputs, inputs_delta, get_output, settings, normalize=True, bi
             if normalize:
                 RM[:, i] /= delta
             settings.set(control, ref_setpoint)
-
+            yield RM
             progress.update(task_id, completed=i+1, description=f'Measuring response of {control}...')
         progress.update(task_id, completed=n_inputs, description='Response measured.')
         progress.remove_task(task_id)
 
-    return RM
+    yield RM
 
 def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = False):
     print('Calculating response matrix')
@@ -89,7 +94,9 @@ def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int 
     magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
 
     ### measure the response matrix
-    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
+    generator = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
+    for RM in generator:
+        pass
 
     return RM
 
@@ -120,7 +127,9 @@ def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[li
     magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
 
     ### measure the response matrix
-    RM = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
+    generator = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
+    for RM in generator:
+        pass
 
     return RM
 

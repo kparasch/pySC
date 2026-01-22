@@ -10,6 +10,7 @@ from .chromaticity import Chromaticity
 from .c_minus import CMinus
 from .rf_tuning import RF_tuning
 from ..core.control import IndivControl
+from ..core.control import IndivControl
 
 import numpy as np
 from pathlib import Path
@@ -59,7 +60,7 @@ class Tuning(BaseModel, extra="forbid"):
             rm_path = Path(self.RM_folder) / Path(name + '.json')
             if rm_path.exists():
                 logger.info(f'Loading {name} RM from file: {rm_path}')
-                self.response_matrix[name] = ResponseMatrix.model_validate(json.load(open(rm_path,'r')))
+                self.response_matrix[name] = ResponseMatrix.from_json(rm_path)
             else:
                 if orbit:
                     self.calculate_model_orbit_response_matrix()
@@ -83,6 +84,7 @@ class Tuning(BaseModel, extra="forbid"):
         return inputs_plane
 
     def calculate_model_trajectory_response_matrix(self, n_turns=1, dkick=1e-5, save_as: str = None):
+        # assumes all bpms are dual plane
         RM_name = f'trajectory{n_turns}'
         SC = self._parent
         input_names = SC.tuning.CORR
@@ -93,7 +95,7 @@ class Tuning(BaseModel, extra="forbid"):
         self.response_matrix[RM_name] = ResponseMatrix(matrix=matrix, output_names=output_names,
                                                        input_names=input_names, inputs_plane=inputs_plane)
         if save_as is not None:
-            json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
+            self.response_matrix[RM_name].to_json(save_as)
         return 
 
     def calculate_model_orbit_response_matrix(self, dkick=1e-5, save_as: str = None):
@@ -106,7 +108,7 @@ class Tuning(BaseModel, extra="forbid"):
         self.response_matrix[RM_name] = ResponseMatrix(matrix=matrix, output_names=output_names,
                                                        input_names=input_names, inputs_plane=inputs_plane)
         if save_as is not None:
-            json.dump(self.response_matrix[RM_name].model_dump(), open(save_as, 'w'))
+            self.response_matrix[RM_name].to_json(save_as)
         return 
 
     def bad_outputs_from_bad_bpms(self, bad_bpms: list[int], n_turns: int = 1) -> list[int]:
@@ -172,7 +174,7 @@ class Tuning(BaseModel, extra="forbid"):
             else:
                 reference = np.zeros_like(trajectory)
 
-            trims = RM.solve(trajectory - reference, method=method, parameter=parameter)
+            trims = RM.solve(trajectory - reference, method=method, parameter=parameter, zerosum=zerosum)
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):
@@ -190,7 +192,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_pseudo_orbit_at_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1):
+    def correct_pseudo_orbit_at_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, zerosum=False):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         RM = self.response_matrix[RM_name]
@@ -202,7 +204,7 @@ class Tuning(BaseModel, extra="forbid"):
             pseudo_orbit_y = np.nanmean(trajectory_y, axis=1)
             pseudo_orbit = np.concat((pseudo_orbit_x, pseudo_orbit_y))
 
-            trims = RM.solve(pseudo_orbit, method=method, parameter=parameter)
+            trims = RM.solve(pseudo_orbit, method=method, parameter=parameter, zerosum=zerosum)
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):
@@ -220,7 +222,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1):
+    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, zerosum=False):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         RM = self.response_matrix[RM_name]
@@ -230,7 +232,7 @@ class Tuning(BaseModel, extra="forbid"):
             orbit_x, orbit_y = self._parent.bpm_system.capture_orbit()
             orbit = np.concat((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
 
-            trims = RM.solve(orbit, method=method, parameter=parameter)
+            trims = RM.solve(orbit, method=method, parameter=parameter, zerosum=zerosum)
 
             settings = self._parent.magnet_settings
             for control_name, trim in zip(self.CORR, trims):

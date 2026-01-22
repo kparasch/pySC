@@ -1,27 +1,22 @@
 import numpy as np
 import logging
-from .response_matrix import ResponseMatrix
+from typing import Callable
+from enum import IntEnum
 
 logger = logging.getLogger(__name__)
 
-def orbit_correction(get_orbit, settings, response_matrix: ResponseMatrix, correctors, method='svd_cutoff', parameter=0, reference=None, gain=1, apply=False):
-
-    if not apply and gain != 1:
-        logger.warning("Gain is set but apply is False, gain will have no effect.")
-
+def get_average_orbit(get_orbit: Callable, n_orbits: int = 10):
     orbit_x, orbit_y = get_orbit()
-    orbit = np.concat((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
+    all_orbit_x = np.zeros((len(orbit_x), n_orbits))
+    all_orbit_y = np.zeros((len(orbit_y), n_orbits))
 
-    if reference is not None:
-        assert len(reference) == len(orbit), "Reference orbit has wrong length"
-        orbit -= reference
+    all_orbit_x[:,0] = orbit_x
+    all_orbit_y[:,0] = orbit_y
+    for ii in range(1, n_orbits):
+        all_orbit_x[:, ii], all_orbit_y[:, ii] = get_orbit()
 
-    trims = response_matrix.solve(orbit, method=method, parameter=parameter)
-
-    if apply:
-        data = settings.get_many(correctors)
-        for i, corr in enumerate(correctors):
-            data[corr] += trims[i] * gain
-        settings.set_many(data)
-
-    return trims
+    mean_orbit_x = np.mean(all_orbit_x, axis=1)
+    mean_orbit_y = np.mean(all_orbit_y, axis=1)
+    std_orbit_x = np.std(all_orbit_x, axis=1)
+    std_orbit_y = np.std(all_orbit_y, axis=1)
+    return mean_orbit_x, mean_orbit_y, std_orbit_x, std_orbit_y

@@ -35,7 +35,7 @@ def get_indices_and_names(SC: SimulatedCommissioning, category_name: str, catego
     if 'regex' in category_conf:
         assert 'mapping' not in category_conf, 'Only one of regex and mapping must be defined!'
         indices = get_indices_with_regex(SC, category_name, category_conf)
-        names = list(map(str, indices))
+        names = list(map(SC.lattice.get_name_from_index, indices))
     elif 'mapping' in category_conf:
         mapping = load_yaml(category_conf['mapping'])
 

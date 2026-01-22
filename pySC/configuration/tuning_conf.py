@@ -21,7 +21,11 @@ def configure_family(SC: SimulatedCommissioning, config_dict: dict) -> list[str]
     for category in config_dict:
         array_name, component = category.copy().popitem()
         for control_name in SC.control_arrays[array_name]:
-            if component == control_name.split('/')[1]:
+            control = SC.design_magnet_settings.controls[control_name]
+            control_component = f"{control.info.component}{control.info.order}"
+            if control.info.is_integrated:
+                control_component = f"{control_component}L"
+            if component == control_component:
                 family.append(control_name)
     return family
 

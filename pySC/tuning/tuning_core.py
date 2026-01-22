@@ -84,6 +84,7 @@ class Tuning(BaseModel, extra="forbid"):
 
     def calculate_model_trajectory_response_matrix(self, n_turns=1, dkick=1e-5, save_as: str = None):
         RM_name = f'trajectory{n_turns}'
+        SC = self._parent
         input_names = SC.tuning.CORR
         output_names = SC.bpm_system.names * n_turns * 2 # two: one per plane and per turn
         matrix = measure_TrajectoryResponseMatrix(SC, n_turns=n_turns, dkick=dkick, use_design=True)
@@ -97,6 +98,7 @@ class Tuning(BaseModel, extra="forbid"):
 
     def calculate_model_orbit_response_matrix(self, dkick=1e-5, save_as: str = None):
         RM_name = 'orbit'
+        SC = self._parent
         input_names = SC.tuning.CORR
         output_names = SC.bpm_system.names * 2 # two: one per plane
         matrix = measure_OrbitResponseMatrix(SC, dkick=dkick, use_design=True)

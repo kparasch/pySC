@@ -270,7 +270,7 @@ class ResponseMatrix(BaseModel):
         #matrix_inv = np.dot(np.dot(np.transpose(Vh), np.diag(d_mat)), np.transpose(U))
         matrix_inv = np.dot(np.dot(np.transpose(Vh[:keep,:]), np.diag(d_mat)), np.transpose(U[:, :keep]))
 
-        return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter)
+        return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter, zerosum=zerosum)
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.,
               zerosum: bool = False, rf: bool = False, plane: Optional[Literal['H', 'V']] = None) -> np.ndarray:

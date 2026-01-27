@@ -16,8 +16,11 @@ class BBACode(IntEnum):
 
 class ResponseCode(IntEnum):
     INITIALIZED = MeasurementCode.INITIALIZED.value
-    MEASURING = 3
-    DONE = 4
+    AFTER_SET = 3
+    AFTER_GET = 4
+    AFTER_RESTORE = 5
+    MEASURING = 5 # same as AFTER_RESTORE on purpose
+    DONE = 6
 
 class DispersionCode(IntEnum):
     INITIALIZED = MeasurementCode.INITIALIZED.value

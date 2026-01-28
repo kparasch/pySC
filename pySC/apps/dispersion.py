@@ -106,7 +106,7 @@ class DispersionMeasurement(BaseModel):
         self.dispersion_data.raw_orbit_y_center = y_center
         self.dispersion_data.raw_orbit_x_err_center = x_center_err
         self.dispersion_data.raw_orbit_y_err_center = y_center_err
-        yield DispersionCode.MEASURING
+        yield DispersionCode.AFTER_GET
 
         if bipolar:
             logger.debug("Stepping frequency down.")

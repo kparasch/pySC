@@ -24,5 +24,8 @@ class ResponseCode(IntEnum):
 
 class DispersionCode(IntEnum):
     INITIALIZED = MeasurementCode.INITIALIZED.value
-    MEASURING = 3
+    AFTER_SET = 3
+    AFTER_GET = 4
+    AFTER_RESTORE = 5
+    MEASURING = 5 # same as AFTER_RESTORE on purpose
     DONE = 4

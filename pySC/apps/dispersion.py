@@ -106,34 +106,37 @@ class DispersionMeasurement(BaseModel):
         self.dispersion_data.raw_orbit_y_center = y_center
         self.dispersion_data.raw_orbit_x_err_center = x_center_err
         self.dispersion_data.raw_orbit_y_err_center = y_center_err
-        yield DispersionCode.MEASURING
+        yield DispersionCode.AFTER_GET
 
         if bipolar:
             logger.debug("Stepping frequency down.")
             self._interface.set_rf_main_frequency(frequency - self.delta / 2)
+            yield DispersionCode.AFTER_SET
 
             x_down, y_down, x_down_err, y_down_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
             self.dispersion_data.raw_orbit_x_down = x_down
             self.dispersion_data.raw_orbit_y_down = y_down
             self.dispersion_data.raw_orbit_x_err_down = x_down_err
             self.dispersion_data.raw_orbit_y_err_down = y_down_err
-            yield DispersionCode.MEASURING
+            yield DispersionCode.AFTER_GET
 
             logger.debug("Stepping frequency up.")
             self._interface.set_rf_main_frequency(frequency + self.delta / 2)
         else:
             logger.debug("Stepping frequency up.")
             self._interface.set_rf_main_frequency(frequency + self.delta)
+        yield DispersionCode.AFTER_SET
 
         x_up, y_up, x_up_err, y_up_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
         self.dispersion_data.raw_orbit_x_up = x_up
         self.dispersion_data.raw_orbit_y_up = y_up
         self.dispersion_data.raw_orbit_x_err_up = x_up_err
         self.dispersion_data.raw_orbit_y_err_up = y_up_err
-        yield DispersionCode.MEASURING
+        yield DispersionCode.AFTER_GET
 
         logger.debug("Setting original frequency.")
         self._interface.set_rf_main_frequency(frequency)
+        yield DispersionCode.AFTER_RESTORE
         self.calculate_response()
         yield DispersionCode.DONE
 

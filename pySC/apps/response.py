@@ -176,28 +176,32 @@ class ResponseMeasurement(BaseModel):
                 if bipolar:
                     step = delta / 2
                     self._interface.set(control, ref_setpoint - step)
-
+                    yield ResponseCode.AFTER_SET
                     x_down, y_down, x_down_err, y_down_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
                     down = np.concat((x_down.flatten(order='F'), y_down.flatten(order='F')))
                     down_err = np.concat((x_down_err.flatten(order='F'), y_down_err.flatten(order='F')))
                     self.response_data.raw_down[:, i] = down
                     self.response_data.raw_err_down[:, i] = down_err
+                    yield ResponseCode.AFTER_GET
                 else:
                     x_center, y_center, x_center_err, y_center_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
                     center = np.concat((x_center.flatten(order='F'), y_center.flatten(order='F')))
                     center_err = np.concat((x_center_err.flatten(order='F'), y_center_err.flatten(order='F')))
                     self.response_data.raw_center[:, i] = center
                     self.response_data.raw_err_center[:, i] = center_err
+                    yield ResponseCode.AFTER_GET
 
                     step = delta
 
                 self._interface.set(control, ref_setpoint + step)
+                yield ResponseCode.AFTER_SET
 
                 x_up, y_up, x_up_err, y_up_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
                 up = np.concat((x_up.flatten(order='F'), y_up.flatten(order='F')))
                 up_err = np.concat((x_up_err.flatten(order='F'), y_up_err.flatten(order='F')))
                 self.response_data.raw_up[:, i] = up
                 self.response_data.raw_err_up[:, i] = up_err
+                yield ResponseCode.AFTER_GET
 
                 self._interface.set(control, ref_setpoint)
 
@@ -207,7 +211,7 @@ class ResponseMeasurement(BaseModel):
                 self.response_data.last_number = i
 
                 progress.update(task_id, completed=i+1, description=f'Measuring response of {control}...')
-                yield ResponseCode.MEASURING
+                yield ResponseCode.AFTER_RESTORE
 
             self.calculate_response()
             progress.update(task_id, completed=n_inputs, description='Response measured.')

@@ -89,9 +89,10 @@ class pySCInjectionInterface(pySCOrbitInterface):
     n_turns: int = 1
 
     def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
-        return self.SC.bpm_system.capture_injection(n_turns=self.n_turns)
+        x,y= self.SC.bpm_system.capture_injection(n_turns=self.n_turns)
+        return x.flatten(order='F'), y.flatten(order='F')
 
     def get_ref_orbit(self) -> tuple[np.ndarray, np.ndarray]:
         x_ref = np.repeat(self.SC.bpm_system.reference_x[:, np.newaxis], self.n_turns, axis=1)
         y_ref = np.repeat(self.SC.bpm_system.reference_y[:, np.newaxis], self.n_turns, axis=1)
-        return x_ref, y_ref
+        return x_ref.flatten(order='F'), y_ref.flatten(order='F')

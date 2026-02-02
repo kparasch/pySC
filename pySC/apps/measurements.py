@@ -23,7 +23,7 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
         logger.warning("Gain is set but apply is False, gain will have no effect.")
 
     orbit_x, orbit_y = interface.get_orbit()
-    orbit = np.concat((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
+    orbit = np.concatenate((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
 
     if reference is not None:
         assert len(reference) == len(orbit), "Reference orbit has wrong length"

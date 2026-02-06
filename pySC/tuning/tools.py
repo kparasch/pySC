@@ -1,7 +1,6 @@
 import numpy as np
 import logging
 from typing import Callable
-from enum import IntEnum
 
 logger = logging.getLogger(__name__)
 

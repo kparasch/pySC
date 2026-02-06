@@ -3,7 +3,6 @@ from typing import Optional, Union, Callable
 import datetime
 import logging
 import numpy as np
-from enum import IntEnum
 from pathlib import Path
 from contextlib import nullcontext
 
@@ -11,7 +10,7 @@ from .codes import ResponseCode
 from ..utils.file_tools import dict_to_h5
 from ..tuning.tools import get_average_orbit
 from .interface import AbstractInterface
-from ..core.numpy_type import NPARRAY
+from ..core.types import NPARRAY
 
 DISABLE_RICH = False
 

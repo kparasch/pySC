@@ -10,11 +10,9 @@ from .chromaticity import Chromaticity
 from .c_minus import CMinus
 from .rf_tuning import RF_tuning
 from ..core.control import IndivControl
-from ..core.control import IndivControl
 
 import numpy as np
 from pathlib import Path
-import json
 import logging
 from multiprocessing import Process, Queue
 

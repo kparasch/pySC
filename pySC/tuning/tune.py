@@ -1,4 +1,4 @@
-from typing import Dict, Optional, Union, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 from pydantic import BaseModel, PrivateAttr, ConfigDict
 import numpy as np
 import logging

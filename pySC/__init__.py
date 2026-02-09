@@ -10,7 +10,7 @@ __version__ = "0.5.0"
 
 from .core.new_simulated_commissioning import SimulatedCommissioning
 from .configuration.generation import generate_SC
-from .tuning.response_matrix import ResponseMatrix
+from .apps.response_matrix import ResponseMatrix
 
 import logging
 import sys

@@ -3,7 +3,7 @@ import numpy as np
 from typing import Optional, Generator, Union, Literal
 from pathlib import Path
 
-from ..tuning.response_matrix import ResponseMatrix
+from ..apps.response_matrix import ResponseMatrix
 from .bba import BBA_Measurement, BBACode
 from .response import ResponseMeasurement, ResponseCode
 from .dispersion import DispersionMeasurement, DispersionCode

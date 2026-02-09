@@ -1,6 +1,6 @@
 from pydantic import BaseModel, PrivateAttr
 from typing import Optional, Union, TYPE_CHECKING
-from .response_matrix import ResponseMatrix
+from ..apps.response_matrix import ResponseMatrix
 from .response_measurements import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix, measure_RFFrequencyOrbitResponse
 from .trajectory_bba import Trajectory_BBA_Configuration, trajectory_bba, get_mag_s_pos
 from .orbit_bba import Orbit_BBA_Configuration, orbit_bba

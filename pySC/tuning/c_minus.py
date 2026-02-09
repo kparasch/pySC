@@ -5,7 +5,7 @@ import logging
 
 from ..core.control import KnobControl, KnobData
 from ..utils import rdt
-from .response_matrix import ResponseMatrix
+from ..apps.response_matrix import ResponseMatrix
 
 if TYPE_CHECKING:
     from .tuning_core import Tuning
@@ -43,12 +43,12 @@ class CMinus(BaseModel, extra="forbid"):
         if not len(self.controls) > 0:
             raise Exception('c_minus.controls is empty. Please set.')
 
-        RM = np.zeros((2,len(self.controls)))
+        matrix = np.zeros((2,len(self.controls)))
         delta_c_minus = self.c_minus_response(delta=delta)
-        RM[0] = delta_c_minus.real
-        RM[1] = delta_c_minus.imag
+        matrix[0] = delta_c_minus.real
+        matrix[1] = delta_c_minus.imag
 
-        c_minus_response_matrix = ResponseMatrix(RM=RM)
+        c_minus_response_matrix = ResponseMatrix(matrix=matrix)
         iRM = c_minus_response_matrix.build_pseudoinverse().matrix
         c_minus_real_knob = iRM[:, 0]
         c_minus_imag_knob = iRM[:, 1]

@@ -6,7 +6,9 @@ from ..apps import measure_ORM, measure_dispersion
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
 
-def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = False):
+def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1,
+                                     dkick: Union[float, list] = 1e-5, use_design: bool = False,
+                                     normalize: bool = True, bipolar: bool = False) -> np.ndarray:
     print('Calculating response matrix')
 
     ### set inputs
@@ -31,7 +33,9 @@ def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int 
 
     return matrix
 
-def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[list] = None, VCORR: Optional[list] = None, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = True):
+def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[list] = None,
+                                VCORR: Optional[list] = None, dkick: Union[float, list] = 1e-5,
+                                use_design: bool = False, normalize: bool = True, bipolar: bool = True) -> np.ndarray:
     print('Calculating response matrix')
 
     ### set inputs
@@ -58,8 +62,8 @@ def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[li
 
     return matrix
 
-def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main',
-                                     use_design: bool = False, normalize: bool = True, bipolar: bool = False):
+def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, use_design: bool = False,
+                                     normalize: bool = True, bipolar: bool = False) -> np.ndarray:
 
     interface = pySCOrbitInterface(SC=SC)
     interface.use_design = use_design

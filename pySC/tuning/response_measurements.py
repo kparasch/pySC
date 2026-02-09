@@ -6,71 +6,6 @@ from ..apps import measure_ORM
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
 
-
-DISABLE_RICH = False
-
-def no_rich_progress():
-    from contextlib import nullcontext
-    progress = nullcontext()
-    progress.add_task = lambda *args, **kwargs: 1
-    progress.update = lambda *args, **kwargs: None
-    progress.remove_task = lambda *args, **kwargs: None
-    return progress
-
-try:
-    from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
-    rich_progress = Progress(
-                             TextColumn("[progress.description]{task.description}"),
-                             BarColumn(),
-                             MofNCompleteColumn(),
-                             TimeRemainingColumn(),
-                            )
-except ModuleNotFoundError:
-    rich_progress = no_rich_progress()
-    DISABLE_RICH = True
-
-
-def response_loop(inputs, inputs_delta, get_output, settings, normalize=True, bipolar=False):
-    n_inputs = len(inputs)
-
-    if DISABLE_RICH:
-        progress = no_rich_progress()
-    else:
-        progress = rich_progress
-
-    with progress:
-        task_id = progress.add_task("Measuring RM", start=True, total=n_inputs)
-        progress.update(task_id, total=n_inputs)
-
-        reference = get_output()
-        if np.any(np.isnan(reference)):
-            raise ValueError('Initial output is NaN. Aborting. ')
-
-        RM = np.full((len(reference), n_inputs), np.nan)
-
-        for i, control in enumerate(inputs):
-            ref_setpoint = settings.get(control)
-            delta = inputs_delta[i]
-            if bipolar:
-                step = delta/2
-                settings.set(control, ref_setpoint - step)
-                reference = get_output()
-            else:
-                step = delta
-            settings.set(control, ref_setpoint + step)
-            output = get_output()
-
-            RM[:, i] = (output - reference)
-            if normalize:
-                RM[:, i] /= delta
-            settings.set(control, ref_setpoint)
-            yield RM
-            progress.update(task_id, completed=i+1, description=f'Measuring response of {control}...')
-        progress.update(task_id, completed=n_inputs, description='Response measured.')
-        progress.remove_task(task_id)
-
-    yield RM
-
 def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = False):
     print('Calculating response matrix')
 
@@ -149,5 +84,3 @@ def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : f
         response /= delta_frf
 
     return response
-
-

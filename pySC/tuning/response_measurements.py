@@ -1,7 +1,7 @@
 from typing import Union, Optional, TYPE_CHECKING
 import numpy as np
 from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
-from ..apps import measure_ORM
+from ..apps import measure_ORM, measure_dispersion
 
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
@@ -58,29 +58,21 @@ def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[li
 
     return matrix
 
-def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main', use_design: bool = False, normalize: bool = True, bipolar: bool = False):
+def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main',
+                                     use_design: bool = False, normalize: bool = True, bipolar: bool = False):
 
-    rf_settings = SC.design_rf_settings if use_design else SC.rf_settings
-    rf_system = rf_settings.systems[rf_system_name]
+    interface = pySCOrbitInterface(SC=SC)
+    interface.use_design = use_design
 
-    ### function that gathers outputs
-    def get_orbit():
-        x,y = SC.bpm_system.capture_orbit(bba=False, subtract_reference=False, use_design=use_design)
-        return np.concat((x.flatten(order='F'), y.flatten(order='F')))
+    generator = measure_dispersion(interface=interface, delta=delta_frf, bipolar=bipolar, skip_save=True)
 
-    frf = rf_system.frequency
-    if bipolar:
-        step = delta_frf / 2
-        rf_system.set_frequency(frf - step)
-        xy0 = get_orbit()
-    else:
-        step = delta_frf
-        xy0 = get_orbit()
-    rf_system.set_frequency(frf + step)
-    xy1 = get_orbit()
-    rf_system.set_frequency(frf)
-    response = (xy1 - xy0)
+    for code, measurement in generator:
+        pass
+
+    data = measurement.dispersion_data
     if normalize:
-        response /= delta_frf
+        response = np.concatenate(data.frequency_response)
+    else:
+        response = np.concatenate(data.not_normalized_frequency_response)
 
     return response

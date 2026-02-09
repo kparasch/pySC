@@ -11,7 +11,7 @@ __version__ = "0.5.0"
 from .core.new_simulated_commissioning import SimulatedCommissioning
 from .configuration.generation import generate_SC
 from .apps.response_matrix import ResponseMatrix
-
+from .tuning.pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 import logging
 import sys
 
@@ -29,3 +29,18 @@ def disable_pySC_rich():
     from .apps import response
     response_measurements.DISABLE_RICH = True
     response.DISABLE_RICH = True
+
+# This is needed to avoid circular imports.
+# Firstly the type of SC is hinted to avoid importing SimulatedCommissioning:
+#   class pySCOrbitInterface(AbstractInterface):
+#      SC: "SimulatedCommissioning" = Field(repr=False)
+#
+# Then, the model_rebuild is triggered here to complete the pydantic model,
+# and allow validation.
+# for this to be triggered, one needs to import pySC or to import from pySC
+# (i.e. from pySC import ...)
+# to validate a pySCInjectionInterface/pySCOrbitInterface object, one should
+# already have a SimulatedCommissioning object. To acquire the SimulatedCommissioning,
+# the model_rebuild is "almost certainly"? triggered.
+pySCInjectionInterface.model_rebuild()
+pySCOrbitInterface.model_rebuild()

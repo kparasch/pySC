@@ -1,45 +1,58 @@
 from pydantic import Field
 import numpy as np
+from typing import TYPE_CHECKING
 
 from ..apps.interface import AbstractInterface
-from ..core.new_simulated_commissioning import SimulatedCommissioning
+if TYPE_CHECKING:
+    from ..core.new_simulated_commissioning import SimulatedCommissioning
 
 class pySCOrbitInterface(AbstractInterface):
-    SC: SimulatedCommissioning = Field(repr=False)
+    SC: "SimulatedCommissioning" = Field(repr=False)
+    use_design: bool = False
 
     def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
-        return self.SC.bpm_system.capture_orbit()
+        return self.SC.bpm_system.capture_orbit(use_design=self.use_design)
 
     def get_ref_orbit(self) -> tuple[np.ndarray, np.ndarray]:
         return self.SC.bpm_system.reference_x, self.SC.bpm_system.reference_y
 
     def get(self, name: str) -> float:
-        return self.SC.magnet_settings.get(name)
+        return self.SC.magnet_settings.get(name, use_design=self.use_design)
 
     def set(self, name: str, value: float):
-        self.SC.magnet_settings.set(name, value)
+        self.SC.magnet_settings.set(name, value, use_design=self.use_design)
         return
 
     def get_many(self, names: list) -> dict[str, float]:
-        return self.SC.magnet_settings.get_many(names)
+        return self.SC.magnet_settings.get_many(names, use_design=self.use_design)
 
     def set_many(self, data: dict[str, float]):
-        self.SC.magnet_settings.set_many(data)
+        self.SC.magnet_settings.set_many(data, use_design=self.use_design)
         return
 
     def get_rf_main_frequency(self) -> float:
-        return self.SC.rf_settings.main.frequency
+        if self.use_design:
+            rf_settings = self.SC.design_rf_settings
+        else:
+            rf_settings = self.SC.rf_settings
+
+        return rf_settings.main.frequency
 
     def set_rf_main_frequency(self, frequency: float):
-        self.SC.rf_settings.main.set_frequency(frequency)
+        if self.use_design:
+            rf_settings = self.SC.design_rf_settings
+        else:
+            rf_settings = self.SC.rf_settings
+
+        rf_settings.main.set_frequency(frequency)
         return
 
 class pySCInjectionInterface(pySCOrbitInterface):
-    SC: SimulatedCommissioning = Field(repr=False)
+    SC: "SimulatedCommissioning" = Field(repr=False)
     n_turns: int = 1
 
     def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
-        x,y= self.SC.bpm_system.capture_injection(n_turns=self.n_turns)
+        x,y= self.SC.bpm_system.capture_injection(n_turns=self.n_turns, use_design=self.use_design)
         return x.flatten(order='F'), y.flatten(order='F')
 
     def get_ref_orbit(self) -> tuple[np.ndarray, np.ndarray]:

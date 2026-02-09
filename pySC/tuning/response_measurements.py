@@ -1,6 +1,6 @@
 from typing import Union, Optional, TYPE_CHECKING
 import numpy as np
-from .pySC_interface import pySCInjectionInterface
+from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 from ..apps import measure_ORM
 
 if TYPE_CHECKING:
@@ -104,30 +104,24 @@ def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[li
         HCORR = SC.tuning.HCORR
     if VCORR is None:
         VCORR = SC.tuning.VCORR
-    CORR = HCORR + VCORR
+    corrector_names = HCORR + VCORR
 
-    n_CORR = len(CORR)
+    interface = pySCOrbitInterface(SC=SC)
+    interface.use_design = use_design
 
-    if type(dkick) is float:
-        kicks = np.ones(n_CORR, dtype=float) * dkick
-    else:
-        assert len(dkick) == n_CORR, f'ERROR: wrong length of dkick array provided. expected {n_CORR}, got {len(dkick)}'
-        kicks = np.array(dkick)
+    generator = measure_ORM(interface=interface, corrector_names=corrector_names,
+                            delta=dkick, bipolar=bipolar, skip_save=True)
 
-    ### set function that gathers outputs
-    def get_orbit():
-        x,y = SC.bpm_system.capture_orbit(bba=False, subtract_reference=False, use_design=use_design)
-        return np.concat((x.flatten(order='F'), y.flatten(order='F')))
-
-    ### specify to use "real" lattice or design
-    magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
-
-    ### measure the response matrix
-    generator = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
-    for RM in generator:
+    for code, measurement in generator:
         pass
 
-    return RM
+    data = measurement.response_data
+    if normalize:
+        matrix = data.matrix
+    else:
+        matrix = data.not_normalized_response_matrix
+
+    return matrix
 
 def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main', use_design: bool = False, normalize: bool = True, bipolar: bool = False):
 

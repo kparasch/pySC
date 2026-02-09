@@ -5,7 +5,7 @@ import numpy as np
 import logging
 import json
 
-PLANE_TYPE = Literal['H', 'V']
+PLANE_TYPE = Literal['H', 'V', 'Q', 'SQ']
 
 logger = logging.getLogger(__name__)
 

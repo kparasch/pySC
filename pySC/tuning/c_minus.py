@@ -48,10 +48,12 @@ class CMinus(BaseModel, extra="forbid"):
         matrix[0] = delta_c_minus.real
         matrix[1] = delta_c_minus.imag
 
-        c_minus_response_matrix = ResponseMatrix(matrix=matrix)
-        iRM = c_minus_response_matrix.build_pseudoinverse().matrix
-        c_minus_real_knob = iRM[:, 0]
-        c_minus_imag_knob = iRM[:, 1]
+        c_minus_response_matrix = ResponseMatrix(matrix=matrix,
+                                                 outputs_plane=['SQ'] * len(self.controls)
+                                                )
+        inverse_matrix = c_minus_response_matrix.build_pseudoinverse().matrix
+        c_minus_real_knob = inverse_matrix[:, 0]
+        c_minus_imag_knob = inverse_matrix[:, 1]
 
         knob_data = KnobData(data={
             self.knob_real: KnobControl(control_names=self.controls, weights=list(c_minus_real_knob)),

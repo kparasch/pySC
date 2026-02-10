@@ -70,16 +70,16 @@ class ResponseMatrix(BaseModel):
 
         if self.inputs_plane is None:
             Nh = self._n_inputs // 2
-            if Nh % 2 != 0:
-                logger.warning('Plane of inputs is undefined and number of inputs in response matrix is not even.'
-                                'Misinterpretation of the input plane is guaranteed!')
+            if self._n_inputs % 2 != 0:
+                logger.warning('Plane of inputs is undefined and number of inputs in response matrix is not even. '
+                               'Misinterpretation of the input plane is guaranteed!')
             self.inputs_plane = ['H'] * Nh + ['V'] * (self._n_inputs - Nh)
 
         if self.outputs_plane is None:
             Nh = self._n_outputs // 2
-            if Nh % 2 != 0:
-                logger.warning('Plane of outputs is undefined and number of outputs in response matrix is not even.'
-                                'Misinterpretation of the output plane is guaranteed!')
+            if self._n_outputs % 2 != 0:
+                logger.warning('Plane of outputs is undefined and number of outputs in response matrix is not even. '
+                               'Misinterpretation of the output plane is guaranteed!')
             self.outputs_plane = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
 
         if self.rf_response is None:

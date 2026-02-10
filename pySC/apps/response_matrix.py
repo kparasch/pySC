@@ -137,8 +137,9 @@ class ResponseMatrix(BaseModel):
 
     @bad_inputs.setter
     def bad_inputs(self, bad_list: list[int]) -> None:
-        self._bad_inputs = bad_list.copy()
-        self.make_masks()
+        if self._bad_inputs != bad_list:
+            self._bad_inputs = bad_list.copy()
+            self.make_masks()
 
     @property
     def bad_outputs(self) -> list[int]:
@@ -146,8 +147,9 @@ class ResponseMatrix(BaseModel):
 
     @bad_outputs.setter
     def bad_outputs(self, bad_list: list[int]) -> None:
-        self._bad_outputs = bad_list.copy()
-        self.make_masks()
+        if self._bad_outputs != bad_list:
+            self._bad_outputs = bad_list.copy()
+            self.make_masks()
 
     def make_masks(self):
         self._inverse_RM = None # discard inverse RM, by changing bad inputs/outputs it becomes invalid

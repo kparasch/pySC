@@ -3,6 +3,10 @@ from typing import TYPE_CHECKING, Dict, Literal
 import numpy as np
 import logging
 from ..core.control import IndivControl
+from ..apps import measure_bba
+from ..apps.bba import analyze_trajectory_bba_data
+
+from .pySC_interface import pySCInjectionInterface
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +90,7 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
             else: # it is a skew quadrupole component
                 ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
                 temp_RM = VRM[bpm_number:bpm_number+n_downstream_bpms, the_HCORR_number]
-            
+
             max_response = float(np.max(np.abs(temp_RM)))
             if max_response < 1e-10:
                 logger.warning(f'WARNING: very small response for BPM {SC.bpm_system.names[bpm_number]} from magnet {the_bba_magnet} and HCORR {SC.tuning.HCORR[the_HCORR_number]}')
@@ -151,92 +155,26 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
         SC.tuning.generate_trajectory_bba_config()
     config = SC.tuning.trajectory_bba_config.config[bpm_name]
 
-    corr = config[f'{plane}CORR']
-    quad = config['QUAD']
-    bpm_number = config['number']
-    corr_delta_sp = config[f'{plane}CORR_delta']
-    quad_delta = config[f'QUAD_dk_{plane}']
+    interface = pySCInjectionInterface(SC=SC, n_turns=2, bba=False, subtract_reference=False)
+    generator = measure_bba(interface=interface, bpm_name=bpm_name, config=config,
+                            shots_per_orbit=shots_per_trajectory, n_corr_steps=n_corr_steps,
+                            bipolar=True, skip_save=True, plane=plane, skip_cycle=True)
 
-    n1 = bpm_number + 1
-    n2 = bpm_number + 1 + n_downstream_bpms
+    for _, measurement in generator:
+        pass
 
-    ## define get_orbit
-    def get_orbit():
-        x, y = SC.bpm_system.capture_injection(n_turns=2, bba=False, subtract_reference=False, use_design=False)
-        x = x / shots_per_trajectory
-        y = y / shots_per_trajectory
-        for i in range(shots_per_trajectory-1):
-            x_tmp, y_tmp = SC.bpm_system.capture_injection(n_turns=2, bba=False, subtract_reference=False, use_design=False)
-            x = x + x_tmp / shots_per_trajectory
-            y = y + y_tmp / shots_per_trajectory
-
-        return (x.flatten(order='F'), y.flatten(order='F'))
-
-
-    ## define settings to get/set
-    settings = SC.magnet_settings
-
-    bpm_pos = np.zeros([n_corr_steps, 2])
-    orbits = np.zeros([n_corr_steps, 2, n_downstream_bpms])
-
-    corr_sp0 = settings.get(corr)
-    quad_sp0 = settings.get(quad)
-
-    corr_sp_array = np.linspace(-corr_delta_sp, corr_delta_sp, n_corr_steps) + corr_sp0 
-    for i_corr, corr_sp in enumerate(corr_sp_array):
-        settings.set(corr, corr_sp)
-        trajectory_x_center, trajectory_y_center = get_orbit()
-
-        settings.set(quad, quad_sp0 + quad_delta)
-        trajectory_x_up, trajectory_y_up = get_orbit()
-
-        settings.set(quad, quad_sp0 - quad_delta)
-        trajectory_x_down, trajectory_y_down = get_orbit()
-
-        settings.set(quad, quad_sp0)
-
-        if plane == 'H':
-            trajectory_main_down = trajectory_x_down
-            trajectory_main_up = trajectory_x_up
-            trajectory_main_center = trajectory_x_center
-            trajectory_other_down = trajectory_y_down
-            trajectory_other_up = trajectory_y_up
-            trajectory_other_center = trajectory_y_center
-        else:
-            trajectory_main_down = trajectory_y_down
-            trajectory_main_up = trajectory_y_up
-            trajectory_main_center = trajectory_y_center
-            trajectory_other_down = trajectory_x_down
-            trajectory_other_up = trajectory_x_up
-            trajectory_other_center = trajectory_x_center
-
-        bpm_pos[i_corr, 0] = trajectory_main_down[bpm_number]
-        bpm_pos[i_corr, 1] = trajectory_main_up[bpm_number]
-        if quad.split('/')[-1] == 'B2':
-            orbits[i_corr, 0, :] = trajectory_main_down[n1:n2] - trajectory_main_center[n1:n2]
-            orbits[i_corr, 1, :] = trajectory_main_up[n1:n2] - trajectory_main_center[n1:n2]
-        elif quad.split('/')[-1] == 'A2': ## skew quad
-            orbits[i_corr, 0, :] = trajectory_other_down[n1:n2] - trajectory_other_center[n1:n2]
-            orbits[i_corr, 1, :] = trajectory_other_up[n1:n2] - trajectory_other_center[n1:n2]
-        else:
-            raise Exception(f'Invalid magnet for BBA: {quad}')
-
-    settings.set(corr, corr_sp0)
-    settings.set(quad, quad_sp0)
+    if plane == 'H':
+        data = measurement.H_data
+    else:
+        data = measurement.V_data
 
     try:
-        slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, quad_delta)
-        mask_bpm_outlier = reject_bpm_outlier(orbits)
-        mask_slopes = reject_slopes(slopes)
-        mask_center = reject_center_outlier(center)
-        final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
-
-        offset, offset_err = get_offset(center, center_err, final_mask)
+        offset, offset_err = analyze_trajectory_bba_data(data, n_downstream=n_downstream_bpms)
     except Exception as exc:
         print(exc)
         logger.warning(f'Failed to compute trajectory BBA for BPM {bpm_name}')
         offset, offset_err = 0, np.nan
- 
+
     return offset, offset_err
 
 def reject_bpm_outlier(orbits):

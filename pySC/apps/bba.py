@@ -101,6 +101,7 @@ class BBA_Measurement(BaseModel):
     shots_per_orbit: int = 2
     bipolar: bool = True
     quad_is_skew: bool = False
+    plane: str = None
 
     initial_h_k0l: Optional[float] = None
     initial_v_k0l: Optional[float] = None
@@ -115,12 +116,12 @@ class BBA_Measurement(BaseModel):
         super().__init__(**kwargs)
         # Initialize BBAData instances for horizontal and vertical procedures
         if self.h_corrector is not None:
-            self.H_data = BBAData(plane='X', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
+            self.H_data = BBAData(plane='H', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
                                   corrector=self.h_corrector, dk0l=self.dk0l_x, dk1l=self.dk1l_x,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
                                   skew_quad=self.quad_is_skew)
         if self.v_corrector is not None:
-            self.V_data = BBAData(plane='Y', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
+            self.V_data = BBAData(plane='V', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
                                   corrector=self.v_corrector, dk0l=self.dk0l_y, dk1l=self.dk1l_y,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
                                   skew_quad=self.quad_is_skew)
@@ -228,7 +229,7 @@ class BBA_Measurement(BaseModel):
         #save data
         yield code_done
 
-    def generate(self, interface: AbstractInterface):
+    def generate(self, interface: AbstractInterface, plane: Optional[str] = None, skip_cycle: bool = False):
         """
         step through the measurement.
         """
@@ -258,24 +259,25 @@ class BBA_Measurement(BaseModel):
         else:
             dk1 = max(self.H_data.dk1l, self.V_data.dk1l)
 
-        for code in hysteresis_loop(self.quadrupole, interface, dk1, n_cycles=2, bipolar=self.bipolar):
-            yield code
+        if not skip_cycle:
+            for code in hysteresis_loop(self.quadrupole, interface, dk1, n_cycles=2, bipolar=self.bipolar):
+                yield code
 
-        if self.h_corrector is not None:
+        if (plane is None or plane == 'H') and self.h_corrector is not None:
             for code in self.one_plane_loop('H'):
                 yield code
 
-        if self.v_corrector is not None:
+        if (plane is None or plane == 'V') and self.v_corrector is not None:
             for code in self.one_plane_loop('V'):
                 yield code
 
         yield BBACode.DONE
 
-    def run(self, generator=None):
-        if generator is None:
-            generator = self.generate()
-        for code in generator:
-            logger.debug(f'    Got code: {code}')
+    # def run(self, generator=None):
+    #     if generator is None:
+    #         generator = self.generate()
+    #     for code in generator:
+    #         logger.debug(f'    Got code: {code}')
 
 
 class BBAAnalysis(BaseModel):
@@ -303,7 +305,7 @@ def analyze_trajectory_bba_data(data: BBAData, n_downstream: int = 20):
     start = bpm_number
     end = bpm_number + n_downstream
     for ii in range(data.n0):
-        if data.plane == 'X':
+        if data.plane == 'H':
             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
             if data.skew_quad:
@@ -338,7 +340,7 @@ def analyze_bba_data(data: BBAData):
     orbits = np.full((data.n0, 2, nbpms), np.nan)
     bpm_pos = np.full((data.n0, 2), np.nan)
     for ii in range(data.n0):
-        if data.plane == 'X':
+        if data.plane == 'H':
             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
             if data.skew_quad:
@@ -375,7 +377,7 @@ def get_trajectory_bba_analysis_data(data: BBAData, n_downstream: int = 20):
     start = bpm_number
     end = bpm_number + n_downstream
     for ii in range(data.n0):
-        if data.plane == 'X':
+        if data.plane == 'H':
             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
             if data.skew_quad:
@@ -409,7 +411,7 @@ def get_bba_analysis_data(data: BBAData):
     orbits = np.full((data.n0, 2, nbpms), np.nan)
     bpm_pos = np.full((data.n0, 2), np.nan)
     for ii in range(data.n0):
-        if data.plane == 'X':
+        if data.plane == 'H':
             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
             if data.skew_quad:

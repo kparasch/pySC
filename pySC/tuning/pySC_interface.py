@@ -9,9 +9,12 @@ if TYPE_CHECKING:
 class pySCOrbitInterface(AbstractInterface):
     SC: "SimulatedCommissioning" = Field(repr=False)
     use_design: bool = False
+    bba: bool = True
+    subtract_reference: bool = True
 
     def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
-        return self.SC.bpm_system.capture_orbit(use_design=self.use_design)
+        return self.SC.bpm_system.capture_orbit(use_design=self.use_design, bba=self.bba,
+                                                subtract_reference=self.subtract_reference)
 
     def get_ref_orbit(self) -> tuple[np.ndarray, np.ndarray]:
         return self.SC.bpm_system.reference_x, self.SC.bpm_system.reference_y
@@ -50,8 +53,6 @@ class pySCOrbitInterface(AbstractInterface):
 class pySCInjectionInterface(pySCOrbitInterface):
     SC: "SimulatedCommissioning" = Field(repr=False)
     n_turns: int = 1
-    bba: bool = True
-    subtract_reference: bool = True
 
     def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
         x,y= self.SC.bpm_system.capture_injection(n_turns=self.n_turns, use_design=self.use_design,

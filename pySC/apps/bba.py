@@ -10,7 +10,7 @@ from ..utils.file_tools import dict_to_h5
 from ..tuning.tools import get_average_orbit
 from .interface import AbstractInterface
 
-from ..tuning.orbit_bba import reject_bpm_outlier, reject_center_outlier, reject_slopes, get_slopes_center, get_offset
+# from ..tuning.orbit_bba import reject_bpm_outlier, reject_center_outlier, reject_slopes, get_slopes_center, get_offset
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +297,99 @@ class BBAAnalysis(BaseModel):
     @classmethod
     def analyze(cls, data: BBAData):
         return BBAAnalysis()
+
+BPM_OUTLIER = 6 # number of sigma
+SLOPE_FACTOR = 0.10 # of max slope
+CENTER_OUTLIER = 1 # number of sigma
+
+def reject_bpm_outlier(orbits):
+    n_k1 = orbits.shape[1]
+    n_bpms = orbits.shape[2]
+    mask = np.ones(n_bpms, dtype=bool)
+    for k1_step in range(n_k1):
+        for bpm in range(n_bpms):
+            data = orbits[:, k1_step, bpm]
+            if np.any(data - np.mean(data) > BPM_OUTLIER * np.std(data)):
+                mask[bpm] = False
+ 
+    # n_rejections = n_bpms - np.sum(mask)
+    # print(f"Rejected {n_rejections}/{n_bpms} bpms for bpm outliers ( > {BPM_OUTLIER} r.m.s. )")
+    return mask
+
+def reject_slopes(slopes):
+    max_slope = np.nanmax(np.abs(slopes))
+    mask = np.abs(slopes) > SLOPE_FACTOR * max_slope
+
+    # n_rejections = len(slopes) - np.sum(mask)
+    # print(f"Rejected {n_rejections}/{len(slopes)} bpms for small slope ( < {SLOPE_FACTOR} * max(slope) )")
+    return mask
+
+def reject_center_outlier(center):
+    mean = np.nanmean(center)
+    std = np.nanstd(center)
+    mask =  abs(center - mean) < CENTER_OUTLIER * std
+
+    # n_rejections = len(center) - np.sum(mask)
+    # print(f"Rejected {n_rejections}/{len(center)} bpms for center away from mean ( > {CENTER_OUTLIER} r.m.s. )")
+    return mask
+
+def get_slopes_center(bpm_pos, orbits, dk1):
+    mag_vec = np.array([dk1, -dk1])
+    num_downstream_bpms = orbits.shape[2]
+    fit_order = 1
+    x = np.mean(bpm_pos, axis=1)
+    x_mask = ~np.isnan(x)
+    err = np.mean(np.std(bpm_pos[x_mask, :], axis=1))
+    x = x[x_mask]
+    new_tmp_tra = orbits[x_mask, :, :]
+
+    tmp_slope = np.full((new_tmp_tra.shape[0], new_tmp_tra.shape[2]), np.nan)
+    tmp_slope_err = np.full((new_tmp_tra.shape[0], new_tmp_tra.shape[2]), np.nan)
+    center = np.full((new_tmp_tra.shape[2]), np.nan)
+    center_err = np.full((new_tmp_tra.shape[2]), np.nan)
+    for i in range(new_tmp_tra.shape[0]):
+        for j in range(new_tmp_tra.shape[2]):
+            y = new_tmp_tra[i, :, j]
+            y_mask = ~np.isnan(y)
+            if np.sum(y_mask) < min(len(mag_vec), 3):
+                continue
+            # TODO once the position errors are calculated and propagated, should be used
+            p, pcov = np.polyfit(mag_vec[y_mask], y[y_mask], 1, w=np.ones(int(np.sum(y_mask))) / err, cov='unscaled')
+            tmp_slope[i, j], tmp_slope_err[i, j] = p[0], pcov[0, 0]
+
+    slopes = np.full((new_tmp_tra.shape[2]), np.nan)
+    slopes_err = np.full((new_tmp_tra.shape[2]), np.nan)
+    for j in range(min(new_tmp_tra.shape[2], num_downstream_bpms)):
+        y = tmp_slope[:, j]
+        y_err = tmp_slope_err[:, j]
+        y_mask = ~np.isnan(y)
+        if np.sum(y_mask) <= fit_order + 1:
+            continue
+        # TODO here do odr as the x values have also measurement errors
+        p, pcov = np.polyfit(x[y_mask], y[y_mask], fit_order, w=1 / y_err[y_mask], cov='unscaled')
+        if np.abs(p[0]) < 2 * np.sqrt(pcov[0, 0]):
+            continue
+        center[j] = -p[1] / (fit_order * p[0])  # zero-crossing if linear, minimum is quadratic
+        center_err[j] = np.sqrt(center[j] ** 2 * (pcov[0,0]/p[0]**2 + pcov[1,1]/p[1]**2 - 2 * pcov[0, 1] / p[0] / p[1]))
+        slopes[j] = p[0]
+        slopes_err[j] = np.sqrt(pcov[0,0])
+
+    return slopes, slopes_err, center, center_err
+
+def get_offset(center, center_err, mask):
+    from pySC.utils import stats
+    try:
+        offset_change = stats.weighted_mean(center[mask], center_err[mask])
+        offset_change_error = stats.weighted_error(center[mask]-offset_change, center_err[mask]) / np.sqrt(stats.effective_sample_size(center[mask], stats.weights_from_errors(center_err[mask])))
+    except ZeroDivisionError as exc:
+        print(exc)
+        print('Failed to estimate offset!!')
+        print(f'Debug info: {center=}, {center_err=}, {mask=}')
+        print(f'Debug info: {center[mask]=}, {center_err[mask]=}')
+        offset_change = 0
+        offset_change_error = np.nan
+
+    return offset_change, offset_change_error
 
 def analyze_trajectory_bba_data(data: BBAData, n_downstream: int = 20):
     bpm_number = data.bpm_number

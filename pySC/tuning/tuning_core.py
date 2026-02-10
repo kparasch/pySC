@@ -10,7 +10,7 @@ from .chromaticity import Chromaticity
 from .c_minus import CMinus
 from .rf_tuning import RF_tuning
 from ..core.control import IndivControl
-from .pySC_interface import pySCInjectionInterface
+from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 from ..apps import orbit_correction
 
 import numpy as np
@@ -180,58 +180,54 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_pseudo_orbit_at_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, zerosum=False):
-        RM_name = 'orbit'
-        self.fetch_response_matrix(RM_name, orbit=True)
-        RM = self.response_matrix[RM_name]
-        RM.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms)
-
-        for _ in range(n_reps):
-            trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
-            pseudo_orbit_x = np.nanmean(trajectory_x, axis=1)
-            pseudo_orbit_y = np.nanmean(trajectory_y, axis=1)
-            pseudo_orbit = np.concat((pseudo_orbit_x, pseudo_orbit_y))
-
-            trims = RM.solve(pseudo_orbit, method=method, parameter=parameter, zerosum=zerosum)
-
-            settings = self._parent.magnet_settings
-            for control_name, trim in zip(self.CORR, trims):
-                setpoint = settings.get(control_name=control_name) - gain * trim
-                settings.set(control_name=control_name, setpoint=setpoint)
-
-        trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
-        trajectory_x = trajectory_x.flatten('F')
-        trajectory_y = trajectory_y.flatten('F')
-        rms_x = np.nanstd(trajectory_x) * 1e6
-        rms_y = np.nanstd(trajectory_y) * 1e6
-        bad_readings = sum(np.isnan(trajectory_x))
-        good_turns = (len(trajectory_x) - bad_readings) / len(self._parent.bpm_system.indices)
-        logger.info(f'Corrected injection: transmission through {good_turns:.2f}/{n_turns} turns, {rms_x=:.1f} um, {rms_y=:.1f} um.')
-
-        return
-
     def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, zerosum=False):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
-        RM = self.response_matrix[RM_name]
-        RM.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms)
+        response_matrix = self.response_matrix[RM_name]
+        response_matrix.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms)
+
+        SC = self._parent
+        interface = pySCOrbitInterface(SC=SC)
 
         for _ in range(n_reps):
-            orbit_x, orbit_y = self._parent.bpm_system.capture_orbit()
-            orbit = np.concat((orbit_x.flatten(order='F'), orbit_y.flatten(order='F')))
+            trims = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
+                                     method=method, parameter=parameter, zerosum=zerosum, apply=True)
 
-            trims = RM.solve(orbit, method=method, parameter=parameter, zerosum=zerosum)
-
-            settings = self._parent.magnet_settings
-            for control_name, trim in zip(self.CORR, trims):
-                setpoint = settings.get(control_name=control_name) - gain * trim
-                settings.set(control_name=control_name, setpoint=setpoint)
-
-        orbit_x, orbit_y = self._parent.bpm_system.capture_orbit()
+        orbit_x, orbit_y = SC.bpm_system.capture_orbit()
         rms_x = np.nanstd(orbit_x) * 1e6
         rms_y = np.nanstd(orbit_y) * 1e6
         logger.info(f'Corrected orbit: {rms_x=:.1f} um, {rms_y=:.1f} um.')
         return
+
+    # def correct_pseudo_orbit_at_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, zerosum=False):
+    #     RM_name = 'orbit'
+    #     self.fetch_response_matrix(RM_name, orbit=True)
+    #     RM = self.response_matrix[RM_name]
+    #     RM.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms)
+
+    #     for _ in range(n_reps):
+    #         trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
+    #         pseudo_orbit_x = np.nanmean(trajectory_x, axis=1)
+    #         pseudo_orbit_y = np.nanmean(trajectory_y, axis=1)
+    #         pseudo_orbit = np.concat((pseudo_orbit_x, pseudo_orbit_y))
+
+    #         trims = RM.solve(pseudo_orbit, method=method, parameter=parameter, zerosum=zerosum)
+
+    #         settings = self._parent.magnet_settings
+    #         for control_name, trim in zip(self.CORR, trims):
+    #             setpoint = settings.get(control_name=control_name) - gain * trim
+    #             settings.set(control_name=control_name, setpoint=setpoint)
+
+    #     trajectory_x, trajectory_y = self._parent.bpm_system.capture_injection(n_turns=n_turns)
+    #     trajectory_x = trajectory_x.flatten('F')
+    #     trajectory_y = trajectory_y.flatten('F')
+    #     rms_x = np.nanstd(trajectory_x) * 1e6
+    #     rms_y = np.nanstd(trajectory_y) * 1e6
+    #     bad_readings = sum(np.isnan(trajectory_x))
+    #     good_turns = (len(trajectory_x) - bad_readings) / len(self._parent.bpm_system.indices)
+    #     logger.info(f'Corrected injection: transmission through {good_turns:.2f}/{n_turns} turns, {rms_x=:.1f} um, {rms_y=:.1f} um.')
+
+    #     return
 
     def fit_dispersive_orbit(self):
         SC = self._parent

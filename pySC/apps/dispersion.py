@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .codes import DispersionCode
 from ..utils.file_tools import dict_to_h5
-from ..tuning.tools import get_average_orbit
+from .tools import get_average_orbit
 from .interface import AbstractInterface
 from ..core.types import NPARRAY
 

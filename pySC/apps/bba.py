@@ -7,7 +7,7 @@ from pathlib import Path
 
 from .codes import BBACode
 from ..utils.file_tools import dict_to_h5
-from ..tuning.tools import get_average_orbit
+from .tools import get_average_orbit
 from .interface import AbstractInterface
 
 # from ..tuning.orbit_bba import reject_bpm_outlier, reject_center_outlier, reject_slopes, get_slopes_center, get_offset

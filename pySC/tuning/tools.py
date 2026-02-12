@@ -1,4 +1,3 @@
-import numpy as np
 import logging
 from typing import Callable
 from ..apps.tools import get_average_orbit as app_get_average_orbit

@@ -166,7 +166,7 @@ class Tuning(BaseModel, extra="forbid"):
         interface = pySCInjectionInterface(SC=SC, n_turns=n_turns)
 
         for _ in range(n_reps):
-            trims = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
+            _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
                                      method=method, parameter=parameter, apply=True)
 
         trajectory_x, trajectory_y = SC.bpm_system.capture_injection(n_turns=n_turns)
@@ -190,7 +190,7 @@ class Tuning(BaseModel, extra="forbid"):
         interface = pySCOrbitInterface(SC=SC)
 
         for _ in range(n_reps):
-            trims = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
+            _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
                                      method=method, parameter=parameter, zerosum=zerosum, apply=True)
 
         orbit_x, orbit_y = SC.bpm_system.capture_orbit()

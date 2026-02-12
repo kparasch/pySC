@@ -71,10 +71,6 @@ class Tune(BaseModel, extra="forbid"):
         TRM = np.zeros((2,2))
         TRM[:, 0] = self.tune_response(self.controls_1, dk=dk)
         TRM[:, 1] = self.tune_response(self.controls_2, dk=dk)
-        iTRM = np.linalg.inv(TRM)
-
-        #self.tune_response_matrix = TRM
-        #self.inverse_tune_response_matrix = iTRM
         return TRM
 
     def create_tune_knobs(self, delta: float = 1e-5) -> None:

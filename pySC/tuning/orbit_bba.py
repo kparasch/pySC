@@ -6,17 +6,12 @@ import logging
 from ..core.control import IndivControl
 from .pySC_interface import pySCOrbitInterface
 from ..apps import measure_bba
-from ..apps.bba import analyze_bba_data
+from ..apps.bba import BBAAnalysis
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..core.new_simulated_commissioning import SimulatedCommissioning
-
-BPM_OUTLIER = 6 # number of sigma
-SLOPE_FACTOR = 0.10 # of max slope
-CENTER_OUTLIER = 1 # number of sigma
-
 
 def get_mag_s_pos(SC: "SimulatedCommissioning", MAG: list[str]):
     s_list = []
@@ -37,7 +32,6 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
     @classmethod
     def generate_config(cls, SC: "SimulatedCommissioning", max_dx_at_bpm = 1e-3,
                         max_modulation=20e-6):
- #                       max_modulation=600e-6, max_dx_at_bpm=1.5e-3
 
         config = {}
         RM_name = 'orbit'
@@ -154,10 +148,12 @@ def orbit_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: int = 7
         data = measurement.V_data
 
     try:
-        offset, offset_err = analyze_bba_data(data)
+        analysis_result = BBAAnalysis.analyze(data)
+        offset = analysis_result.offset
+        offset_error = analysis_result.offset_error
     except Exception as exc:
         print(exc)
         logger.warning(f'Failed to compute trajectory BBA for BPM {bpm_name}')
-        offset, offset_err = 0, np.nan
+        offset, offset_error = 0, np.nan
 
-    return offset, offset_err
+    return offset, offset_error

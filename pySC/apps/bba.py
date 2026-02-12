@@ -1,5 +1,5 @@
-from pydantic import BaseModel, PrivateAttr
-from typing import Optional
+from pydantic import BaseModel, PrivateAttr, ConfigDict
+from typing import Optional, ClassVar
 import datetime
 import logging
 import numpy as np
@@ -9,7 +9,7 @@ from .codes import BBACode
 from ..utils.file_tools import dict_to_h5
 from .tools import get_average_orbit
 from .interface import AbstractInterface
-
+from ..core.types import NPARRAY
 # from ..tuning.orbit_bba import reject_bpm_outlier, reject_center_outlier, reject_slopes, get_slopes_center, get_offset
 
 logger = logging.getLogger(__name__)
@@ -279,255 +279,426 @@ class BBA_Measurement(BaseModel):
     #     for code in generator:
     #         logger.debug(f'    Got code: {code}')
 
+def prep_ios(data: BBAData, n_downstream: Optional[int] = None):
+    bpm_number = data.bpm_number
+    bpm_position = np.full((data.n0), np.nan)
+
+    if n_downstream is not None:
+        induced_orbit_shift = np.full((data.n0, n_downstream), np.nan)
+        start = bpm_number
+        end = bpm_number + n_downstream
+    else:
+        n_bpm = len(data.raw_bpm_x_center[0])
+        induced_orbit_shift = np.full((data.n0, n_bpm), np.nan)
+        start = 0
+        end = n_bpm
+
+    x_up = np.array(data.raw_bpm_x_up)
+    y_up = np.array(data.raw_bpm_y_up)
+    x_center = np.array(data.raw_bpm_x_center)
+    y_center = np.array(data.raw_bpm_y_center)
+    if data.bipolar:
+        k1_arr = [-data.dk1l, 0, data.dk1l]
+        x_down = np.array(data.raw_bpm_x_down)
+        y_down = np.array(data.raw_bpm_y_down)
+        all_x = np.array([x_down[:, start:end], x_center[:,start:end], x_up[:, start:end]])
+        all_y = np.array([y_down[:, start:end], y_center[:,start:end], y_up[:, start:end]])
+    else:
+        k1_arr = [0, data.dk1l]
+        all_x = np.array([x_center[:,start:end], x_up[:, start:end]])
+        all_y = np.array([y_center[:,start:end], y_up[:, start:end]])
+
+    for ii in range(data.n0):
+        if data.plane == 'H':
+            bpm_position[ii] = np.mean(all_x[:, ii, bpm_number - start])
+            if data.skew_quad:
+                induced_orbit_shift[ii] = np.polyfit(k1_arr, all_y[:,ii], 1)[0] * data.dk1l
+            else:
+                induced_orbit_shift[ii] = np.polyfit(k1_arr, all_x[:,ii], 1)[0] * data.dk1l
+        else:
+            bpm_position[ii] = np.mean(all_y[:, ii, bpm_number - start])
+            if data.skew_quad:
+                induced_orbit_shift[ii] = np.polyfit(k1_arr, all_x[:,ii], 1)[0] * data.dk1l
+            else:
+                induced_orbit_shift[ii] = np.polyfit(k1_arr, all_y[:,ii], 1)[0] * data.dk1l
+    return bpm_position, induced_orbit_shift
+
+def reject_bpm_outlier(induced_orbit_shift: np.ndarray, bpm_outlier_sigma: float) -> np.ndarray[bool]:
+    n_bpms = induced_orbit_shift.shape[1]
+    mask = np.ones(n_bpms, dtype=bool)
+    for bpm in range(n_bpms):
+        data = induced_orbit_shift[:, bpm]
+        if np.any(data - np.mean(data) > bpm_outlier_sigma * np.std(data)):
+            mask[bpm] = False
+    return mask
+
+def reject_slopes(slopes: np.ndarray, slope_cutoff: float) -> np.ndarray[bool]:
+    max_slope = np.nanmax(np.abs(slopes))
+    mask = np.abs(slopes) > slope_cutoff * max_slope
+    return mask
+
+def reject_center_outlier(center: np.ndarray, center_cutoff: float) -> np.ndarray[bool]:
+    mean = np.nanmean(center)
+    std = np.nanstd(center)
+    mask =  abs(center - mean) < center_cutoff * std
+    return mask
 
 class BBAAnalysis(BaseModel):
     offset: float
     offset_error: float
 
-    slopes: list[float]
-    centers: list[float]
+    slopes: NPARRAY
+    centers: NPARRAY
 
-    modulation: list[list[float]]
-    position: list[list[float]]
+    slopes_err: NPARRAY
+    centers_err: NPARRAY
+
+    induced_orbit_shift: NPARRAY
+    bpm_position: NPARRAY
+
+    mask_accepted: NPARRAY
+
+    n_downstream: Optional[int]
 
     rejected_outliers: int
     rejected_slopes: int
     rejected_centers: int
 
+    bpm_outlier_sigma: float
+    slope_cutoff: float
+    center_cutoff: float
+
+    default_bpm_outlier_sigma: ClassVar[float] = 6 # number of sigma
+    default_slope_cutoff: ClassVar[float] = 0.10 # of max slope
+    default_center_cutoff: ClassVar[int] = 1 # number of sigma
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
     @classmethod
-    def analyze(cls, data: BBAData):
-        return BBAAnalysis()
+    def analyze(cls, data: BBAData, n_downstream: Optional[int] = None, bpm_outlier_sigma: Optional[float] = None,
+                slope_cutoff: Optional[float] = None, center_cutoff: Optional[float] = None):
 
-BPM_OUTLIER = 6 # number of sigma
-SLOPE_FACTOR = 0.10 # of max slope
-CENTER_OUTLIER = 1 # number of sigma
+        if bpm_outlier_sigma is None:
+            bpm_outlier_sigma = cls.default_bpm_outlier_sigma
 
-def reject_bpm_outlier(orbits):
-    n_k1 = orbits.shape[1]
-    n_bpms = orbits.shape[2]
-    mask = np.ones(n_bpms, dtype=bool)
-    for k1_step in range(n_k1):
-        for bpm in range(n_bpms):
-            data = orbits[:, k1_step, bpm]
-            if np.any(data - np.mean(data) > BPM_OUTLIER * np.std(data)):
-                mask[bpm] = False
- 
-    # n_rejections = n_bpms - np.sum(mask)
-    # print(f"Rejected {n_rejections}/{n_bpms} bpms for bpm outliers ( > {BPM_OUTLIER} r.m.s. )")
-    return mask
+        if slope_cutoff is None:
+            slope_cutoff = cls.default_slope_cutoff
 
-def reject_slopes(slopes):
-    max_slope = np.nanmax(np.abs(slopes))
-    mask = np.abs(slopes) > SLOPE_FACTOR * max_slope
+        if center_cutoff is None:
+            center_cutoff = cls.default_center_cutoff
 
-    # n_rejections = len(slopes) - np.sum(mask)
-    # print(f"Rejected {n_rejections}/{len(slopes)} bpms for small slope ( < {SLOPE_FACTOR} * max(slope) )")
-    return mask
+        bpm_position, induced_orbit_shift = prep_ios(data=data, n_downstream=n_downstream)
 
-def reject_center_outlier(center):
-    mean = np.nanmean(center)
-    std = np.nanstd(center)
-    mask =  abs(center - mean) < CENTER_OUTLIER * std
+        p, pcov = np.polyfit(bpm_position, induced_orbit_shift, 1, cov=True)
+        slopes = p[0]
+        centers = - p[1] / p[0]
+        slopes_err = np.sqrt(pcov[0,0])
+        centers_err = np.sqrt(centers ** 2 * (pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1]))
 
-    # n_rejections = len(center) - np.sum(mask)
-    # print(f"Rejected {n_rejections}/{len(center)} bpms for center away from mean ( > {CENTER_OUTLIER} r.m.s. )")
-    return mask
+        mask_bpm_outlier = reject_bpm_outlier(induced_orbit_shift, bpm_outlier_sigma)
+        mask_slopes = reject_slopes(slopes, slope_cutoff)
+        mask_center = reject_center_outlier(centers, center_cutoff)
+        mask_accepted = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
 
-def get_slopes_center(bpm_pos, orbits, dk1):
-    mag_vec = np.array([dk1, -dk1])
-    num_downstream_bpms = orbits.shape[2]
-    fit_order = 1
-    x = np.mean(bpm_pos, axis=1)
-    x_mask = ~np.isnan(x)
-    err = np.mean(np.std(bpm_pos[x_mask, :], axis=1))
-    x = x[x_mask]
-    new_tmp_tra = orbits[x_mask, :, :]
+        # calculate offset as a weighted average of the centers, with weights equal to the absolute slope
+        cc = centers[mask_accepted]
+        ww = np.abs(slopes[mask_accepted])
+        cc_err = centers_err[mask_accepted]
+        ww_err = slopes_err[mask_accepted]
 
-    tmp_slope = np.full((new_tmp_tra.shape[0], new_tmp_tra.shape[2]), np.nan)
-    tmp_slope_err = np.full((new_tmp_tra.shape[0], new_tmp_tra.shape[2]), np.nan)
-    center = np.full((new_tmp_tra.shape[2]), np.nan)
-    center_err = np.full((new_tmp_tra.shape[2]), np.nan)
-    for i in range(new_tmp_tra.shape[0]):
-        for j in range(new_tmp_tra.shape[2]):
-            y = new_tmp_tra[i, :, j]
-            y_mask = ~np.isnan(y)
-            if np.sum(y_mask) < min(len(mag_vec), 3):
-                continue
-            # TODO once the position errors are calculated and propagated, should be used
-            p, pcov = np.polyfit(mag_vec[y_mask], y[y_mask], 1, w=np.ones(int(np.sum(y_mask))) / err, cov='unscaled')
-            tmp_slope[i, j], tmp_slope_err[i, j] = p[0], pcov[0, 0]
+        CS = np.sum(ww * cc)
+        S = np.sum(ww) 
+        VS = np.sum(ww_err**2) # variance of S
+        VCS = np.sum(cc**2 * ww_err**2 + ww**2 * cc_err**2) # variance of CS
+        VO = ( VCS / CS**2 + VS / S**2) # (variance of offset) / offset**2
 
-    slopes = np.full((new_tmp_tra.shape[2]), np.nan)
-    slopes_err = np.full((new_tmp_tra.shape[2]), np.nan)
-    for j in range(min(new_tmp_tra.shape[2], num_downstream_bpms)):
-        y = tmp_slope[:, j]
-        y_err = tmp_slope_err[:, j]
-        y_mask = ~np.isnan(y)
-        if np.sum(y_mask) <= fit_order + 1:
-            continue
-        # TODO here do odr as the x values have also measurement errors
-        p, pcov = np.polyfit(x[y_mask], y[y_mask], fit_order, w=1 / y_err[y_mask], cov='unscaled')
-        if np.abs(p[0]) < 2 * np.sqrt(pcov[0, 0]):
-            continue
-        center[j] = -p[1] / (fit_order * p[0])  # zero-crossing if linear, minimum is quadratic
-        center_err[j] = np.sqrt(center[j] ** 2 * (pcov[0,0]/p[0]**2 + pcov[1,1]/p[1]**2 - 2 * pcov[0, 1] / p[0] / p[1]))
-        slopes[j] = p[0]
-        slopes_err[j] = np.sqrt(pcov[0,0])
+        offset = CS / S # offset = CS / S, average of centers with abs(slopes) as weights
+        offset_error = offset * np.sqrt(VO)
 
-    return slopes, slopes_err, center, center_err
+        result = BBAAnalysis(
+                             offset=offset,
+                             offset_error=offset_error,
+                             slopes=slopes,
+                             centers=centers,
+                             slopes_err=slopes_err,
+                             centers_err=centers_err,
+                             induced_orbit_shift=induced_orbit_shift,
+                             bpm_position=bpm_position,
+                             mask_accepted=mask_accepted,
+                             n_downstream=n_downstream,
+                             rejected_outliers=sum(~mask_bpm_outlier),
+                             rejected_slopes=sum(~mask_slopes),
+                             rejected_centers=sum(~mask_center),
+                             total_rejections=sum(~mask_accepted),
+                             bpm_outlier_sigma=bpm_outlier_sigma,
+                             slope_cutoff=slope_cutoff,
+                             center_cutoff=center_cutoff,
+                            )
+        return result
 
-def get_offset(center, center_err, mask):
-    from pySC.utils import stats
-    try:
-        offset_change = stats.weighted_mean(center[mask], center_err[mask])
-        offset_change_error = stats.weighted_error(center[mask]-offset_change, center_err[mask]) / np.sqrt(stats.effective_sample_size(center[mask], stats.weights_from_errors(center_err[mask])))
-    except ZeroDivisionError as exc:
-        print(exc)
-        print('Failed to estimate offset!!')
-        print(f'Debug info: {center=}, {center_err=}, {mask=}')
-        print(f'Debug info: {center[mask]=}, {center_err[mask]=}')
-        offset_change = 0
-        offset_change_error = np.nan
-
-    return offset_change, offset_change_error
-
-def analyze_trajectory_bba_data(data: BBAData, n_downstream: int = 20):
-    bpm_number = data.bpm_number
-    orbits = np.full((data.n0, 2, n_downstream), np.nan)
-    bpm_pos = np.full((data.n0, 2), np.nan)
-    start = bpm_number
-    end = bpm_number + n_downstream
-    for ii in range(data.n0):
-        if data.plane == 'H':
-            bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
-            bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
-            if data.skew_quad:
-                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
-                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
-            else:
-                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
-                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
-
-        else:
-            bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
-            bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
-            if data.skew_quad:
-                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
-                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
-            else:
-                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
-                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
-
-    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
-    mask_bpm_outlier = reject_bpm_outlier(orbits)
-    mask_slopes = reject_slopes(slopes)
-    mask_center = reject_center_outlier(center)
-    final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
-
-    offset, offset_err = get_offset(center, center_err, final_mask)
-    return offset, offset_err
-
-def analyze_bba_data(data: BBAData):
-    bpm_number = data.bpm_number
-    nbpms = len(data.raw_bpm_x_center[0])
-    orbits = np.full((data.n0, 2, nbpms), np.nan)
-    bpm_pos = np.full((data.n0, 2), np.nan)
-    for ii in range(data.n0):
-        if data.plane == 'H':
-            bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
-            bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
-            if data.skew_quad:
-                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
-                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
-            else:
-                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
-                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
-
-        else:
-            bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
-            bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
-            if data.skew_quad:
-                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
-                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
-            else:
-                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
-                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
-
-    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
-    mask_bpm_outlier = reject_bpm_outlier(orbits)
-    mask_slopes = reject_slopes(slopes)
-    mask_center = reject_center_outlier(center)
-    final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
-
-    offset, offset_err = get_offset(center, center_err, final_mask)
-    return offset, offset_err
-
-def get_trajectory_bba_analysis_data(data: BBAData, n_downstream: int = 20):
-    bpm_number = data.bpm_number
-    nbpms = len(data.raw_bpm_x_center[0])
-    orbits = np.full((data.n0, 2, n_downstream), np.nan)
-    bpm_pos = np.full((data.n0, 2), np.nan)
-    start = bpm_number
-    end = bpm_number + n_downstream
-    for ii in range(data.n0):
-        if data.plane == 'H':
-            bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
-            bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
-            if data.skew_quad:
-                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
-                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
-            else:
-                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
-                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
-        else:
-            bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
-            bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
-            if data.skew_quad:
-                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
-                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
-            else:
-                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
-                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
-
-    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
-    mask_bpm_outlier = reject_bpm_outlier(orbits)
-    mask_slopes = reject_slopes(slopes)
-    mask_center = reject_center_outlier(center)
-    final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
-
-    offset, offset_err = get_offset(center, center_err, final_mask)
-    return bpm_pos, orbits, slopes, center, final_mask, offset
-
-def get_bba_analysis_data(data: BBAData):
-    bpm_number = data.bpm_number
-    nbpms = len(data.raw_bpm_x_center[0])
-    orbits = np.full((data.n0, 2, nbpms), np.nan)
-    bpm_pos = np.full((data.n0, 2), np.nan)
-    for ii in range(data.n0):
-        if data.plane == 'H':
-            bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
-            bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
-            if data.skew_quad:
-                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
-                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
-            else:
-                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
-                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
-        else:
-            bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
-            bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
-            if data.skew_quad:
-                orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
-                orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
-            else:
-                orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
-                orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
-
-    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
-    mask_bpm_outlier = reject_bpm_outlier(orbits)
-    mask_slopes = reject_slopes(slopes)
-    mask_center = reject_center_outlier(center)
-    final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
-
-    offset, offset_err = get_offset(center, center_err, final_mask)
-    return bpm_pos, orbits, slopes, center, final_mask, offset
+# BPM_OUTLIER = 6 # number of sigma
+# SLOPE_FACTOR = 0.10 # of max slope
+# CENTER_OUTLIER = 1 # number of sigma
+# 
+# 
+# def get_slopes_center(bpm_pos, orbits, dk1):
+#     mag_vec = np.array([dk1, -dk1])
+#     num_downstream_bpms = orbits.shape[2]
+#     fit_order = 1
+#     x = np.mean(bpm_pos, axis=1)
+#     x_mask = ~np.isnan(x)
+#     err = np.mean(np.std(bpm_pos[x_mask, :], axis=1))
+#     x = x[x_mask]
+#     new_tmp_tra = orbits[x_mask, :, :]
+# 
+#     tmp_slope = np.full((new_tmp_tra.shape[0], new_tmp_tra.shape[2]), np.nan)
+#     tmp_slope_err = np.full((new_tmp_tra.shape[0], new_tmp_tra.shape[2]), np.nan)
+#     center = np.full((new_tmp_tra.shape[2]), np.nan)
+#     center_err = np.full((new_tmp_tra.shape[2]), np.nan)
+#     for i in range(new_tmp_tra.shape[0]):
+#         for j in range(new_tmp_tra.shape[2]):
+#             y = new_tmp_tra[i, :, j]
+#             y_mask = ~np.isnan(y)
+#             if np.sum(y_mask) < min(len(mag_vec), 3):
+#                 continue
+#             # TODO once the position errors are calculated and propagated, should be used
+#             p, pcov = np.polyfit(mag_vec[y_mask], y[y_mask], 1, w=np.ones(int(np.sum(y_mask))) / err, cov='unscaled')
+#             tmp_slope[i, j], tmp_slope_err[i, j] = p[0], pcov[0, 0]
+# 
+#     slopes = np.full((new_tmp_tra.shape[2]), np.nan)
+#     slopes_err = np.full((new_tmp_tra.shape[2]), np.nan)
+#     for j in range(min(new_tmp_tra.shape[2], num_downstream_bpms)):
+#         y = tmp_slope[:, j]
+#         y_err = tmp_slope_err[:, j]
+#         y_mask = ~np.isnan(y)
+#         if np.sum(y_mask) <= fit_order + 1:
+#             continue
+#         # TODO here do odr as the x values have also measurement errors
+#         p, pcov = np.polyfit(x[y_mask], y[y_mask], fit_order, w=1 / y_err[y_mask], cov='unscaled')
+#         if np.abs(p[0]) < 2 * np.sqrt(pcov[0, 0]):
+#             continue
+#         center[j] = -p[1] / (fit_order * p[0])  # zero-crossing if linear, minimum is quadratic
+#         center_err[j] = np.sqrt(center[j] ** 2 * (pcov[0,0]/p[0]**2 + pcov[1,1]/p[1]**2 - 2 * pcov[0, 1] / p[0] / p[1]))
+#         slopes[j] = p[0]
+#         slopes_err[j] = np.sqrt(pcov[0,0])
+# 
+#     return slopes, slopes_err, center, center_err
+# 
+# def get_offset(center, center_err, mask):
+#     from pySC.utils import stats
+#     try:
+#         offset_change = stats.weighted_mean(center[mask], center_err[mask])
+#         offset_change_error = stats.weighted_error(center[mask]-offset_change, center_err[mask]) / np.sqrt(stats.effective_sample_size(center[mask], stats.weights_from_errors(center_err[mask])))
+#     except ZeroDivisionError as exc:
+#         print(exc)
+#         print('Failed to estimate offset!!')
+#         print(f'Debug info: {center=}, {center_err=}, {mask=}')
+#         print(f'Debug info: {center[mask]=}, {center_err[mask]=}')
+#         offset_change = 0
+#         offset_change_error = np.nan
+# 
+#     return offset_change, offset_change_error
+# 
+# def old_analyze_trajectory_bba_data(data: BBAData, n_downstream: int = 20):
+#     bpm_number = data.bpm_number
+#     orbits = np.full((data.n0, 2, n_downstream), np.nan)
+#     bpm_pos = np.full((data.n0, 2), np.nan)
+#     start = bpm_number
+#     end = bpm_number + n_downstream
+#     for ii in range(data.n0):
+#         if data.plane == 'H':
+#             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
+#             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
+#             if data.skew_quad:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
+#             else:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
+# 
+#         else:
+#             bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
+#             bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
+#             if data.skew_quad:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
+#             else:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
+# 
+#     slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
+#     mask_bpm_outlier = reject_bpm_outlier(orbits)
+#     mask_slopes = reject_slopes(slopes)
+#     mask_center = reject_center_outlier(center)
+#     final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+# 
+#     offset, offset_err = get_offset(center, center_err, final_mask)
+#     return offset, offset_err
+# 
+# def analyze_trajectory_bba_data(data: BBAData, n_downstream: int = 20):
+#     bpm_number = data.bpm_number
+# 
+#     induced_orbit_shift = np.full((data.n0, n_downstream), np.nan)
+#     bpm_pos = np.full((data.n0), np.nan)
+#     start = bpm_number
+#     end = bpm_number + n_downstream
+# 
+#     x_up = np.array(data.raw_bpm_x_up)
+#     y_up = np.array(data.raw_bpm_y_up)
+#     x_center = np.array(data.raw_bpm_x_center)
+#     y_center = np.array(data.raw_bpm_y_center)
+#     if data.bipolar:
+#         k1_arr = [-data.dk1l, 0, data.dk1l]
+#         x_down = np.array(data.raw_bpm_x_down)
+#         y_down = np.array(data.raw_bpm_y_down)
+#         all_x = np.array([x_down[:, start:end], x_center[:,start:end], x_up[:, start:end]])
+#         all_y = np.array([y_down[:, start:end], y_center[:,start:end], y_up[:, start:end]])
+#     else:
+#         k1_arr = [0, data.dk1l]
+#         all_x = np.array([x_center[:,start:end], x_up[:, start:end]])
+#         all_y = np.array([y_center[:,start:end], y_up[:, start:end]])
+# 
+#     for ii in range(data.n0):
+#         if data.plane == 'H':
+#             bpm_pos[ii] = np.mean(all_x[:, ii, bpm_number - start])
+#             if data.skew_quad:
+#                 induced_orbit_shift[ii] = np.polyfit(k1_arr, all_y[:,ii], 1)[0] * data.dk1l
+#             else:
+#                 induced_orbit_shift[ii] = np.polyfit(k1_arr, all_x[:,ii], 1)[0] * data.dk1l
+#         else:
+#             bpm_pos[ii] = np.mean(all_y[:, ii, bpm_number - start])
+#             if data.skew_quad:
+#                 induced_orbit_shift[ii] = np.polyfit(k1_arr, all_x[:,ii], 1)[0] * data.dk1l
+#             else:
+#                 induced_orbit_shift[ii] = np.polyfit(k1_arr, all_y[:,ii], 1)[0] * data.dk1l
+# 
+#     p, pcov = np.polyfit(bpm_pos, induced_orbit_shift, 1, cov=True)
+#     slopes = p[0]
+#     center = - p[1] / p[0]
+#     slopes_err = np.sqrt(pcov[0,0])
+#     center_err = np.sqrt(center ** 2 * (pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1]))
+# 
+#     mask_bpm_outlier = reject_bpm_outlier(induced_orbit_shift)
+#     mask_slopes = reject_slopes(slopes)
+#     mask_center = reject_center_outlier(center)
+#     final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+# 
+#     cc = center[final_mask]
+#     ww = np.abs(slopes[final_mask])
+#     cc_err = center_err[final_mask]
+#     ww_err = slopes_err[final_mask]
+# 
+#     CS = np.sum(ww * cc)
+#     S = np.sum(ww) 
+#     offset = CS / S # offset = CS / S, average of centers with abs(slopes) as weights
+#     VS = np.sum(ww_err**2) # variance of S
+#     VCS = np.sum(cc**2 * ww_err**2 + ww**2 * cc_err**2) # variance of CS
+#     VO = ( VCS / CS**2 + VS / S**2) # (variance of offset) / offset**2
+#     offset_err = offset * np.sqrt(VO)
+# 
+#     return offset, offset_err
+# 
+# def analyze_bba_data(data: BBAData):
+#     bpm_number = data.bpm_number
+#     nbpms = len(data.raw_bpm_x_center[0])
+#     orbits = np.full((data.n0, 2, nbpms), np.nan)
+#     bpm_pos = np.full((data.n0, 2), np.nan)
+#     for ii in range(data.n0):
+#         if data.plane == 'H':
+#             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
+#             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
+#             if data.skew_quad:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+#             else:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+# 
+#         else:
+#             bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
+#             bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
+#             if data.skew_quad:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+#             else:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+# 
+#     slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
+#     mask_bpm_outlier = reject_bpm_outlier(orbits)
+#     mask_slopes = reject_slopes(slopes)
+#     mask_center = reject_center_outlier(center)
+#     final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+# 
+#     offset, offset_err = get_offset(center, center_err, final_mask)
+#     return offset, offset_err
+# 
+# def get_trajectory_bba_analysis_data(data: BBAData, n_downstream: int = 20):
+#     bpm_number = data.bpm_number
+#     nbpms = len(data.raw_bpm_x_center[0])
+#     orbits = np.full((data.n0, 2, n_downstream), np.nan)
+#     bpm_pos = np.full((data.n0, 2), np.nan)
+#     start = bpm_number
+#     end = bpm_number + n_downstream
+#     for ii in range(data.n0):
+#         if data.plane == 'H':
+#             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
+#             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
+#             if data.skew_quad:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
+#             else:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
+#         else:
+#             bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
+#             bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
+#             if data.skew_quad:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii][start:end]) - np.array(data.raw_bpm_x_center[ii][start:end])
+#             else:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii][start:end]) - np.array(data.raw_bpm_y_center[ii][start:end])
+# 
+#     slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
+#     mask_bpm_outlier = reject_bpm_outlier(orbits)
+#     mask_slopes = reject_slopes(slopes)
+#     mask_center = reject_center_outlier(center)
+#     final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+# 
+#     offset, offset_err = get_offset(center, center_err, final_mask)
+#     return bpm_pos, orbits, slopes, center, final_mask, offset
+# 
+# def get_bba_analysis_data(data: BBAData):
+#     bpm_number = data.bpm_number
+#     nbpms = len(data.raw_bpm_x_center[0])
+#     orbits = np.full((data.n0, 2, nbpms), np.nan)
+#     bpm_pos = np.full((data.n0, 2), np.nan)
+#     for ii in range(data.n0):
+#         if data.plane == 'H':
+#             bpm_pos[ii, 0] = data.raw_bpm_x_up[ii][bpm_number]
+#             bpm_pos[ii, 1] = data.raw_bpm_x_down[ii][bpm_number]
+#             if data.skew_quad:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+#             else:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+#         else:
+#             bpm_pos[ii, 0] = data.raw_bpm_y_up[ii][bpm_number]
+#             bpm_pos[ii, 1] = data.raw_bpm_y_down[ii][bpm_number]
+#             if data.skew_quad:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_x_up[ii]) - np.array(data.raw_bpm_x_center[ii])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_x_down[ii]) - np.array(data.raw_bpm_x_center[ii])
+#             else:
+#                 orbits[ii, 0] = np.array(data.raw_bpm_y_up[ii]) - np.array(data.raw_bpm_y_center[ii])
+#                 orbits[ii, 1] = np.array(data.raw_bpm_y_down[ii]) - np.array(data.raw_bpm_y_center[ii])
+# 
+#     slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, data.dk1l)
+#     mask_bpm_outlier = reject_bpm_outlier(orbits)
+#     mask_slopes = reject_slopes(slopes)
+#     mask_center = reject_center_outlier(center)
+#     final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+# 
+#     offset, offset_err = get_offset(center, center_err, final_mask)
+#     return bpm_pos, orbits, slopes, center, final_mask, offset

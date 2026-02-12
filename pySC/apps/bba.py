@@ -10,7 +10,6 @@ from ..utils.file_tools import dict_to_h5
 from .tools import get_average_orbit
 from .interface import AbstractInterface
 from ..core.types import NPARRAY
-# from ..tuning.orbit_bba import reject_bpm_outlier, reject_center_outlier, reject_slopes, get_slopes_center, get_offset
 
 logger = logging.getLogger(__name__)
 

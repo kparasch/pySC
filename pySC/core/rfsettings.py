@@ -3,7 +3,7 @@ from typing import Dict, Optional, Union, TYPE_CHECKING
 from pydantic import BaseModel, Field, PrivateAttr
 
 if TYPE_CHECKING:
-    from .new_simulated_commissioning import SimulatedCommissioning
+    from .simulated_commissioning import SimulatedCommissioning
 
 CAVITY_NAME_TYPE = Union[str, int]
 

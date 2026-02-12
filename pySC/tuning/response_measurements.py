@@ -6,7 +6,7 @@ from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 from ..apps import measure_ORM, measure_dispersion
 
 if TYPE_CHECKING:
-    from ..core.new_simulated_commissioning import SimulatedCommissioning
+    from ..core.simulated_commissioning import SimulatedCommissioning
 
 logger = logging.getLogger(__name__)
 

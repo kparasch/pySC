@@ -19,7 +19,7 @@ import logging
 from multiprocessing import Process, Queue
 
 if TYPE_CHECKING:
-    from ..core.new_simulated_commissioning import SimulatedCommissioning
+    from ..core.simulated_commissioning import SimulatedCommissioning
 
 logger = logging.getLogger(__name__)
 

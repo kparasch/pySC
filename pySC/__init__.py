@@ -8,7 +8,7 @@ pySC
 
 __version__ = "0.5.0"
 
-from .core.new_simulated_commissioning import SimulatedCommissioning
+from .core.simulated_commissioning import SimulatedCommissioning
 from .configuration.generation import generate_SC
 from .apps.response_matrix import ResponseMatrix
 from .tuning.pySC_interface import pySCInjectionInterface, pySCOrbitInterface

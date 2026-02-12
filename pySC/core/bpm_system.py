@@ -5,7 +5,7 @@ import numpy as np
 import warnings
 
 if TYPE_CHECKING:
-    from .new_simulated_commissioning import SimulatedCommissioning
+    from .simulated_commissioning import SimulatedCommissioning
 
 BPM_NAME_TYPE = Union[str, int]
 

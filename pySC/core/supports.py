@@ -10,7 +10,7 @@ import logging
 
 from ..utils.sc_tools import update_transformation
 if TYPE_CHECKING:
-    from .new_simulated_commissioning import SimulatedCommissioning
+    from .simulated_commissioning import SimulatedCommissioning
 
 logger = logging.getLogger(__name__)
 

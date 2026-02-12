@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from ..apps.interface import AbstractInterface
 if TYPE_CHECKING:
-    from ..core.new_simulated_commissioning import SimulatedCommissioning
+    from ..core.simulated_commissioning import SimulatedCommissioning
 
 class pySCOrbitInterface(AbstractInterface):
     SC: "SimulatedCommissioning" = Field(repr=False)

@@ -2,7 +2,7 @@ from typing import Optional
 import logging
 
 from ..core.lattice import ATLattice
-from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.simulated_commissioning import SimulatedCommissioning
 from .load_config import load_yaml
 from .magnets_conf import configure_magnets
 from .bpm_system_conf import configure_bpms

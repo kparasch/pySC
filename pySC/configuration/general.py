@@ -2,7 +2,7 @@ from typing import Optional, Any
 import logging
 
 from .load_config import load_yaml
-from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.magnet import MAGNET_NAME_TYPE
 
 logger = logging.getLogger(__name__)

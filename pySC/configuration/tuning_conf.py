@@ -1,4 +1,4 @@
-from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.control import IndivControl
 from .general import get_indices_and_names
 import numpy as np

@@ -347,7 +347,7 @@ class Tuning(BaseModel, extra="forbid"):
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-    def do_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, skip_summary: bool = False, n_corr_steps: int = 7):
+    def do_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, skip_summary: bool = False, n_corr_steps: int = 5):
         SC = self._parent
         if bpm_names is None:
             bpm_names = SC.bpm_system.names
@@ -440,7 +440,7 @@ class Tuning(BaseModel, extra="forbid"):
             SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-    def do_parallel_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, omp_num_threads: int = 2, n_corr_steps: int = 7):
+    def do_parallel_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, omp_num_threads: int = 2, n_corr_steps: int = 5):
         SC = self._parent
         if bpm_names is None:
             bpm_names = SC.bpm_system.names

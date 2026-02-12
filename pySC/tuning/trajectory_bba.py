@@ -46,8 +46,8 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         #d1, d2 = RM.RM.shape
         nh = len(SC.tuning.HCORR)
         nbpm = len(SC.bpm_system.indices)
-        HRM = RM.RM[:nbpm, :nh]
-        VRM = RM.RM[nbpm:, nh:]
+        HRM = RM.matrix[:nbpm, :nh]
+        VRM = RM.matrix[nbpm:, nh:]
 
         for bpm_number in range(len(SC.bpm_system.indices)):
             bpm_index = SC.bpm_system.indices[bpm_number]

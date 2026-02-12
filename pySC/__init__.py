@@ -11,6 +11,10 @@ __version__ = "1.0.0"
 from .core.simulated_commissioning import SimulatedCommissioning
 from .configuration.generation import generate_SC
 from .apps.response_matrix import ResponseMatrix
+from .apps.measurements import orbit_correction
+from .apps.measurements import measure_bba
+from .apps.measurements import measure_ORM
+from .apps.measurements import measure_dispersion
 from .tuning.pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 import logging
 import sys

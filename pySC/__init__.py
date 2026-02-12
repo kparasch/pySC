@@ -22,16 +22,14 @@ import sys
 logging.basicConfig(
     #format='%(asctime)s.%(msecs)03d:%(levelname)s:%(name)s:\t%(message)s',
     format="{asctime} | {levelname} | {message}",
-    datefmt="%d %b% %Y, %H:%M:%S",
+    datefmt="%d %b %Y, %H:%M:%S",
     level=logging.INFO,
     style='{',
     stream=sys.stdout
 )
 
 def disable_pySC_rich():
-    from .tuning import response_measurements
     from .apps import response
-    response_measurements.DISABLE_RICH = True
     response.DISABLE_RICH = True
 
 # This is needed to avoid circular imports.

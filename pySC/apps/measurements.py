@@ -38,8 +38,8 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
 
     if apply:
         data = interface.get_many(correctors)
-        for i, corr in enumerate(correctors):
-            data[corr] += trim_list[i] * gain
+        for corr in correctors:
+            data[corr] += trims[corr] * gain
         interface.set_many(data)
         if rf and trims['rf'] != 0:
             f_rf = interface.get_rf_main_frequency()

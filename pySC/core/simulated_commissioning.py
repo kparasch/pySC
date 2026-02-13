@@ -1,4 +1,4 @@
-from pydantic import BaseModel, model_validator, Field
+from pydantic import BaseModel, model_validator, Field, PrivateAttr
 from typing import Optional
 import json
 import numpy as np
@@ -35,17 +35,22 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
     seed: int = Field(default=1, frozen=True)
     rng: Optional[RNG] = None
 
+    _initialized: bool = PrivateAttr(default=False)
+
     @model_validator(mode="after")
     def initialize(self):
-        self.propagate_parents()
-        if self.rng is None:
-            self.rng = RNG(seed=self.seed)
-        self.support_system.update_all()
-        self.design_magnet_settings.sendall()
-        self.magnet_settings.sendall()
-        for rf_settings in [self.rf_settings, self.design_rf_settings]:
-            for system_name in rf_settings.systems:
-                rf_settings.systems[system_name].trigger_update()
+        if not self._initialized:
+            self._initialized = True
+
+            self.propagate_parents()
+            if self.rng is None:
+                self.rng = RNG(seed=self.seed)
+            self.support_system.update_all()
+            self.design_magnet_settings.sendall()
+            self.magnet_settings.sendall()
+            for rf_settings in [self.rf_settings, self.design_rf_settings]:
+                for system_name in rf_settings.systems:
+                    rf_settings.systems[system_name].trigger_update()
         return self
 
     @classmethod

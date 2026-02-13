@@ -11,7 +11,7 @@ from ..apps.bba import BBAAnalysis
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ..core.new_simulated_commissioning import SimulatedCommissioning
+    from ..core.simulated_commissioning import SimulatedCommissioning
 
 def get_mag_s_pos(SC: "SimulatedCommissioning", MAG: list[str]):
     s_list = []

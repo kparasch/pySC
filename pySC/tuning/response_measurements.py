@@ -1,163 +1,86 @@
 from typing import Union, Optional, TYPE_CHECKING
 import numpy as np
+import logging
+
+from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
+from ..apps import measure_ORM, measure_dispersion
 
 if TYPE_CHECKING:
-    from ..core.new_simulated_commissioning import SimulatedCommissioning
+    from ..core.simulated_commissioning import SimulatedCommissioning
 
+logger = logging.getLogger(__name__)
 
-DISABLE_RICH = False
-
-def no_rich_progress():
-    from contextlib import nullcontext
-    progress = nullcontext()
-    progress.add_task = lambda *args, **kwargs: 1
-    progress.update = lambda *args, **kwargs: None
-    progress.remove_task = lambda *args, **kwargs: None
-    return progress
-
-try:
-    from rich.progress import Progress, BarColumn, TextColumn, MofNCompleteColumn, TimeRemainingColumn
-    rich_progress = Progress(
-                             TextColumn("[progress.description]{task.description}"),
-                             BarColumn(),
-                             MofNCompleteColumn(),
-                             TimeRemainingColumn(),
-                            )
-except ModuleNotFoundError:
-    rich_progress = no_rich_progress()
-    DISABLE_RICH = True
-
-
-def response_loop(inputs, inputs_delta, get_output, settings, normalize=True, bipolar=False):
-    n_inputs = len(inputs)
-
-    if DISABLE_RICH:
-        progress = no_rich_progress()
-    else:
-        progress = rich_progress
-
-    with progress:
-        task_id = progress.add_task("Measuring RM", start=True, total=n_inputs)
-        progress.update(task_id, total=n_inputs)
-
-        reference = get_output()
-        if np.any(np.isnan(reference)):
-            raise ValueError('Initial output is NaN. Aborting. ')
-
-        RM = np.full((len(reference), n_inputs), np.nan)
-
-        for i, control in enumerate(inputs):
-            ref_setpoint = settings.get(control)
-            delta = inputs_delta[i]
-            if bipolar:
-                step = delta/2
-                settings.set(control, ref_setpoint - step)
-                reference = get_output()
-            else:
-                step = delta
-            settings.set(control, ref_setpoint + step)
-            output = get_output()
-
-            RM[:, i] = (output - reference)
-            if normalize:
-                RM[:, i] /= delta
-            settings.set(control, ref_setpoint)
-            yield RM
-            progress.update(task_id, completed=i+1, description=f'Measuring response of {control}...')
-        progress.update(task_id, completed=n_inputs, description='Response measured.')
-        progress.remove_task(task_id)
-
-    yield RM
-
-def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = False):
-    print('Calculating response matrix')
+def measure_TrajectoryResponseMatrix(SC: "SimulatedCommissioning", n_turns: int = 1,
+                                     dkick: Union[float, list] = 1e-5, use_design: bool = False,
+                                     normalize: bool = True, bipolar: bool = False) -> np.ndarray:
+    logger.info(f'Measuring trajectory response matrix with {n_turns=}.')
 
     ### set inputs
     HCORR = SC.tuning.HCORR
     VCORR = SC.tuning.VCORR
-    CORR = HCORR + VCORR
+    corrector_names = HCORR + VCORR
 
-    n_CORR = len(CORR)
+    interface = pySCInjectionInterface(SC=SC, n_turns=n_turns)
+    interface.use_design = use_design
 
-    if type(dkick) is float:
-        kicks = np.ones(n_CORR, dtype=float) * dkick
-    else:
-        assert len(dkick) == n_CORR, f'ERROR: wrong length of dkick array provided. expected {n_CORR}, got {len(dkick)}'
-        kicks = np.array(dkick)
+    generator = measure_ORM(interface=interface, corrector_names=corrector_names,
+                            delta=dkick, bipolar=bipolar, skip_save=True)
 
-    ### set function that gathers outputs
-    def get_orbit():
-        x,y = SC.bpm_system.capture_injection(n_turns=n_turns, bba=False, subtract_reference=False, use_design=use_design)
-        return np.concat((x.flatten(order='F'), y.flatten(order='F')))
-
-    ### specify to use "real" lattice or design
-    magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
-
-    ### measure the response matrix
-    generator = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
-    for RM in generator:
+    for code, measurement in generator:
         pass
 
-    return RM
+    data = measurement.response_data
+    if normalize:
+        matrix = data.matrix 
+    else:
+        matrix = data.not_normalized_response_matrix
 
-def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[list] = None, VCORR: Optional[list] = None, dkick: Union[float, list] = 1e-5, use_design: bool = False, normalize: bool = True, bipolar: bool = True):
-    print('Calculating response matrix')
+    return matrix
+
+def measure_OrbitResponseMatrix(SC: "SimulatedCommissioning", HCORR: Optional[list] = None,
+                                VCORR: Optional[list] = None, dkick: Union[float, list] = 1e-5,
+                                use_design: bool = False, normalize: bool = True, bipolar: bool = True) -> np.ndarray:
+    logger.info('Measuring orbit response matrix.')
 
     ### set inputs
     if HCORR is None:
         HCORR = SC.tuning.HCORR
     if VCORR is None:
         VCORR = SC.tuning.VCORR
-    CORR = HCORR + VCORR
+    corrector_names = HCORR + VCORR
 
-    n_CORR = len(CORR)
+    interface = pySCOrbitInterface(SC=SC)
+    interface.use_design = use_design
 
-    if type(dkick) is float:
-        kicks = np.ones(n_CORR, dtype=float) * dkick
-    else:
-        assert len(dkick) == n_CORR, f'ERROR: wrong length of dkick array provided. expected {n_CORR}, got {len(dkick)}'
-        kicks = np.array(dkick)
+    generator = measure_ORM(interface=interface, corrector_names=corrector_names,
+                            delta=dkick, bipolar=bipolar, skip_save=True)
 
-    ### set function that gathers outputs
-    def get_orbit():
-        x,y = SC.bpm_system.capture_orbit(bba=False, subtract_reference=False, use_design=use_design)
-        return np.concat((x.flatten(order='F'), y.flatten(order='F')))
-
-    ### specify to use "real" lattice or design
-    magnet_settings = SC.design_magnet_settings if use_design else SC.magnet_settings
-
-    ### measure the response matrix
-    generator = response_loop(inputs=CORR, inputs_delta=kicks, get_output=get_orbit, settings=magnet_settings, normalize=normalize, bipolar=bipolar)
-    for RM in generator:
+    for code, measurement in generator:
         pass
 
-    return RM
-
-def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, rf_system_name: str = 'main', use_design: bool = False, normalize: bool = True, bipolar: bool = False):
-
-    rf_settings = SC.design_rf_settings if use_design else SC.rf_settings
-    rf_system = rf_settings.systems[rf_system_name]
-
-    ### function that gathers outputs
-    def get_orbit():
-        x,y = SC.bpm_system.capture_orbit(bba=False, subtract_reference=False, use_design=use_design)
-        return np.concat((x.flatten(order='F'), y.flatten(order='F')))
-
-    frf = rf_system.frequency
-    if bipolar:
-        step = delta_frf / 2
-        rf_system.set_frequency(frf - step)
-        xy0 = get_orbit()
-    else:
-        step = delta_frf
-        xy0 = get_orbit()
-    rf_system.set_frequency(frf + step)
-    xy1 = get_orbit()
-    rf_system.set_frequency(frf)
-    response = (xy1 - xy0)
+    data = measurement.response_data
     if normalize:
-        response /= delta_frf
+        matrix = data.matrix
+    else:
+        matrix = data.not_normalized_response_matrix
+
+    return matrix
+
+def measure_RFFrequencyOrbitResponse(SC: "SimulatedCommissioning", delta_frf : float = 20, use_design: bool = False,
+                                     normalize: bool = True, bipolar: bool = False) -> np.ndarray:
+    logger.info('Measuring orbit response to RF frequency (dispersion).')
+    interface = pySCOrbitInterface(SC=SC)
+    interface.use_design = use_design
+
+    generator = measure_dispersion(interface=interface, delta=delta_frf, bipolar=bipolar, skip_save=True)
+
+    for code, measurement in generator:
+        pass
+
+    data = measurement.dispersion_data
+    if normalize:
+        response = np.concatenate(data.frequency_response)
+    else:
+        response = np.concatenate(data.not_normalized_frequency_response)
 
     return response
-
-

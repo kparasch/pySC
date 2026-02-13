@@ -1,6 +1,6 @@
 import logging
 
-from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.rfsettings import RFCavity, RFSystem
 from .general import get_error, get_indices_and_names
 

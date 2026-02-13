@@ -1,10 +1,12 @@
-from typing import Dict, Optional, Union, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 from pydantic import BaseModel, PrivateAttr, ConfigDict
 import numpy as np
 import logging
 import scipy.optimize
 
-from ..core.numpy_type import NPARRAY
+from ..core.control import KnobControl, KnobData
+from ..core.types import NPARRAY
+from ..apps.response_matrix import ResponseMatrix
 
 if TYPE_CHECKING:
     from .tuning_core import Tuning
@@ -12,8 +14,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 class Tune(BaseModel, extra="forbid"):
-    tune_quad_controls_1: list[str] = []
-    tune_quad_controls_2: list[str] = []
+    knob_qx: str = 'qx_trim'
+    knob_qy: str = 'qy_trim'
+    controls_1: list[str] = []
+    controls_2: list[str] = []
     tune_response_matrix: Optional[NPARRAY] = None
     inverse_tune_response_matrix: Optional[NPARRAY] = None
     _parent: Optional['Tuning'] = PrivateAttr(default=None)
@@ -21,12 +25,24 @@ class Tune(BaseModel, extra="forbid"):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     @property
+    def controls(self) -> list[str]:
+        return self.controls_1 + self.controls_2
+
+    @property
     def design_qx(self):
         return np.mod(self._parent._parent.lattice.twiss['qx'], 1)
 
     @property
+    def integer_qx(self):
+        return np.floor(self._parent._parent.lattice.twiss['qx'])
+
+    @property
     def design_qy(self):
         return np.mod(self._parent._parent.lattice.twiss['qy'], 1)
+
+    @property
+    def integer_qy(self):
+        return np.floor(self._parent._parent.lattice.twiss['qy'])
 
     def tune_response(self, quads: list[str], dk: float = 1e-5):
         SC = self._parent._parent
@@ -47,34 +63,62 @@ class Tune(BaseModel, extra="forbid"):
         return dq1, dq2
 
     def build_tune_response_matrix(self, dk: float = 1e-5) -> None:
-        if not len(self.tune_quad_controls_1) > 0:
+        if not len(self.controls_1) > 0:
             raise Exception('tune_quad_controls_1 is empty. Please set.')
-        if not len(self.tune_quad_controls_2) > 0:
+        if not len(self.controls_2) > 0:
             raise Exception('tune_quad_controls_2 is empty. Please set.')
 
         TRM = np.zeros((2,2))
-        TRM[:, 0] = self.tune_response(self.tune_quad_controls_1, dk=dk)
-        TRM[:, 1] = self.tune_response(self.tune_quad_controls_2, dk=dk)
-        iTRM = np.linalg.inv(TRM)
+        TRM[:, 0] = self.tune_response(self.controls_1, dk=dk)
+        TRM[:, 1] = self.tune_response(self.controls_2, dk=dk)
+        return TRM
 
-        self.tune_response_matrix = TRM
-        self.inverse_tune_response_matrix = iTRM
-        return
+    def create_tune_knobs(self, delta: float = 1e-5) -> None:
+        if not len(self.controls) > 0:
+            raise Exception('tune.controls_1/tune.controls_2 are empty. Please set.')
+
+        matrix = self.build_tune_response_matrix(dk=delta)
+
+        tune_response_matrix = ResponseMatrix(matrix=matrix)
+        inverse_matrix = tune_response_matrix.build_pseudoinverse().matrix
+
+        dk1_qx, dk2_qx = inverse_matrix[:,0]
+        dk1_qy, dk2_qy = inverse_matrix[:,1]
+
+        n1 = len(self.controls_1)
+        n2 = len(self.controls_2)
+        qx_weights = [float(dk1_qx)] * n1  + [float(dk2_qx)] * n2
+        qy_weights = [float(dk1_qy)] * n1  + [float(dk2_qy)] * n2
+
+        knob_data = KnobData(data={
+            self.knob_qx: KnobControl(control_names=self.controls, weights=qx_weights),
+            self.knob_qy: KnobControl(control_names=self.controls, weights=qy_weights)
+            })
+
+        logger.info(f"{self.knob_qx}: sum(|weights|)={np.sum(np.abs(qx_weights)):.2e}")
+        logger.info(f"{self.knob_qy}: sum(|weights|)={np.sum(np.abs(qy_weights)):.2e}")
+        return knob_data
 
     def trim_tune(self, dqx: float = 0, dqy: float = 0, use_design: bool = False) -> None:
+        logger.warning('Deprecation: please use .trim instead of .trim_tune.')
+        return self.trim(dqx=dqx, dqy=dqy, use_design=use_design)
+
+    def trim(self, dqx: float = 0, dqy: float = 0, use_design: bool = False) -> None:
         SC = self._parent._parent
-        if self.inverse_tune_response_matrix is None:
-            logger.info('Did not find inverse tune response matrix. Building now.')
-            self.build_tune_response_matrix()
 
-        dk1, dk2 = np.dot(self.inverse_tune_response_matrix, [dqx, dqy])
-        ref_data1 = SC.magnet_settings.get_many(self.tune_quad_controls_1, use_design=use_design)
-        ref_data2 = SC.magnet_settings.get_many(self.tune_quad_controls_2, use_design=use_design)
-        data1 = {key: ref_data1[key] + dk1 for key in ref_data1.keys()}
-        data2 = {key: ref_data2[key] + dk2 for key in ref_data2.keys()}
+        if use_design:
+            assert self.knob_qx in SC.design_magnet_settings.controls.keys()
+            assert self.knob_qy in SC.design_magnet_settings.controls.keys()
+        else:
+            assert self.knob_qx in SC.magnet_settings.controls.keys()
+            assert self.knob_qy in SC.magnet_settings.controls.keys()
 
-        SC.magnet_settings.set_many(data1, use_design=use_design)
-        SC.magnet_settings.set_many(data2, use_design=use_design)
+        dqx0 = SC.magnet_settings.get(self.knob_qx, use_design=use_design)
+        dqy0 = SC.magnet_settings.get(self.knob_qy, use_design=use_design)
+
+        SC.magnet_settings.set(self.knob_qx, dqx0 + dqx, use_design=use_design)
+        SC.magnet_settings.set(self.knob_qy, dqy0 + dqy, use_design=use_design)
+
         return
 
     def measure_with_kick(self, kick_px=10e-6, kick_py=10e-6, n_turns=100):
@@ -117,18 +161,23 @@ class Tune(BaseModel, extra="forbid"):
         gain : float, optional
             Gain for the correction. Default is 1.
         measurement_method : str, optional
-            Method to measure the tune. Options are 'kick', 'first_turn', 'orbit', 'cheat', 'cheat4d'.
+            Method to measure the tune. Options are 'kick', 'first_turn', 'orbit',
+             'cheat', 'cheat4d', 'cheat_with_integer'.
             Default is 'kick'.
         '''
 
-        if measurement_method not in ['kick', 'first_turn', 'orbit', 'cheat', 'cheat4d']:
+        if measurement_method not in ['kick', 'first_turn', 'orbit', 'cheat', 'cheat4d', 'cheat_with_integer']:
             raise NotImplementedError(f'{measurement_method=} not implemented yet.')
 
         if target_qx is None:
             target_qx = self.design_qx
+            if measurement_method == 'cheat_with_integer':
+                target_qx += self.integer_qx
 
         if target_qy is None:
             target_qy = self.design_qy
+            if measurement_method == 'cheat_with_integer':
+                target_qy += self.integer_qy
 
         for _ in range(n_iter):
             if measurement_method == 'kick':
@@ -141,6 +190,8 @@ class Tune(BaseModel, extra="forbid"):
                 qx, qy = self.cheat()
             elif measurement_method == 'cheat4d':
                 qx, qy = self.cheat4d()
+            elif measurement_method == 'cheat_with_integer':
+                qx, qy = self.cheat_with_integer()
             else:
                 raise Exception(f'Unknown measurement_method {measurement_method}')
             if qx is None or qy is None or qx != qx or qy != qy:
@@ -150,7 +201,7 @@ class Tune(BaseModel, extra="forbid"):
             dqx = qx - target_qx
             dqy = qy - target_qy
             logger.info(f"Delta tune: delta_q1={dqx:.4f}, delta_q2={dqy:.4f}")
-            self.trim_tune(dqx=-gain*dqx, dqy=-gain*dqy)
+            self.trim(dqx=-gain*dqx, dqy=-gain*dqy)
         return
 
     def get_design_corrector_response_injection(self, corr: str, dk0: float = 1e-6):
@@ -206,15 +257,15 @@ class Tune(BaseModel, extra="forbid"):
         ### do fit based on knobs
 
         def x_chi2(delta):
-            SC.tuning.tune.trim_tune(delta, 0, use_design=True)
+            SC.tuning.tune.trim(delta, 0, use_design=True)
             dx_ideal, _ = self.get_design_corrector_response_injection(hcorr)
-            SC.tuning.tune.trim_tune(-delta, 0, use_design=True)
+            SC.tuning.tune.trim(-delta, 0, use_design=True)
             return np.sum((dx0 - dx_ideal)**2)
 
         def y_chi2(delta):
-            SC.tuning.tune.trim_tune(0, delta, use_design=True)
+            SC.tuning.tune.trim(0, delta, use_design=True)
             _, dy_ideal = self.get_design_corrector_response_injection(vcorr)
-            SC.tuning.tune.trim_tune(0, -delta, use_design=True)
+            SC.tuning.tune.trim(0, -delta, use_design=True)
             return np.sum((dy0 - dy_ideal)**2)
 
         x_res = scipy.optimize.minimize_scalar(x_chi2, (-0.1, 0.1), method='Brent')
@@ -287,15 +338,15 @@ class Tune(BaseModel, extra="forbid"):
         ### do fit based on knobs
 
         def x_chi2(delta):
-            SC.tuning.tune.trim_tune(delta, 0, use_design=True)
+            SC.tuning.tune.trim(delta, 0, use_design=True)
             dx_ideal, _ = self.get_design_corrector_response_orbit(hcorr, dk0=dk0)
-            SC.tuning.tune.trim_tune(-delta, 0, use_design=True)
+            SC.tuning.tune.trim(-delta, 0, use_design=True)
             return np.sum((dx0 - dx_ideal)**2)
 
         def y_chi2(delta):
-            SC.tuning.tune.trim_tune(0, delta, use_design=True)
+            SC.tuning.tune.trim(0, delta, use_design=True)
             _, dy_ideal = self.get_design_corrector_response_orbit(vcorr, dk0=dk0)
-            SC.tuning.tune.trim_tune(0, -delta, use_design=True)
+            SC.tuning.tune.trim(0, -delta, use_design=True)
             return np.sum((dy0 - dy_ideal)**2)
 
         x_res = scipy.optimize.minimize_scalar(x_chi2, (-0.1, 0.1), method='Brent')
@@ -325,6 +376,18 @@ class Tune(BaseModel, extra="forbid"):
         qx, qy = SC.lattice.get_tune(method='6d')
         delta_x = qx - self.design_qx
         delta_y = qy - self.design_qy
+        logger.info(f"Horizontal tune: Qx = {qx:.3f} (Δ = {delta_x:.3f})")
+        logger.info(f"Vertical tune: Qy = {qy:.3f} (Δ = {delta_y:.3f})")
+
+        return qx, qy
+
+    def cheat_with_integer(self) -> tuple[float, float]:
+        SC = self._parent._parent
+        twiss = SC.lattice.get_twiss()
+        qx = twiss['qx']
+        qy = twiss['qy']
+        delta_x = qx - self.design_qx - self.integer_qx
+        delta_y = qy - self.design_qy - self.integer_qy
         logger.info(f"Horizontal tune: Qx = {qx:.3f} (Δ = {delta_x:.3f})")
         logger.info(f"Vertical tune: Qy = {qy:.3f} (Δ = {delta_y:.3f})")
 

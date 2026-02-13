@@ -1,5 +1,5 @@
 from typing import Any
-from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.magnet import MAGNET_NAME_TYPE
 from .general import get_error, get_indices_and_names
 from .supports_conf import generate_element_misalignments

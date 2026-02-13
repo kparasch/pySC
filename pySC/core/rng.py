@@ -43,5 +43,8 @@ class RNG(BaseModel):
     def normal(self, loc: float = 0, scale: float = 1, size: Optional[int] = None) -> Union[float, np.ndarray]:
         return self._rng.normal(loc=loc, scale=scale, size=size)
 
+    def uniform(self, low: float = 0, high: float = 1, size: Optional[int] = None) -> Union[float, np.ndarray]:
+        return low + self._rng.random(size=size) * (high - low)
+
     def randomize_rng(self) -> None:
         self._rng = default_rng()

@@ -3,7 +3,7 @@ import numpy as np
 from typing import Optional, Generator, Union, Literal
 from pathlib import Path
 
-from ..tuning.response_matrix import ResponseMatrix
+from ..apps.response_matrix import ResponseMatrix
 from .bba import BBA_Measurement, BBACode
 from .response import ResponseMeasurement, ResponseCode
 from .dispersion import DispersionMeasurement, DispersionCode
@@ -38,8 +38,8 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
 
     if apply:
         data = interface.get_many(correctors)
-        for i, corr in enumerate(correctors):
-            data[corr] += trim_list[i] * gain
+        for corr in correctors:
+            data[corr] += trims[corr] * gain
         interface.set_many(data)
         if rf and trims['rf'] != 0:
             f_rf = interface.get_rf_main_frequency()
@@ -48,7 +48,9 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
     return trims
 
 def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_orbit: int = 1,
-                n_corr_steps: int = 7, bipolar: bool = True, skip_save: bool = False, folder_to_save: Optional[Path] = None) -> Generator:
+                n_corr_steps: int = 7, bipolar: bool = True, skip_save: bool = False,
+                folder_to_save: Optional[Path] = None, plane: Optional[str] = None,
+                skip_cycle: bool = False) -> Generator:
 
     if folder_to_save is None:
         folder_to_save = Path('data')
@@ -73,10 +75,10 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
                                   n0=n_corr_steps,
                                   bpm_number=config['number'],
                                   shots_per_orbit=shots_per_orbit,
-                                  bipolar=bipolar,
+                                  bipolar=bipolar
                                  )
 
-    generator = measurement.generate(interface=interface)
+    generator = measurement.generate(interface=interface, plane=plane)
 
     # run measurement loop
     for code in generator:

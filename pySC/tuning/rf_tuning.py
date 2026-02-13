@@ -1,9 +1,7 @@
-from typing import Dict, Optional, Union, TYPE_CHECKING
-from pydantic import BaseModel, PrivateAttr, ConfigDict
+from typing import Optional, TYPE_CHECKING
+from pydantic import BaseModel, PrivateAttr
 import numpy as np
 import logging
-
-from ..core.numpy_type import NPARRAY
 
 if TYPE_CHECKING:
     from .tuning_core import Tuning

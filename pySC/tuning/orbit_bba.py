@@ -1,15 +1,17 @@
 from pydantic import BaseModel
 from typing import TYPE_CHECKING, Dict, Literal
 import numpy as np
+import logging
+
 from ..core.control import IndivControl
+from .pySC_interface import pySCOrbitInterface
+from ..apps import measure_bba
+from ..apps.bba import BBAAnalysis
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from ..core.new_simulated_commissioning import SimulatedCommissioning
-
-BPM_OUTLIER = 6 # number of sigma
-SLOPE_FACTOR = 0.10 # of max slope
-CENTER_OUTLIER = 1 # number of sigma
-
+    from ..core.simulated_commissioning import SimulatedCommissioning
 
 def get_mag_s_pos(SC: "SimulatedCommissioning", MAG: list[str]):
     s_list = []
@@ -30,7 +32,6 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
     @classmethod
     def generate_config(cls, SC: "SimulatedCommissioning", max_dx_at_bpm = 1e-3,
                         max_modulation=20e-6):
- #                       max_modulation=600e-6, max_dx_at_bpm=1.5e-3
 
         config = {}
         RM_name = 'orbit'
@@ -133,176 +134,26 @@ def orbit_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: int = 7
         SC.tuning.generate_orbit_bba_config()
     config = SC.tuning.orbit_bba_config.config[bpm_name]
 
-    corr = config[f'{plane}CORR']
-    quad = config['QUAD']
-    bpm_number = config['number']
-    corr_delta_sp = config[f'{plane}CORR_delta']
-    quad_delta = config[f'QUAD_dk_{plane}']
+    interface = pySCOrbitInterface(SC=SC, n_turns=2, bba=False, subtract_reference=False)
+    generator = measure_bba(interface=interface, bpm_name=bpm_name, config=config,
+                            shots_per_orbit=shots_per_orbit, n_corr_steps=n_corr_steps,
+                            bipolar=True, skip_save=True, plane=plane, skip_cycle=True)
 
-    n_bpms = len(SC.bpm_system.indices)
+    for _, measurement in generator:
+        pass
 
-    ## define get_orbit
-    def get_orbit():
-        x, y = SC.bpm_system.capture_orbit(bba=False, subtract_reference=False, use_design=False)
-        x = x / shots_per_orbit
-        y = y / shots_per_orbit
-        for i in range(shots_per_orbit-1):
-            x_tmp, y_tmp = SC.bpm_system.capture_orbit(bba=False, subtract_reference=False, use_design=False)
-            x = x + x_tmp / shots_per_orbit
-            y = y + y_tmp / shots_per_orbit
+    if plane == 'H':
+        data = measurement.H_data
+    else:
+        data = measurement.V_data
 
-        return (x.flatten(order='F'), y.flatten(order='F'))
-
-
-    ## define settings to get/set
-    settings = SC.magnet_settings
-
-    bpm_pos = np.zeros([n_corr_steps, 2])
-    orbits = np.zeros([n_corr_steps, 2, n_bpms])
-
-    corr_sp0 = settings.get(corr)
-    quad_sp0 = settings.get(quad)
-
-    corr_sp_array = np.linspace(-corr_delta_sp, corr_delta_sp, n_corr_steps) + corr_sp0 
-    for i_corr, corr_sp in enumerate(corr_sp_array):
-        settings.set(corr, corr_sp)
-        orbit_x_center, orbit_y_center = get_orbit()
-
-        settings.set(quad, quad_sp0 + quad_delta)
-        orbit_x_up, orbit_y_up = get_orbit()
-
-        settings.set(quad, quad_sp0 - quad_delta)
-        orbit_x_down, orbit_y_down = get_orbit()
-
-        settings.set(quad, quad_sp0)
-
-        if plane == 'H':
-            orbit_main_down = orbit_x_down
-            orbit_main_up = orbit_x_up
-            orbit_main_center = orbit_x_center
-            orbit_other_down = orbit_y_down
-            orbit_other_up = orbit_y_up
-            orbit_other_center = orbit_y_center
-        else:
-            orbit_main_down = orbit_y_down
-            orbit_main_up = orbit_y_up
-            orbit_main_center = orbit_y_center
-            orbit_other_down = orbit_x_down
-            orbit_other_up = orbit_x_up
-            orbit_other_center = orbit_x_center
-
-        bpm_pos[i_corr, 0] = orbit_main_down[bpm_number]
-        bpm_pos[i_corr, 1] = orbit_main_up[bpm_number]
-        info = SC.magnet_settings.controls[quad].info
-        assert type(info) is IndivControl
-        assert info.order == 2
-        if info.component == 'B':
-            orbits[i_corr, 0, :] = orbit_main_down - orbit_main_center
-            orbits[i_corr, 1, :] = orbit_main_up - orbit_main_center
-        elif info.component == 'A':
-            orbits[i_corr, 0, :] = orbit_other_down - orbit_other_center
-            orbits[i_corr, 1, :] = orbit_other_up - orbit_other_center
-        else:
-            raise Exception(f'Invalid magnet for BBA: {quad}')
-
-    settings.set(corr, corr_sp0)
-    settings.set(quad, quad_sp0)
-
-    slopes, slopes_err, center, center_err = get_slopes_center(bpm_pos, orbits, quad_delta)
-    mask_bpm_outlier = reject_bpm_outlier(orbits)
-    mask_slopes = reject_slopes(slopes)
-    mask_center = reject_center_outlier(center)
-    final_mask = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
-
-    offset, offset_err = get_offset(center, center_err, final_mask)
- 
-    return offset, offset_err
-
-def reject_bpm_outlier(orbits):
-    n_k1 = orbits.shape[1]
-    n_bpms = orbits.shape[2]
-    mask = np.ones(n_bpms, dtype=bool)
-    for k1_step in range(n_k1):
-        for bpm in range(n_bpms):
-            data = orbits[:, k1_step, bpm]
-            if np.any(data - np.mean(data) > BPM_OUTLIER * np.std(data)):
-                mask[bpm] = False
- 
-    # n_rejections = n_bpms - np.sum(mask)
-    # print(f"Rejected {n_rejections}/{n_bpms} bpms for bpm outliers ( > {BPM_OUTLIER} r.m.s. )")
-    return mask
-
-def reject_slopes(slopes):
-    max_slope = np.nanmax(np.abs(slopes))
-    mask = np.abs(slopes) > SLOPE_FACTOR * max_slope
-
-    # n_rejections = len(slopes) - np.sum(mask)
-    # print(f"Rejected {n_rejections}/{len(slopes)} bpms for small slope ( < {SLOPE_FACTOR} * max(slope) )")
-    return mask
-
-def reject_center_outlier(center):
-    mean = np.nanmean(center)
-    std = np.nanstd(center)
-    mask =  abs(center - mean) < CENTER_OUTLIER * std
-
-    # n_rejections = len(center) - np.sum(mask)
-    # print(f"Rejected {n_rejections}/{len(center)} bpms for center away from mean ( > {CENTER_OUTLIER} r.m.s. )")
-    return mask
-
-def get_slopes_center(bpm_pos, orbits, dk1):
-    mag_vec = np.array([dk1, -dk1])
-    num_downstream_bpms = orbits.shape[2]
-    fit_order = 1
-    x = np.mean(bpm_pos, axis=1)
-    x_mask = ~np.isnan(x)
-    err = np.mean(np.std(bpm_pos[x_mask, :], axis=1))
-    x = x[x_mask]
-    new_tmp_tra = orbits[x_mask, :, :]
-
-    tmp_slope = np.full((new_tmp_tra.shape[0], new_tmp_tra.shape[2]), np.nan)
-    tmp_slope_err = np.full((new_tmp_tra.shape[0], new_tmp_tra.shape[2]), np.nan)
-    center = np.full((new_tmp_tra.shape[2]), np.nan)
-    center_err = np.full((new_tmp_tra.shape[2]), np.nan)
-    for i in range(new_tmp_tra.shape[0]):
-        for j in range(new_tmp_tra.shape[2]):
-            y = new_tmp_tra[i, :, j]
-            y_mask = ~np.isnan(y)
-            if np.sum(y_mask) < min(len(mag_vec), 3):
-                continue
-            # TODO once the position errors are calculated and propagated, should be used
-            p, pcov = np.polyfit(mag_vec[y_mask], y[y_mask], 1, w=np.ones(int(np.sum(y_mask))) / err, cov='unscaled')
-            tmp_slope[i, j], tmp_slope_err[i, j] = p[0], pcov[0, 0]
-
-    slopes = np.full((new_tmp_tra.shape[2]), np.nan)
-    slopes_err = np.full((new_tmp_tra.shape[2]), np.nan)
-    for j in range(min(new_tmp_tra.shape[2], num_downstream_bpms)):
-        y = tmp_slope[:, j]
-        y_err = tmp_slope_err[:, j]
-        y_mask = ~np.isnan(y)
-        if np.sum(y_mask) <= fit_order + 1:
-            continue
-        # TODO here do odr as the x values have also measurement errors
-        p, pcov = np.polyfit(x[y_mask], y[y_mask], fit_order, w=1 / y_err[y_mask], cov='unscaled')
-        if np.abs(p[0]) < 2 * np.sqrt(pcov[0, 0]):
-            continue
-        center[j] = -p[1] / (fit_order * p[0])  # zero-crossing if linear, minimum is quadratic
-        center_err[j] = np.sqrt(center[j] ** 2 * (pcov[0,0]/p[0]**2 + pcov[1,1]/p[1]**2 - 2 * pcov[0, 1] / p[0] / p[1]))
-        slopes[j] = p[0]
-        slopes_err[j] = np.sqrt(pcov[0,0])
-
-    return slopes, slopes_err, center, center_err
-
-def get_offset(center, center_err, mask):
-    from pySC.utils import stats
     try:
-        offset_change = stats.weighted_mean(center[mask], center_err[mask])
-        offset_change_error = stats.weighted_error(center[mask]-offset_change, center_err[mask]) / np.sqrt(stats.effective_sample_size(center[mask], stats.weights_from_errors(center_err[mask])))
-    except ZeroDivisionError as exc:
+        analysis_result = BBAAnalysis.analyze(data)
+        offset = analysis_result.offset
+        offset_error = analysis_result.offset_error
+    except Exception as exc:
         print(exc)
-        print('Failed to estimate offset!!')
-        print(f'Debug info: {center=}, {center_err=}, {mask=}')
-        print(f'Debug info: {center[mask]=}, {center_err[mask]=}')
-        offset_change = 0
-        offset_change_error = np.nan
+        logger.warning(f'Failed to compute trajectory BBA for BPM {bpm_name}')
+        offset, offset_error = 0, np.nan
 
-    return offset_change, offset_change_error
+    return offset, offset_error

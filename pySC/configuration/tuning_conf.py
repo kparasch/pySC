@@ -1,5 +1,6 @@
-from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.control import IndivControl
+from .general import get_indices_and_names
 import numpy as np
 
 def sort_controls(SC: SimulatedCommissioning, control_names: list[str]) -> list[str]:
@@ -37,12 +38,10 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
         HCORR = sort_controls(SC, HCORR)
         SC.tuning.HCORR = HCORR
 
-    # if 'sort_correctors' in tuning_conf and tuning_conf['sort_correctors']:
     if 'VCORR' in tuning_conf:
         VCORR = configure_family(SC, config_dict=tuning_conf['VCORR'])
         VCORR = sort_controls(SC, VCORR)
         SC.tuning.VCORR = VCORR
-
 
     if 'model_RM_folder' in tuning_conf:
         SC.tuning.RM_folder = tuning_conf['model_RM_folder']
@@ -56,3 +55,38 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
         bba_magnets = configure_family(SC, config_dict=tuning_conf['bba_magnets'])
         bba_magnets = sort_controls(SC, bba_magnets)
         SC.tuning.bba_magnets = bba_magnets
+
+    if 'tune' in tuning_conf:
+        tune_conf = tuning_conf['tune']
+        assert 'controls_1' in tune_conf, 'controls_1 missing from tune configuration.'
+        assert 'controls_2' in tune_conf, 'controls_2 missing from tune configuration.'
+
+        control_1_conf = tune_conf['controls_1']
+        assert 'regex' in control_1_conf, 'regex is missing from controls_1 in tune configuration.'
+        assert 'component' in control_1_conf, 'component is missing from controls_1 in tune configuration.'
+        component = control_1_conf['component']
+        _, names = get_indices_and_names(SC, 'tune/controls_1', control_1_conf)
+        controls_1 = [name + '/' + component for name in names]
+
+        if not set(controls_1).issubset(SC.magnet_settings.controls.keys()):
+            raise Exception(f'At least one of tune/controls_1 was not declared! ({component=})')
+
+        control_2_conf = tune_conf['controls_2']
+        assert 'component' in control_2_conf, 'component is missing from controls_2 in tune configuration.'
+        assert 'regex' in control_2_conf, 'regex is missing from controls_1 in tune configuration.'
+        component = control_2_conf['component']
+        _, names = get_indices_and_names(SC, 'tune/controls_2', control_2_conf)
+        controls_2 = [name + '/' + component for name in names]
+
+        if not set(controls_2).issubset(SC.magnet_settings.controls.keys()):
+            raise Exception(f'At least one of tune/controls_2 was not declared! ({component=})')
+
+        SC.tuning.tune.controls_1 = controls_1
+        SC.tuning.tune.controls_2 = controls_2
+
+    if 'c_minus' in tuning_conf:
+        c_minus_conf = tuning_conf['c_minus']
+        if 'controls' in c_minus_conf:
+            c_minus_controls = configure_family(SC, config_dict=c_minus_conf['controls'])
+            c_minus_controls = sort_controls(SC, c_minus_controls)
+            SC.tuning.c_minus.controls = c_minus_controls

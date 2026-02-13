@@ -1,7 +1,7 @@
 import numpy as np
 import logging
 
-from ..core.new_simulated_commissioning import SimulatedCommissioning
+from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.bpm_system import BPM_FIELDS_TO_INITIALISE
 from .general import get_error, get_indices_and_names
 from .supports_conf import generate_element_misalignments

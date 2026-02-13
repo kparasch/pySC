@@ -167,7 +167,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         for _ in range(n_reps):
             _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
-                                     method=method, parameter=parameter, apply=True)
+                                     method=method, parameter=parameter, gain=gain, apply=True)
 
         trajectory_x, trajectory_y = SC.bpm_system.capture_injection(n_turns=n_turns)
         trajectory_x = trajectory_x.flatten('F')
@@ -191,7 +191,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         for _ in range(n_reps):
             _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
-                                     method=method, parameter=parameter, zerosum=zerosum, apply=True)
+                                     method=method, parameter=parameter, zerosum=zerosum, gain=gain, apply=True)
 
         orbit_x, orbit_y = SC.bpm_system.capture_orbit()
         rms_x = np.nanstd(orbit_x) * 1e6

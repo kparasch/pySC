@@ -248,7 +248,7 @@ class ResponseMatrix(BaseModel):
                 if plane is not None:
                     rf_response = rf_response[tot_output_mask] # tot_output_mask will have been defined earlier always.
 
-                matrix_to_invert[:matrix.shape[0], -1] = self.rf_weight*rf_response
+                matrix_to_invert[:matrix.shape[0], -1] = self.rf_weight * rf_response
         else:
             matrix_to_invert = matrix
 
@@ -362,7 +362,7 @@ class ResponseMatrix(BaseModel):
             bad_input[:self._n_inputs][np.logical_and(self._input_mask, input_plane_mask)] = good_input
 
             if rf:
-                bad_input[-1] = rf_input
+                bad_input[-1] = rf_input * self.rf_weight
         return bad_input
 
     def micado(self, good_output: np.array, n: int, plane: Optional[PLANE_TYPE] = None) -> np.ndarray:

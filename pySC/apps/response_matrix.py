@@ -5,6 +5,14 @@ import numpy as np
 import logging
 import json
 
+## Some timing info with 640 outputs, 576 inputs:
+## response_matrix.build_pseudoinverse() -> 30 ms
+## response_matrix.solve() -> 2 ms (if pseudo-inverse is cached)
+## hash(bytes(response_matrix.input_weights)) -> 0.2 ms
+## hash(bytes(response_matrix.output_weights)) -> 0.2 ms
+##
+
+
 PLANE_TYPE = Literal['H', 'V', 'Q', 'SQ']
 
 logger = logging.getLogger(__name__)
@@ -15,6 +23,10 @@ class InverseResponseMatrix(BaseModel, extra="forbid"):
     parameter: float
     zerosum: bool = True
     rf: bool = False
+    rf_weight: int
+    hash_rf_response: int
+    hash_input_weights: int
+    hash_output_weights: int
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -36,7 +48,10 @@ class ResponseMatrix(BaseModel):
     output_names: Optional[list[str]] = None
     inputs_plane: Optional[list[PLANE_TYPE]] = None
     outputs_plane: Optional[list[PLANE_TYPE]] = None
+
     rf_response: Optional[NPARRAY] = None
+    input_weights: Optional[NPARRAY] = None
+    output_weights: Optional[NPARRAY] = None
     rf_weight: float = 1
 
     _n_outputs: int = PrivateAttr(default=0)
@@ -90,7 +105,44 @@ class ResponseMatrix(BaseModel):
                 logger.warning('RF response will be removed.')
                 self.rf_response = np.zeros(self._n_outputs)
 
+        if self.input_weights is None:
+            self.input_weights = np.ones(self._n_inputs, dtype=float)
+
+        if self.output_weights is None:
+            self.output_weights = np.ones(self._n_outputs, dtype=float)
+
         return self
+
+    @property
+    def hash_rf_response(self) -> int:
+        return hash(bytes(self.rf_response))
+
+    @property
+    def hash_input_weights(self) -> int:
+        return hash(bytes(self.input_weights))
+
+    @property
+    def hash_output_weights(self) -> int:
+        return hash(bytes(self.output_weights))
+
+    def set_weight(self, name: str, weight: float, plane: Optional[PLANE_TYPE] = None):
+        applied = False
+        for ii, input_name in enumerate(self.input_names):
+            if input_name == name:
+                if plane is None or self.inputs_plane[ii] == plane:
+                    self.input_weights[ii] = weight
+                    applied = True
+
+        for ii, output_name in enumerate(self.output_names):
+            if output_name == name:
+                if plane is None or self.outputs_plane[ii] == plane:
+                    self.output_weights[ii] = weight
+                    applied = True
+
+        if not applied:
+            logger.warning('{name} was not found to apply weight.')
+
+        return
 
     @property
     def singular_values(self) -> np.array:
@@ -222,10 +274,12 @@ class ResponseMatrix(BaseModel):
 
     def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., zerosum: bool = False,
                             rf: bool = False, plane: Optional[PLANE_TYPE] = None):
-        logger.info(f'(Re-)Building pseudoinverse RM with {method=} and {parameter=} with {zerosum=}.')
+        logger.info(f'(Re-)Building pseudoinverse RM with {method=}, {parameter=}, {plane=}, {zerosum=}, {rf=}.')
         assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
         if plane is None:
             matrix = self.matrix[self._output_mask, :][:, self._input_mask]
+            tot_output_mask = self._output_mask
+            tot_input_mask = self._input_mask
         elif plane in ['H', 'V']:
             output_plane_mask = self.get_output_plane_mask(plane)
             input_plane_mask = self.get_input_plane_mask(plane)
@@ -233,6 +287,10 @@ class ResponseMatrix(BaseModel):
             tot_input_mask = np.logical_and(self._input_mask, input_plane_mask)
             matrix = self.matrix[tot_output_mask, :][:, tot_input_mask]
 
+        # at this point, matrix has bad outputs/inputs (bpms/correctors) removed.
+        # also has only plane-specific outputs/inputs if requested.
+
+        # add extra column/row for the rf response or to enforce that the sum of all outputs is zero.
         if zerosum or rf:
             rows, cols = matrix.shape
             if zerosum:
@@ -251,6 +309,13 @@ class ResponseMatrix(BaseModel):
                 matrix_to_invert[:matrix.shape[0], -1] = self.rf_weight * rf_response
         else:
             matrix_to_invert = matrix
+
+        # matrix_to_invert is extended by one row and/or column if rf and/or zerosum was enabled.
+
+        # handle weights
+        rows, cols = matrix.shape
+        matrix_to_invert[:, :cols] = np.multiply(matrix_to_invert[:, :cols], self.input_weights[tot_input_mask])
+        matrix_to_invert[:rows, :] = np.multiply(matrix_to_invert[:rows, :], self.output_weights[tot_output_mask][:, np.newaxis])
 
         U, s_mat, Vh = np.linalg.svd(matrix_to_invert, full_matrices=False)
         if method == 'svd_cutoff':
@@ -271,7 +336,9 @@ class ResponseMatrix(BaseModel):
         #matrix_inv = np.dot(np.dot(np.transpose(Vh), np.diag(d_mat)), np.transpose(U))
         matrix_inv = np.dot(np.dot(np.transpose(Vh[:keep,:]), np.diag(d_mat)), np.transpose(U[:, :keep]))
 
-        return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter, zerosum=zerosum)
+        return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter, zerosum=zerosum, rf=rf,
+                                     rf_weight=self.rf_weight, hash_rf_response=self.hash_rf_response,
+                                     hash_input_weights=self.hash_input_weights, hash_output_weights=self.hash_output_weights)
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.,
               zerosum: bool = False, rf: bool = False, plane: Optional[Literal['H', 'V']] = None) -> np.ndarray:
@@ -305,8 +372,16 @@ class ResponseMatrix(BaseModel):
             if active_inverse_RM is None:
                 active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum, plane=plane, rf=rf)
             else:
-                if (active_inverse_RM.method != method or active_inverse_RM.parameter != parameter or
-                    active_inverse_RM.zerosum != zerosum or active_inverse_RM.shape != expected_shape):
+                if not (active_inverse_RM.method == method
+                        and active_inverse_RM.parameter == parameter
+                        and active_inverse_RM.zerosum == zerosum
+                        and active_inverse_RM.rf == rf
+                        and active_inverse_RM.shape == expected_shape
+                        and active_inverse_RM.hash_rf_response == self.hash_rf_response
+                        and active_inverse_RM.rf_weight == self.rf_weight
+                        and active_inverse_RM.hash_input_weights == self.hash_input_weights
+                        and active_inverse_RM.hash_output_weights == self.hash_output_weights
+                       ):
                     active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum, plane=plane, rf=rf)
 
             # cache it
@@ -322,7 +397,7 @@ class ResponseMatrix(BaseModel):
         if plane in ['H', 'V']:
             output_plane_mask = np.array(self.outputs_plane) == plane
 
-        bad_output = output.copy()
+        bad_output = output.copy() * self.output_weights
         bad_output[np.isnan(bad_output)] = 0
         good_output = bad_output[np.logical_and(self._output_mask, output_plane_mask)]
 
@@ -361,6 +436,7 @@ class ResponseMatrix(BaseModel):
                 input_plane_mask = np.array(self.inputs_plane) == plane
             bad_input[:self._n_inputs][np.logical_and(self._input_mask, input_plane_mask)] = good_input
 
+            bad_input[:self._n_inputs] = np.multiply(bad_input[:self._n_inputs], self.input_weights)
             if rf:
                 bad_input[-1] = rf_input * self.rf_weight
         return bad_input

@@ -47,8 +47,8 @@ class ResponseMatrix(BaseModel):
 
     input_names: Optional[list[str]] = None
     output_names: Optional[list[str]] = None
-    inputs_plane: Optional[list[PLANE_TYPE]] = None
-    outputs_plane: Optional[list[PLANE_TYPE]] = None
+    input_planes: Optional[list[PLANE_TYPE]] = None
+    output_planes: Optional[list[PLANE_TYPE]] = None
 
     rf_response: Optional[NPARRAY] = None
     input_weights: Optional[NPARRAY] = None
@@ -85,19 +85,19 @@ class ResponseMatrix(BaseModel):
             self._singular_values = None
         self.make_masks()
 
-        if self.inputs_plane is None:
+        if self.input_planes is None:
             Nh = self._n_inputs // 2
             if self._n_inputs % 2 != 0:
                 logger.warning('Plane of inputs is undefined and number of inputs in response matrix is not even. '
                                'Misinterpretation of the input plane is guaranteed!')
-            self.inputs_plane = ['H'] * Nh + ['V'] * (self._n_inputs - Nh)
+            self.input_planes = ['H'] * Nh + ['V'] * (self._n_inputs - Nh)
 
-        if self.outputs_plane is None:
+        if self.output_planes is None:
             Nh = self._n_outputs // 2
             if self._n_outputs % 2 != 0:
                 logger.warning('Plane of outputs is undefined and number of outputs in response matrix is not even. '
                                'Misinterpretation of the output plane is guaranteed!')
-            self.outputs_plane = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
+            self.output_planes = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
 
         if self.rf_response is None:
             self.rf_response = np.zeros(self._n_outputs)
@@ -131,13 +131,13 @@ class ResponseMatrix(BaseModel):
         applied = False
         for ii, input_name in enumerate(self.input_names):
             if input_name == name:
-                if plane is None or self.inputs_plane[ii] == plane:
+                if plane is None or self.input_planes[ii] == plane:
                     self.input_weights[ii] = weight
                     applied = True
 
         for ii, output_name in enumerate(self.output_names):
             if output_name == name:
-                if plane is None or self.outputs_plane[ii] == plane:
+                if plane is None or self.output_planes[ii] == plane:
                     self.output_weights[ii] = weight
                     applied = True
 
@@ -172,10 +172,10 @@ class ResponseMatrix(BaseModel):
             return self.matrix[output_plane_mask, :][:, input_plane_mask]
 
     def get_input_plane_mask(self, plane: Literal[PLANE_TYPE]) -> np.array:
-        return np.array(self.inputs_plane) == plane
+        return np.array(self.input_planes) == plane
 
     def get_output_plane_mask(self, plane: Literal[PLANE_TYPE]) -> np.array:
-        return np.array(self.outputs_plane) == plane
+        return np.array(self.output_planes) == plane
 
     @property
     def matrix_h(self) -> np.array:
@@ -357,8 +357,8 @@ class ResponseMatrix(BaseModel):
         if plane is None:
             expected_shape = (self._n_inputs - len(self._bad_inputs), self._n_outputs - len(self._bad_outputs))
         else:
-            output_plane_mask = np.array(self.outputs_plane) == plane
-            input_plane_mask = np.array(self.inputs_plane) == plane
+            output_plane_mask = np.array(self.output_planes) == plane
+            input_plane_mask = np.array(self.input_planes) == plane
             tot_output_mask = np.logical_and(self._output_mask, output_plane_mask)
             tot_input_mask = np.logical_and(self._input_mask, input_plane_mask)
             expected_shape = (sum(tot_input_mask), sum(tot_output_mask))
@@ -405,7 +405,7 @@ class ResponseMatrix(BaseModel):
 
         output_plane_mask = np.ones_like(self._output_mask, dtype=bool)
         if plane in ['H', 'V']:
-            output_plane_mask = np.array(self.outputs_plane) == plane
+            output_plane_mask = np.array(self.output_planes) == plane
 
         bad_output = output.copy() * self.output_weights
         bad_output[np.isnan(bad_output)] = 0
@@ -444,7 +444,7 @@ class ResponseMatrix(BaseModel):
             bad_input = np.zeros(final_input_length, dtype=float)
             input_plane_mask = np.ones_like(self._input_mask, dtype=bool)
             if plane in ['H', 'V']:
-                input_plane_mask = np.array(self.inputs_plane) == plane
+                input_plane_mask = np.array(self.input_planes) == plane
             bad_input[:self._n_inputs][np.logical_and(self._input_mask, input_plane_mask)] = good_input
 
             bad_input[:self._n_inputs] = np.multiply(bad_input[:self._n_inputs], self.input_weights)

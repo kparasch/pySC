@@ -68,20 +68,20 @@ class Tuning(BaseModel, extra="forbid"):
                     self.calculate_model_trajectory_response_matrix(n_turns=n_turns)
         return
 
-    def get_inputs_plane(self, control_names):
+    def get_input_planes(self, control_names):
         SC = self._parent
-        inputs_plane = []
+        input_planes = []
         for corr in control_names:
             control = SC.magnet_settings.controls[corr]
             if type(control.info) is not IndivControl:
                 raise NotImplementedError(f'Unsupported control type for {corr} of type {type(control.info).__name__}.')
             if control.info.component == 'B':
-                inputs_plane.append('H')
+                input_planes.append('H')
             elif control.info.component == 'A':
-                inputs_plane.append('V')
+                input_planes.append('V')
             else:
                 raise Exception(f'Unknown component: {control.info.component}')
-        return inputs_plane
+        return input_planes
 
     def calculate_model_trajectory_response_matrix(self, n_turns=1, dkick=1e-5, save_as: str = None):
         # assumes all bpms are dual plane
@@ -90,10 +90,10 @@ class Tuning(BaseModel, extra="forbid"):
         input_names = SC.tuning.CORR
         output_names = SC.bpm_system.names * n_turns * 2 # two: one per plane and per turn
         matrix = measure_TrajectoryResponseMatrix(SC, n_turns=n_turns, dkick=dkick, use_design=True)
-        inputs_plane  = self.get_inputs_plane(SC.tuning.CORR)
+        input_planes  = self.get_input_planes(SC.tuning.CORR)
 
         self.response_matrix[RM_name] = ResponseMatrix(matrix=matrix, output_names=output_names,
-                                                       input_names=input_names, inputs_plane=inputs_plane)
+                                                       input_names=input_names, input_planes=input_planes)
         if save_as is not None:
             self.response_matrix[RM_name].to_json(save_as)
         return 
@@ -104,9 +104,9 @@ class Tuning(BaseModel, extra="forbid"):
         input_names = SC.tuning.CORR
         output_names = SC.bpm_system.names * 2 # two: one per plane
         matrix = measure_OrbitResponseMatrix(SC, dkick=dkick, use_design=True)
-        inputs_plane  = self.get_inputs_plane(SC.tuning.CORR)
+        input_planes  = self.get_input_planes(SC.tuning.CORR)
         self.response_matrix[RM_name] = ResponseMatrix(matrix=matrix, output_names=output_names,
-                                                       input_names=input_names, inputs_plane=inputs_plane)
+                                                       input_names=input_names, input_planes=input_planes)
         if save_as is not None:
             self.response_matrix[RM_name].to_json(save_as)
         return 

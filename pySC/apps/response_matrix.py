@@ -21,9 +21,10 @@ class InverseResponseMatrix(BaseModel, extra="forbid"):
     matrix: NPARRAY
     method: Literal['tikhonov', 'svd_values', 'svd_cutoff', 'micado']
     parameter: float
-    zerosum: bool = True
+    virtual: bool = True
     rf: bool = False
-    rf_weight: int
+    rf_weight: float
+    virtual_weight: float
     hash_rf_response: int
     hash_input_weights: int
     hash_output_weights: int
@@ -53,6 +54,7 @@ class ResponseMatrix(BaseModel):
     input_weights: Optional[NPARRAY] = None
     output_weights: Optional[NPARRAY] = None
     rf_weight: float = 1
+    virtual_weight: float = 1
 
     _n_outputs: int = PrivateAttr(default=0)
     _n_inputs: int = PrivateAttr(default=0)
@@ -272,9 +274,9 @@ class ResponseMatrix(BaseModel):
     def enable_all_outputs(self):
         self.bad_outputs = []
 
-    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., zerosum: bool = False,
+    def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., virtual: bool = False,
                             rf: bool = False, plane: Optional[PLANE_TYPE] = None):
-        logger.info(f'(Re-)Building pseudoinverse RM with {method=}, {parameter=}, {plane=}, {zerosum=}, {rf=}.')
+        logger.info(f'(Re-)Building pseudoinverse RM with {method=}, {parameter=}, {plane=}, {virtual=}, {rf=}.')
         assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
         if plane is None:
             matrix = self.matrix[self._output_mask, :][:, self._input_mask]
@@ -291,16 +293,16 @@ class ResponseMatrix(BaseModel):
         # also has only plane-specific outputs/inputs if requested.
 
         # add extra column/row for the rf response or to enforce that the sum of all outputs is zero.
-        if zerosum or rf:
+        if virtual or rf:
             rows, cols = matrix.shape
-            if zerosum:
+            if virtual:
                 rows += 1
             if rf:
                 cols += 1
             matrix_to_invert = np.zeros((rows, cols), dtype=float)
             matrix_to_invert[:matrix.shape[0], :matrix.shape[1]] = matrix
-            if zerosum:
-                matrix_to_invert[-1, :matrix.shape[1]]
+            if virtual:
+                matrix_to_invert[-1, :matrix.shape[1]] = self.virtual_weight
             if rf:
                 rf_response = self.rf_response
                 if plane is not None:
@@ -310,7 +312,7 @@ class ResponseMatrix(BaseModel):
         else:
             matrix_to_invert = matrix
 
-        # matrix_to_invert is extended by one row and/or column if rf and/or zerosum was enabled.
+        # matrix_to_invert is extended by one row and/or column if rf and/or virtual was enabled.
 
         # handle weights
         rows, cols = matrix.shape
@@ -336,12 +338,19 @@ class ResponseMatrix(BaseModel):
         #matrix_inv = np.dot(np.dot(np.transpose(Vh), np.diag(d_mat)), np.transpose(U))
         matrix_inv = np.dot(np.dot(np.transpose(Vh[:keep,:]), np.diag(d_mat)), np.transpose(U[:, :keep]))
 
-        return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter, zerosum=zerosum, rf=rf,
-                                     rf_weight=self.rf_weight, hash_rf_response=self.hash_rf_response,
-                                     hash_input_weights=self.hash_input_weights, hash_output_weights=self.hash_output_weights)
+        return InverseResponseMatrix(matrix=matrix_inv, method=method, parameter=parameter, virtual=virtual,
+                                     virtual_weight=self.virtual_weight, rf=rf, rf_weight=self.rf_weight,
+                                     hash_rf_response=self.hash_rf_response,
+                                     hash_input_weights=self.hash_input_weights,
+                                     hash_output_weights=self.hash_output_weights)
 
-    def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0.,
-              zerosum: bool = False, rf: bool = False, plane: Optional[Literal['H', 'V']] = None) -> np.ndarray:
+    def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0., virtual: bool = False,
+              zerosum: Optional[bool] = None, rf: bool = False, plane: Optional[Literal['H', 'V']] = None,
+              virtual_target: float = 0) -> np.ndarray:
+        if zerosum is not None:
+            logger.warning('`zerosum` argument in ResponseMatrix.solve is deprecated. Please use `virtual` instead.')
+            virtual = zerosum
+
         assert len(self.bad_outputs) != self.matrix.shape[0], 'All outputs are disabled!'
         assert len(self.bad_inputs) != self.matrix.shape[1], 'All inputs are disabled!'
         assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
@@ -354,7 +363,7 @@ class ResponseMatrix(BaseModel):
             tot_input_mask = np.logical_and(self._input_mask, input_plane_mask)
             expected_shape = (sum(tot_input_mask), sum(tot_output_mask))
 
-        if zerosum:
+        if virtual:
             expected_shape = (expected_shape[0], expected_shape[1] + 1)
 
         if rf:
@@ -370,11 +379,12 @@ class ResponseMatrix(BaseModel):
                 active_inverse_RM = self._inverse_RM_V
 
             if active_inverse_RM is None:
-                active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum, plane=plane, rf=rf)
+                active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, virtual=virtual, plane=plane, rf=rf)
             else:
                 if not (active_inverse_RM.method == method
                         and active_inverse_RM.parameter == parameter
-                        and active_inverse_RM.zerosum == zerosum
+                        and active_inverse_RM.virtual == virtual
+                        and active_inverse_RM.virtual_weight == self.virtual_weight
                         and active_inverse_RM.rf == rf
                         and active_inverse_RM.shape == expected_shape
                         and active_inverse_RM.hash_rf_response == self.hash_rf_response
@@ -382,7 +392,7 @@ class ResponseMatrix(BaseModel):
                         and active_inverse_RM.hash_input_weights == self.hash_input_weights
                         and active_inverse_RM.hash_output_weights == self.hash_output_weights
                        ):
-                    active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, zerosum=zerosum, plane=plane, rf=rf)
+                    active_inverse_RM = self.build_pseudoinverse(method=method, parameter=parameter, virtual=virtual, plane=plane, rf=rf)
 
             # cache it
             if plane is None:
@@ -404,8 +414,8 @@ class ResponseMatrix(BaseModel):
 
         if method == 'micado':
             bad_input = self.micado(good_output, int(parameter), plane=plane)
-            if zerosum:
-                logger.warning('Zerosum option is incompatible with the micado method and will be ignored.')
+            if virtual:
+                logger.warning('virtual option is incompatible with the micado method and will be ignored.')
             if rf:
                 logger.warning('Rf option is incompatible with the micado method and will be ignored.')
         else:
@@ -415,10 +425,11 @@ class ResponseMatrix(BaseModel):
                  + f'expected inputs = {expected_shape[0]},\n'
                  + f'expected outputs = {expected_shape[1]},')
 
-            if zerosum:
-                zerosum_good_output = np.zeros(len(good_output) + 1)
-                zerosum_good_output[:-1] = good_output
-                good_input = active_inverse_RM.dot(zerosum_good_output)
+            if virtual:
+                virtual_good_output = np.zeros(len(good_output) + 1)
+                virtual_good_output[:-1] = good_output
+                virtual_good_output[-1] = virtual_target * self.virtual_weight
+                good_input = active_inverse_RM.dot(virtual_good_output)
             else:
                 good_input = active_inverse_RM.dot(good_output)
 

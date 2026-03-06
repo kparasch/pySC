@@ -75,6 +75,29 @@ class ResponseMatrix(BaseModel):
         logger.warning('ResponseMatrix.RM is deprecated! Please use ResponseMatrix.matrix instead.')
         return self.matrix
 
+    @model_validator(mode='before')
+    def check_deprecations(cls, data):
+        if 'inputs_plane' in data.keys():
+            logger.warning('DEPRECATION: `inputs_plane` in the ResponseMatrix has been renamed to `input_planes`.')
+            logger.warning('DEPRECATION: You should do the same.')
+            if 'input_planes' in data.keys():
+                raise Exception('Both `inputs_plane` and `input_planes` are in the ResponseMatrix. Please only use the later one.')
+            else:
+                logger.warning('DEPRECATION: renaming automatically `inputs_plane` to `input_planes`.')
+                data['input_planes'] = data['inputs_plane']
+                del data['inputs_plane']
+
+        if 'outputs_plane' in data.keys():
+            logger.warning('DEPRECATION: `outputs_plane` in the ResponseMatrix has been renamed to `output_planes`.')
+            logger.warning('DEPRECATION: You should do the same.')
+            if 'output_planes' in data.keys():
+                raise Exception('Both `outputs_plane` and `output_planes` are in the ResponseMatrix. Please only use the later one.')
+            else:
+                logger.warning('DEPRECATION: renaming automatically `outputs_plane` to `output_planes`.')
+                data['output_planes'] = data['outputs_plane']
+                del data['outputs_plane']
+        return data
+
     @model_validator(mode='after')
     def initialize_and_check(self):
         self._n_outputs, self._n_inputs = self.matrix.shape

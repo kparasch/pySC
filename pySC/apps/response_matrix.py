@@ -53,7 +53,7 @@ class ResponseMatrix(BaseModel):
     rf_response: Optional[NPARRAY] = None
     input_weights: Optional[NPARRAY] = None
     output_weights: Optional[NPARRAY] = None
-    rf_weight: float = 1
+    rf_weight: Optional[float] = None
     virtual_weight: float = 1
 
     _n_outputs: int = PrivateAttr(default=0)
@@ -136,6 +136,11 @@ class ResponseMatrix(BaseModel):
         if self.output_weights is None:
             self.output_weights = np.ones(self._n_outputs, dtype=float)
 
+        if self.rf_response is not None and self.rf_weight is None:
+            default_rf_weight = self.default_rf_weight()
+            logger.info(f'Setting the rf_weight by default to {default_rf_weight}.')
+            self.rf_weight = default_rf_weight
+
         return self
 
     @property
@@ -168,6 +173,16 @@ class ResponseMatrix(BaseModel):
             logger.warning('{name} was not found to apply weight.')
 
         return
+
+    def default_rf_weight(self) -> float:
+        if self.rf_response is None:
+            raise Exception('rf_response was not found.')
+        matrix_h = self.matrix_h
+        rms_per_input = np.std(matrix_h, axis=0)
+        mean_rms_inputs = np.mean(rms_per_input)
+        rms_rf = np.std(self.rf_response)
+        default_rf_weight = mean_rms_inputs / rms_rf
+        return default_rf_weight
 
     @property
     def singular_values(self) -> np.array:

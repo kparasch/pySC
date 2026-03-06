@@ -1,10 +1,13 @@
 from __future__ import annotations
 from pydantic import BaseModel, PrivateAttr, PositiveInt
 from typing import Optional, Literal, Union, TYPE_CHECKING
+import logging
 from .types import BaseModelWithSave
 
 if TYPE_CHECKING:
     from .magnet import ControlMagnetLink
+
+logger = logging.getLogger(__name__)
 
 class LinearConv(BaseModel, extra="forbid"):
     factor: float = 1.0
@@ -39,10 +42,10 @@ class Control(BaseModel, extra="forbid"):
         if self.limits is not None:
             lower_limit, upper_limit = self.limits
             if setpoint < lower_limit:
-                print(f'WARNING: Setpoint {setpoint} for control "{self.name}" is out of limits ({lower_limit}, {upper_limit})')
+                logger.warning(f'Setpoint {setpoint} for control "{self.name}" is out of limits ({lower_limit}, {upper_limit})')
                 self.setpoint = lower_limit
             elif setpoint > upper_limit:
-                print(f'WARNING: Setpoint {setpoint} for control "{self.name}" is out of limits ({lower_limit}, {upper_limit})')
+                logger.warning(f'Setpoint {setpoint} for control "{self.name}" is out of limits ({lower_limit}, {upper_limit})')
                 self.setpoint = upper_limit
             else:
                 self.setpoint = setpoint

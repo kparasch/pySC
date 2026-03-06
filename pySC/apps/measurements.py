@@ -13,8 +13,13 @@ logger = logging.getLogger(__name__)
 
 def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatrix, method='svd_cutoff',
                      parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
-                     gain: float = 1, zerosum: bool = False, plane: Optional[Literal['H', 'V']] = None,
-                     rf: bool  = False, apply: bool = False):
+                     gain: float = 1, virtual: bool = False, plane: Optional[Literal['H', 'V']] = None,
+                     rf: bool  = False, apply: bool = False, virtual_target: float = 0,
+                     gain_rf: float = 1, zerosum: Optional[bool] = None):
+
+    if zerosum is not None:
+        logger.warning('`zerosum` argument in ResponseMatrix.solve is deprecated. Please use `virtual` instead.')
+        virtual = zerosum
 
     correctors = response_matrix.input_names
     assert correctors is not None, 'Corrector names are undefined in the response matrix'
@@ -29,7 +34,7 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
         assert len(reference) == len(orbit), "Reference orbit has wrong length"
         orbit -= reference
 
-    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter, zerosum=zerosum, plane=plane, rf=rf)
+    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter, virtual=virtual, plane=plane, rf=rf, virtual_target=virtual_target)
 
     trims = {corr: trim for corr, trim in zip(correctors, trim_list, strict=False) if trim != 0}
     # if rf is selected, trim_list will be larger than correctors by one element. The last element is the rf frequency.
@@ -43,7 +48,7 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
         interface.set_many(data)
         if rf and trims['rf'] != 0:
             f_rf = interface.get_rf_main_frequency()
-            interface.set_rf_main_frequency(f_rf + trims['rf'])
+            interface.set_rf_main_frequency(f_rf + gain_rf * trims['rf'])
 
     return trims
 

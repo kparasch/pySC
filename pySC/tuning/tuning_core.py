@@ -68,20 +68,20 @@ class Tuning(BaseModel, extra="forbid"):
                     self.calculate_model_trajectory_response_matrix(n_turns=n_turns)
         return
 
-    def get_inputs_plane(self, control_names):
+    def get_input_planes(self, control_names):
         SC = self._parent
-        inputs_plane = []
+        input_planes = []
         for corr in control_names:
             control = SC.magnet_settings.controls[corr]
             if type(control.info) is not IndivControl:
                 raise NotImplementedError(f'Unsupported control type for {corr} of type {type(control.info).__name__}.')
             if control.info.component == 'B':
-                inputs_plane.append('H')
+                input_planes.append('H')
             elif control.info.component == 'A':
-                inputs_plane.append('V')
+                input_planes.append('V')
             else:
                 raise Exception(f'Unknown component: {control.info.component}')
-        return inputs_plane
+        return input_planes
 
     def calculate_model_trajectory_response_matrix(self, n_turns=1, dkick=1e-5, save_as: str = None):
         # assumes all bpms are dual plane
@@ -90,10 +90,10 @@ class Tuning(BaseModel, extra="forbid"):
         input_names = SC.tuning.CORR
         output_names = SC.bpm_system.names * n_turns * 2 # two: one per plane and per turn
         matrix = measure_TrajectoryResponseMatrix(SC, n_turns=n_turns, dkick=dkick, use_design=True)
-        inputs_plane  = self.get_inputs_plane(SC.tuning.CORR)
+        input_planes  = self.get_input_planes(SC.tuning.CORR)
 
         self.response_matrix[RM_name] = ResponseMatrix(matrix=matrix, output_names=output_names,
-                                                       input_names=input_names, inputs_plane=inputs_plane)
+                                                       input_names=input_names, input_planes=input_planes)
         if save_as is not None:
             self.response_matrix[RM_name].to_json(save_as)
         return 
@@ -104,9 +104,9 @@ class Tuning(BaseModel, extra="forbid"):
         input_names = SC.tuning.CORR
         output_names = SC.bpm_system.names * 2 # two: one per plane
         matrix = measure_OrbitResponseMatrix(SC, dkick=dkick, use_design=True)
-        inputs_plane  = self.get_inputs_plane(SC.tuning.CORR)
+        input_planes  = self.get_input_planes(SC.tuning.CORR)
         self.response_matrix[RM_name] = ResponseMatrix(matrix=matrix, output_names=output_names,
-                                                       input_names=input_names, inputs_plane=inputs_plane)
+                                                       input_names=input_names, input_planes=input_planes)
         if save_as is not None:
             self.response_matrix[RM_name].to_json(save_as)
         return 
@@ -156,7 +156,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False, zerosum=False):
+    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False, virtual=False):
         RM_name = f'trajectory{n_turns}'
         self.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         response_matrix = self.response_matrix[RM_name]
@@ -167,7 +167,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         for _ in range(n_reps):
             _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
-                                     method=method, parameter=parameter, gain=gain, apply=True)
+                                     method=method, parameter=parameter, gain=gain, virtual=virtual, apply=True)
 
         trajectory_x, trajectory_y = SC.bpm_system.capture_injection(n_turns=n_turns)
         trajectory_x = trajectory_x.flatten('F')
@@ -180,7 +180,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, zerosum=False):
+    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, virtual=False):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         response_matrix = self.response_matrix[RM_name]
@@ -191,7 +191,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         for _ in range(n_reps):
             _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
-                                     method=method, parameter=parameter, zerosum=zerosum, gain=gain, apply=True)
+                                     method=method, parameter=parameter, virtual=virtual, gain=gain, apply=True)
 
         orbit_x, orbit_y = SC.bpm_system.capture_orbit()
         rms_x = np.nanstd(orbit_x) * 1e6
@@ -237,8 +237,6 @@ class Tuning(BaseModel, extra="forbid"):
         xy =  np.concat((x.flatten(order='F'), y.flatten(order='F')))
 
         return np.dot(xy, response) / np.dot(response, response)
-
-
 
     def set_multipole_scale(self, scale: float = 1):
         logger.info(f'Setting "multipoles" to {scale*100:.0f}%')

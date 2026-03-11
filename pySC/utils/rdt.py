@@ -142,8 +142,8 @@ def fjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0,
     ii = 0
     f = np.zeros_like(twiss['s'], dtype=complex)
     for ii in range(len(twiss['s'])):
-        dphix = 2*np.pi*np.abs(twiss['mux'][ii] - mux)
-        dphiy = 2*np.pi*np.abs(twiss['muy'][ii] - muy)
+        dphix = np.abs(twiss['mux'][ii] - mux)
+        dphiy = np.abs(twiss['muy'][ii] - muy)
         expo = np.exp(1.j * ( (j-k) * dphix + (l-m) * dphiy))
         f[ii] = np.sum(hm * expo)
     if normalized:

@@ -322,6 +322,8 @@ class Tuning(BaseModel, extra="forbid"):
         offsets_y = np.zeros(n_bpm)
         true_offsets_x = np.zeros(n_bpm)
         true_offsets_y = np.zeros(n_bpm)
+        reconstructed_offsets_x = np.zeros(n_bpm)
+        reconstructed_offsets_y = np.zeros(n_bpm)
         for ii, name in enumerate(bpm_names):
             true_offset_x, true_offset_y = self.bba_to_quad_true_offset(bpm_name=name)
             bpm_number = SC.bpm_system.bpm_number(name=name)
@@ -334,10 +336,11 @@ class Tuning(BaseModel, extra="forbid"):
             true_offsets_y[ii] = true_offset_y
             offsets_x[ii] = offset_x
             offsets_y[ii] = offset_y
+            reconstructed_offsets_x[ii], reconstructed_offsets_y[ii] = SC.bpm_system.reconstruct_true_orbit(name=name, x=offset_x, y=offset_y)
 
         if not skip_summary:
-            acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
-            acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
+            acc_x = 1e6 * np.nanstd(reconstructed_offsets_x - true_offsets_x)
+            acc_y = 1e6 * np.nanstd(reconstructed_offsets_y - true_offsets_y)
             logger.info(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         for ii, bpm_number in enumerate(bpm_numbers):
@@ -356,6 +359,8 @@ class Tuning(BaseModel, extra="forbid"):
         offsets_y = np.zeros(n_bpm)
         true_offsets_x = np.zeros(n_bpm)
         true_offsets_y = np.zeros(n_bpm)
+        reconstructed_offsets_x = np.zeros(n_bpm)
+        reconstructed_offsets_y = np.zeros(n_bpm)
         for ii, name in enumerate(bpm_names):
             true_offset_x, true_offset_y = self.bba_to_quad_true_offset(bpm_name=name)
             bpm_number = SC.bpm_system.bpm_number(name=name)
@@ -368,10 +373,11 @@ class Tuning(BaseModel, extra="forbid"):
             true_offsets_y[ii] = true_offset_y
             offsets_x[ii] = offset_x
             offsets_y[ii] = offset_y
+            reconstructed_offsets_x[ii], reconstructed_offsets_y[ii] = SC.bpm_system.reconstruct_true_orbit(name=name, x=offset_x, y=offset_y)
 
         if not skip_summary:
-            acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
-            acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
+            acc_x = 1e6 * np.nanstd(reconstructed_offsets_x - true_offsets_x)
+            acc_y = 1e6 * np.nanstd(reconstructed_offsets_y - true_offsets_y)
             logger.info(f'Orbit BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         for ii, bpm_number in enumerate(bpm_numbers):
@@ -417,19 +423,22 @@ class Tuning(BaseModel, extra="forbid"):
         offsets_y = np.zeros(n_bpm)
         true_offsets_x = np.zeros(n_bpm)
         true_offsets_y = np.zeros(n_bpm)
+        reconstructed_offsets_x = np.zeros(n_bpm)
+        reconstructed_offsets_y = np.zeros(n_bpm)
         for bpm_names_chunk, offsets_x_chunk, offsets_y_chunk in rets:
             for name, offset_x, offset_y in zip(bpm_names_chunk, offsets_x_chunk, offsets_y_chunk):
                 ii = bpm_mapping[name]
                 offsets_x[ii] = offset_x
                 offsets_y[ii] = offset_y
+                reconstructed_offsets_x[ii], reconstructed_offsets_y[ii] = SC.bpm_system.reconstruct_true_orbit(name=name, x=offset_x, y=offset_y)
                 true_offsets_x[ii], true_offsets_y[ii] = SC.tuning.bba_to_quad_true_offset(bpm_name=name)
 
         # 4. CLEANUP
         listener.stop()
         logger.handlers.clear()
 
-        acc_x = 1e6 * np.nanstd(offsets_x - true_offsets_x)
-        acc_y = 1e6 * np.nanstd(offsets_y - true_offsets_y)
+        acc_x = 1e6 * np.nanstd(reconstructed_offsets_x - true_offsets_x)
+        acc_y = 1e6 * np.nanstd(reconstructed_offsets_y - true_offsets_y)
         logger.info(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
@@ -475,25 +484,22 @@ class Tuning(BaseModel, extra="forbid"):
         offsets_y = np.zeros(n_bpm)
         true_offsets_x = np.zeros(n_bpm)
         true_offsets_y = np.zeros(n_bpm)
-        recalib_x = np.zeros(n_bpm)
-        recalib_y = np.zeros(n_bpm)
+        reconstructed_offsets_x = np.zeros(n_bpm)
+        reconstructed_offsets_y = np.zeros(n_bpm)
         for bpm_names_chunk, offsets_x_chunk, offsets_y_chunk in rets:
             for name, offset_x, offset_y in zip(bpm_names_chunk, offsets_x_chunk, offsets_y_chunk):
                 ii = bpm_mapping[name]
                 offsets_x[ii] = offset_x
                 offsets_y[ii] = offset_y
-                bpm_number = SC.bpm_system.bpm_number(name=name)
-                rot_x = offset_x/(1 + SC.bpm_system.calibration_errors_x[bpm_number])
-                rot_y = offset_y/(1 + SC.bpm_system.calibration_errors_y[bpm_number])
-                recalib_x[ii], recalib_y[ii] = np.matmul(SC.bpm_system._rot_matrices[:,:,bpm_number].T, np.array([rot_x, rot_y]))
+                reconstructed_offsets_x[ii], reconstructed_offsets_y[ii] = SC.bpm_system.reconstruct_true_orbit(name=name, x=offset_x, y=offset_y)
                 true_offsets_x[ii], true_offsets_y[ii] = SC.tuning.bba_to_quad_true_offset(bpm_name=name)
 
         # 4. CLEANUP
         listener.stop()
         logger.handlers.clear()
 
-        acc_x = 1e6 * np.nanstd(recalib_x - true_offsets_x)
-        acc_y = 1e6 * np.nanstd(recalib_y - true_offsets_y)
+        acc_x = 1e6 * np.nanstd(reconstructed_offsets_x - true_offsets_x)
+        acc_y = 1e6 * np.nanstd(reconstructed_offsets_y - true_offsets_y)
         logger.info(f'Orbit BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]

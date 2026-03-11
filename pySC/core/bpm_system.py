@@ -1,5 +1,5 @@
 from pydantic import BaseModel, PrivateAttr, ConfigDict, model_validator
-from typing import TYPE_CHECKING, Optional, Union
+from typing import TYPE_CHECKING, Optional, Union, Tuple
 from .types import NPARRAY
 import numpy as np
 import warnings
@@ -62,8 +62,15 @@ class BPMSystem(BaseModel, extra='forbid'):
             bpm_number =  int(np.where(np.array(self.indices) == index)[0][0])
         else:
             raise AssertionError('Exactly one of index and name must be defined.')
-        
+
         return bpm_number
+
+    def reconstruct_true_orbit(self, name: BPM_NAME_TYPE, x: float, y: float) -> Tuple[float,float]:
+        bpm_number = self.bpm_number(name=name)
+        rot_x = x/(1 + self.calibration_errors_x[bpm_number])
+        rot_y = y/(1 + self.calibration_errors_y[bpm_number])
+        reconstructed_x, reconstructed_y = np.matmul(self._rot_matrices[:,:,bpm_number].T, np.array([rot_x, rot_y]))
+        return reconstructed_x, reconstructed_y
 
     def capture_orbit(self, bba=True, subtract_reference=True, use_design=False) -> tuple[np.ndarray, np.ndarray]:
         '''

@@ -147,10 +147,14 @@ class ATLattice(Lattice):
             indices = range(len(self._design))
         ring = self._design if use_design else self._ring
         if self.use_orbit_guess:
-            assert self.no_6d is False, "Using orbit guesses with a 4D lattice is not checked/implemented."
+            assert not self.no_6d, "Using orbit guesses with a 4D lattice is not checked/implemented."
             _, orbit = at.find_orbit(ring, refpts=indices, guess=np.array(self.orbit_guess))
         else:
-            _, orbit = at.find_orbit(ring, refpts=indices)
+            if self.no_6d and not use_design:
+                df = self.ring.get_rf_frequency() - self.design.get_rf_frequency()
+                _, orbit = at.find_orbit(ring, refpts=indices, df=df)
+            else:
+                _, orbit = at.find_orbit(ring, refpts=indices)
 
         return orbit[:, [0,2]].T
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, PrivateAttr, model_validator
-from typing import Optional, Literal
+from typing import Optional, Literal, Tuple
 import re
 import numpy as np
 import at
@@ -36,7 +36,7 @@ class Lattice(BaseModel, extra="forbid"):
         return self._twiss
 
     def track_mean(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False,
-                   coordinates: Optional[list] = None, transmission_threshold: float = 0) -> nparray:
+                   coordinates: Optional[list] = None, transmission_threshold: float = 0) -> Tuple[nparray, nparray]:
         new_bunch = bunch.copy()
         turns_per_chunk = self.turns_per_chunk
 
@@ -47,31 +47,37 @@ class Lattice(BaseModel, extra="forbid"):
                 mean_data = np.nanmean(track_data, axis=1) # average over all particles
             for ii in range(track_data.shape[0]):
                 mean_data[ii][transmission < transmission_threshold] = np.nan
-            return mean_data
+            return mean_data, transmission[0]
 
         n1 = len(coordinates) if coordinates is not None else 2 # be careful if default in track function changes
         n2 = len(indices) if indices is not None else 1
         xy = np.full((n1, n2, n_turns), np.nan)
+        transmission = np.zeros(n_turns)
 
         turns_left_to_track = n_turns
         turns_tracked = 0
         while turns_left_to_track >= turns_per_chunk:
             track_data = self.track(new_bunch, indices=indices, n_turns=turns_per_chunk, use_design=use_design,
                                                     coordinates=coordinates, modify_bunch_in_place=True)
-            xy[:, :, turns_tracked:turns_tracked + turns_per_chunk] = apply_mean_and_transmission_threshold(track_data, transmission_threshold)
+            mean_data_chunk, transmission_chunk = apply_mean_and_transmission_threshold(track_data, transmission_threshold)
+            xy[:, :, turns_tracked:turns_tracked + turns_per_chunk] = mean_data_chunk
+            transmission[turns_tracked:turns_tracked + turns_per_chunk] = transmission_chunk
             turns_tracked += turns_per_chunk
             turns_left_to_track -= turns_per_chunk
 
         if turns_left_to_track != 0:
             track_data = self.track(new_bunch, indices=indices, n_turns=turns_left_to_track, use_design=use_design,
                                                     coordinates=coordinates, modify_bunch_in_place=True)
-            xy[:, :, turns_tracked:] = apply_mean_and_transmission_threshold(track_data, transmission_threshold)
-            turns_tracked += turns_per_chunk
-            turns_left_to_track -= turns_per_chunk
+
+            mean_data_chunk, transmission_chunk = apply_mean_and_transmission_threshold(track_data, transmission_threshold)
+            xy[:, :, turns_tracked:] = mean_data_chunk
+            transmission[turns_tracked:] = transmission_chunk
+            turns_tracked += turns_left_to_track
+            turns_left_to_track -= turns_left_to_track
 
         if not turns_tracked == n_turns or not turns_left_to_track == 0:
             raise Exception(f"Bug during tracking {turns_tracked=}, {turns_left_to_track=}.")
-        return xy
+        return xy, transmission
 
 class XSuiteLattice(Lattice):
     """

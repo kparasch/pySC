@@ -17,6 +17,7 @@ class Lattice(BaseModel, extra="forbid"):
     lattice_file: str
     no_6d : bool = False
     naming : Optional[str] = None
+    turns_per_chunk: int = 100
     _omp_num_threads = PrivateAttr(default=None)
     _ring = PrivateAttr(default=None)
     _design = PrivateAttr(default=None)
@@ -35,8 +36,9 @@ class Lattice(BaseModel, extra="forbid"):
         return self._twiss
 
     def track_mean(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False,
-                   coordinates: Optional[list] = None, transmission_threshold: float = 0, turns_per_chunk: int = 100) -> nparray:
+                   coordinates: Optional[list] = None, transmission_threshold: float = 0) -> nparray:
         new_bunch = bunch.copy()
+        turns_per_chunk = self.turns_per_chunk
 
         def apply_mean_and_transmission_threshold(track_data: nparray, transmission_threshold) -> nparray:
             transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)

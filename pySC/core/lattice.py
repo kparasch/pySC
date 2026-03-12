@@ -344,7 +344,7 @@ class ATLattice(Lattice):
         frequency = elem.Frequency
 
         phase = timelag * (360 * frequency) / C_LIGHT
-        phase = phase % 360
+        phase = (phase + 180) % 360 - 180
 
         return voltage, phase, frequency
 

@@ -7,6 +7,7 @@ import warnings
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
 
+from ..utils.sc_tools import update_transformation
 import logging
 logger = logging.getLogger(__name__)
 
@@ -78,15 +79,6 @@ class Lattice(BaseModel, extra="forbid"):
         if not turns_tracked == n_turns or not turns_left_to_track == 0:
             raise Exception(f"Bug during tracking {turns_tracked=}, {turns_left_to_track=}.")
         return xy, transmission
-
-class XSuiteLattice(Lattice):
-    """
-    Not implemented.
-    """
-
-    # fake field so that pydantic can distinguish
-    # the different machine types
-    xsuite_simulator: None = None
 
 class ATLattice(Lattice):
     """
@@ -216,7 +208,7 @@ class ATLattice(Lattice):
         If no indices are provided, returns all twiss parameters.
         """
         if indices is None:
-            indices = range(len(self._design))
+            indices = range(len(self._design)+1)
         ring = self._design if use_design else self._ring
         if self.use_orbit_guess:
             assert self.no_6d is False, "Using orbit guesses with a 4D lattice is not checked/implemented."
@@ -244,8 +236,8 @@ class ATLattice(Lattice):
                  'bety': elemdata.beta[:, 1],
                  'alfx': elemdata.alpha[:, 0],
                  'alfy': elemdata.alpha[:, 1],
-                 'mux': elemdata.mu[:, 0],
-                 'muy': elemdata.mu[:, 1],
+                 'mux': elemdata.mu[:, 0]/2./np.pi,
+                 'muy': elemdata.mu[:, 1]/2./np.pi,
                  'dx' : elemdata.dispersion[:, 0],
                  'dpx': elemdata.dispersion[:, 1],
                  'dy' : elemdata.dispersion[:, 2],
@@ -429,3 +421,13 @@ class ATLattice(Lattice):
             M = ring.find_m66(orbit=orbit0)[0]
 
         return M
+
+    def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
+                            dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
+                            pitch: Optional[float] = None, use_design: bool = False) -> None:
+        if use_design:
+            elem = self._design[index]
+        else:
+            elem = self._ring[index]
+
+        update_transformation(elem, dx=dx, dy=dy, dz=dz, roll=roll, yaw=yaw, pitch=pitch)

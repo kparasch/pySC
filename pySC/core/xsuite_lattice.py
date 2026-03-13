@@ -32,6 +32,7 @@ class XSuiteLattice(Lattice):
     """
     Represents a lattice defined with XSuite.
     """
+    # TODO: there is very likely an error (or inconsistency with pyAT_pySC) on the sign of the longitudinal coordinate.
 
     # fake field so that pydantic can distinguish
     # the different machine types
@@ -87,7 +88,8 @@ class XSuiteLattice(Lattice):
         self._ring.build_tracker(_context=self._context)
         self._design.build_tracker(_context=self._context)
 
-    def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False, coordinates: Optional[list] = None) -> nparray:
+    def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False,
+              coordinates: Optional[list] = None, modify_bunch_in_place: bool = False) -> nparray:
         n_particles = bunch.shape[0]
 
         if indices is None:
@@ -123,6 +125,14 @@ class XSuiteLattice(Lattice):
                     out[ii, :, :, turn][lost] = np.nan
             else:
                 break
+
+        if modify_bunch_in_place:
+            bunch[:, 0] = particles.x
+            bunch[:, 1] = particles.px
+            bunch[:, 2] = particles.y
+            bunch[:, 3] = particles.py
+            bunch[:, 4] = particles.zeta
+            bunch[:, 5] = particles.delta
         return out
 
     def get_orbit(self, indices: list[int] = None, use_design: bool = False) -> tuple[nparray, nparray]:

@@ -6,7 +6,7 @@ pySC
 
 """
 
-__version__ = "1.1.2"
+__version__ = "1.2.0"
 
 from .core.simulated_commissioning import SimulatedCommissioning
 from .configuration.generation import generate_SC

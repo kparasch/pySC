@@ -32,28 +32,31 @@ class XSuiteLattice(Lattice):
 
     @model_validator(mode="after")
     def load_lattice(self):
-        self._context = xo.ContextCpu()
-        self._ring = xt.Line.from_json(self.lattice_file)
-        self._design = xt.Line.from_json(self.lattice_file)
+        if self._context is None or self._ring is None or self._design is None:
+            self._context = xo.ContextCpu()
+            self._ring = xt.Line.from_json(self.lattice_file)
+            self._design = xt.Line.from_json(self.lattice_file)
 
-        if not self.no_6d:
-            self._ring.configure_radiation(model='mean')
-            self._design.configure_radiation(model='mean')
+            if not self.no_6d:
+                self._ring.configure_radiation(model='mean')
+                self._design.configure_radiation(model='mean')
 
-        self._ring.build_tracker(_context=self._context)
-        self._design.build_tracker(_context=self._context)
+            self._ring.build_tracker(_context=self._context)
+            self._design.build_tracker(_context=self._context)
 
-        self._twiss = self.get_twiss(use_design=True)
+            self._twiss = self.get_twiss(use_design=True)
 
-        for line in [self._ring, self._design]:
-            line.env['pySC'] = 1
-            for el in line.elements:
-                if hasattr(el, 'k0_from_h'):
-                    el.k0_from_h = False
-                if el.__class__ is xt.Cavity:
-                    el.absolute_time = 0
+            for line in [self._ring, self._design]:
+                line.env['pySC'] = 1
+                for el in line.elements:
+                    if hasattr(el, 'k0_from_h'):
+                        h = el.h
+                        el.k0_from_h = False
+                        el.k0 = h
+                    if el.__class__ is xt.Cavity:
+                        el.absolute_time = 0
 
-        self._index_to_name = {ii: name for ii, name in enumerate(line.element_names)}
+            self._index_to_name = {ii: name for ii, name in enumerate(line.element_names)}
 
         return self
 

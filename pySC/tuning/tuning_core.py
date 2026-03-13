@@ -516,10 +516,9 @@ class Tuning(BaseModel, extra="forbid"):
             SC.lattice.omp_num_threads = omp_num_threads
 
         bunch = SC.injection.generate_bunch()
-        track_data = SC.lattice.track(bunch, indices=SC.bpm_system.indices, n_turns=n_turns, use_design=False)
-        transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+        _, transmission = SC.lattice.track_mean(bunch, indices=SC.bpm_system.indices, n_turns=n_turns, use_design=False)
 
         if omp_num_threads is not None:
             SC.lattice.omp_num_threads = previous_threads
 
-        return transmission[-1, :]
+        return transmission

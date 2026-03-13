@@ -1,8 +1,9 @@
 from pydantic import BaseModel, PrivateAttr, model_validator
-from typing import Optional, Literal
+from typing import Optional, Literal, Tuple
 import re
 import numpy as np
 import at
+import warnings
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
 
@@ -16,6 +17,7 @@ class Lattice(BaseModel, extra="forbid"):
     lattice_file: str
     no_6d : bool = False
     naming : Optional[str] = None
+    turns_per_chunk: int = 100
     _omp_num_threads = PrivateAttr(default=None)
     _ring = PrivateAttr(default=None)
     _design = PrivateAttr(default=None)
@@ -33,6 +35,49 @@ class Lattice(BaseModel, extra="forbid"):
     def twiss(self):
         return self._twiss
 
+    def track_mean(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False,
+                   coordinates: Optional[list] = None, transmission_threshold: float = 0) -> Tuple[nparray, nparray]:
+        new_bunch = bunch.copy()
+        turns_per_chunk = self.turns_per_chunk
+
+        def apply_mean_and_transmission_threshold(track_data: nparray, transmission_threshold) -> nparray:
+            transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+            with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                mean_data = np.nanmean(track_data, axis=1) # average over all particles
+            for ii in range(track_data.shape[0]):
+                mean_data[ii][transmission < transmission_threshold] = np.nan
+            return mean_data, transmission[0]
+
+        n1 = len(coordinates) if coordinates is not None else 2 # be careful if default in track function changes
+        n2 = len(indices) if indices is not None else 1
+        xy = np.full((n1, n2, n_turns), np.nan)
+        transmission = np.zeros(n_turns)
+
+        turns_left_to_track = n_turns
+        turns_tracked = 0
+        while turns_left_to_track >= turns_per_chunk:
+            track_data = self.track(new_bunch, indices=indices, n_turns=turns_per_chunk, use_design=use_design,
+                                                    coordinates=coordinates, modify_bunch_in_place=True)
+            mean_data_chunk, transmission_chunk = apply_mean_and_transmission_threshold(track_data, transmission_threshold)
+            xy[:, :, turns_tracked:turns_tracked + turns_per_chunk] = mean_data_chunk
+            transmission[turns_tracked:turns_tracked + turns_per_chunk] = transmission_chunk
+            turns_tracked += turns_per_chunk
+            turns_left_to_track -= turns_per_chunk
+
+        if turns_left_to_track != 0:
+            track_data = self.track(new_bunch, indices=indices, n_turns=turns_left_to_track, use_design=use_design,
+                                                    coordinates=coordinates, modify_bunch_in_place=True)
+
+            mean_data_chunk, transmission_chunk = apply_mean_and_transmission_threshold(track_data, transmission_threshold)
+            xy[:, :, turns_tracked:] = mean_data_chunk
+            transmission[turns_tracked:] = transmission_chunk
+            turns_tracked += turns_left_to_track
+            turns_left_to_track -= turns_left_to_track
+
+        if not turns_tracked == n_turns or not turns_left_to_track == 0:
+            raise Exception(f"Bug during tracking {turns_tracked=}, {turns_left_to_track=}.")
+        return xy, transmission
 
 class XSuiteLattice(Lattice):
     """
@@ -105,7 +150,8 @@ class ATLattice(Lattice):
         logger.info(f'  delta = {guess[4]}')
         self.orbit_guess = list(guess)
 
-    def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False, coordinates: Optional[list] = None) -> nparray:
+    def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False, coordinates: Optional[list] = None,
+              modify_bunch_in_place: bool = False) -> nparray:
         new_bunch = bunch.copy()
         new_bunch[:,4], new_bunch[:,5] = new_bunch[:,5].copy(), new_bunch[:,4].copy()  # swap zeta and delta for AT
         if use_design:
@@ -123,20 +169,26 @@ class ATLattice(Lattice):
             if self.omp_num_threads is not None:
                 out = at.patpass(ring, new_bunch.T, refpts=indices, nturns=n_turns)
             else:
-                out = ring.track(new_bunch.T, refpts=indices, nturns=n_turns)[0]
+                out = ring.track(new_bunch.T, refpts=indices, nturns=n_turns, in_place=True)[0]
             #out = self._design.track(bunch.T, refpts=indices, nturns=n_turns)[0]
         else:
             if self.omp_num_threads is not None:
                 out = at.patpass(ring, new_bunch.T, nturns=n_turns)
             else:
-                out = ring.track(new_bunch.T, nturns=n_turns)[0]
+                out = ring.track(new_bunch.T, nturns=n_turns, in_place=True)[0]
             # out = ring.track(bunch.T, nturns=n_turns)[0]
         #     if indices is not None:
         #         out = ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
         #     else:
         #         out = ring.track(bunch.T, nturns=n_turns)[0]
         xy = out[coords, :, :, :]
-        return xy
+        if modify_bunch_in_place:
+            new_bunch[:,4], new_bunch[:,5] = new_bunch[:,5].copy(), new_bunch[:,4].copy()  # swap zeta and delta again
+            bunch[:,:] = new_bunch[:,:]
+        return xy # shape of [coordinates, particles, ref points, turns]
+
+
+
 
     def get_orbit(self, indices: list[int] = None, use_design=False) -> dict:
         """

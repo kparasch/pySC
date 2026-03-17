@@ -52,6 +52,7 @@ class ATLattice(Lattice):
     # the different machine types
     at_simulator: None = None
     use: str = 'RING'
+    loader_kwargs: dict = {}
     orbit_guess: Optional[list[float]] = None
     use_orbit_guess: bool = False
     _ring: at.Lattice = PrivateAttr(default=None)
@@ -59,8 +60,8 @@ class ATLattice(Lattice):
 
     @model_validator(mode="after")
     def load_lattice(self):
-        self._ring = at.load_mat(self.lattice_file, use=self.use)
-        self._design = at.load_mat(self.lattice_file, use=self.use)
+        self._ring = at.load_lattice(self.lattice_file, use=self.use, **self.loader_kwargs)
+        self._design = at.load_lattice(self.lattice_file, use=self.use, **self.loader_kwargs)
 
         if not self.no_6d:
             self._ring.enable_6d()

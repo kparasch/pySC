@@ -16,6 +16,9 @@ BPM_FIELDS_TO_INITIALISE = ['offsets_x', 'offsets_y', 'rolls',
                             'bba_offsets_x', 'bba_offsets_y',
                             'reference_x', 'reference_y']
 
+# These fields are initialized to ones (not zeros) — multiplicative corrections
+BPM_FIELDS_TO_INITIALISE_ONES = ['gain_corrections_x', 'gain_corrections_y']
+
 class BPMSystem(BaseModel, extra='forbid'):
     indices: list[int] = []
     names: list[BPM_NAME_TYPE] = []
@@ -35,6 +38,9 @@ class BPMSystem(BaseModel, extra='forbid'):
     bba_offsets_y: NPARRAY = np.array([])
     reference_x: NPARRAY = np.array([])
     reference_y: NPARRAY = np.array([])
+
+    gain_corrections_x: NPARRAY = np.array([])
+    gain_corrections_y: NPARRAY = np.array([])
 
     transmission_threshold: float = 0.4
 
@@ -92,8 +98,8 @@ class BPMSystem(BaseModel, extra='forbid'):
         noise_x = self._parent.rng.normal(scale=self.noise_co_x)
         noise_y = self._parent.rng.normal(scale=self.noise_co_y)
 
-        fake_orbit_x = (rotated_orbit[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
-        fake_orbit_y = (rotated_orbit[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+        fake_orbit_x = (rotated_orbit[0] - self.offsets_x) * (1 + self.calibration_errors_x) * self.gain_corrections_x + noise_x
+        fake_orbit_y = (rotated_orbit[1] - self.offsets_y) * (1 + self.calibration_errors_y) * self.gain_corrections_y + noise_y
 
         if bba:
             # Apply BBA offsets
@@ -107,15 +113,16 @@ class BPMSystem(BaseModel, extra='forbid'):
 
         return fake_orbit_x, fake_orbit_y
 
-    def capture_injection(self, n_turns=1, bba=True, subtract_reference=True, use_design=False, return_transmission=False) -> tuple[np.ndarray, np.ndarray]:
+    def capture_injection(self, n_turns=1, bba=True, subtract_reference=True, use_design=False, return_transmission=False):
         '''
         Simulates an orbit reading during injection from the BPMs, applying calibration errors, offsets/rolls, and noise.
         Args:
             bba (bool): If True, corrects for the BBA offsets stored in the BPMSystem class.
             subtract_reference (bool): If True, subtracts the reference orbit from the simulated orbit.
+            return_transmission (bool): If True, also returns the transmission array (fraction of particles surviving to each BPM at each turn).
         Returns:
-            fake_orbit_x: Simulated x-coordinates of the orbit at the BPMs.
-            fake_orbit_y: Simulated y-coordinates of the orbit at the BPMs.
+            If return_transmission is False: (fake_trajectory_x, fake_trajectory_y)
+            If return_transmission is True: (fake_trajectory_x, fake_trajectory_y, transmission)
         '''
         if use_design:
             bunch = self._parent.injection.generate_bunch(use_design=True)
@@ -126,6 +133,8 @@ class BPMSystem(BaseModel, extra='forbid'):
                 trajectory = np.nanmean(track_data, axis=1) # average over all particles
             trajectory[0][transmission < self.transmission_threshold] = np.nan
             trajectory[1][transmission < self.transmission_threshold] = np.nan
+            if return_transmission:
+                return trajectory[0], trajectory[1], transmission
             return trajectory[0], trajectory[1]
 
         bunch = self._parent.injection.generate_bunch()
@@ -147,8 +156,8 @@ class BPMSystem(BaseModel, extra='forbid'):
             noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
             noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
 
-            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
-            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) * self.gain_corrections_x + noise_x
+            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) * self.gain_corrections_y + noise_y
 
             if bba:
                 # Apply BBA offsets
@@ -163,6 +172,8 @@ class BPMSystem(BaseModel, extra='forbid'):
             fake_trajectory_x_tbt[:, n] = fake_trajectory_x
             fake_trajectory_y_tbt[:, n] = fake_trajectory_y
 
+        if return_transmission:
+            return fake_trajectory_x_tbt, fake_trajectory_y_tbt, transmission
         return fake_trajectory_x_tbt, fake_trajectory_y_tbt
 
     def capture_kick(self, n_turns=1, kick_px=0, kick_py=0, bba=True, subtract_reference=True, use_design=False) -> tuple[np.ndarray, np.ndarray]:
@@ -209,8 +220,8 @@ class BPMSystem(BaseModel, extra='forbid'):
             noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
             noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
 
-            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
-            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) * self.gain_corrections_x + noise_x
+            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) * self.gain_corrections_y + noise_y
 
             if bba:
                 # Apply BBA offsets

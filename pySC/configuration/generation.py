@@ -2,6 +2,7 @@ from typing import Optional
 import logging
 
 from ..core.lattice import ATLattice
+from ..core.xsuite_lattice import XSuiteLattice, XSUITE_NOT_INSTALLED
 from ..core.simulated_commissioning import SimulatedCommissioning
 from .load_config import load_yaml
 from .magnets_conf import configure_magnets
@@ -33,18 +34,19 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
         logger.warning("'bpms' is missing in the configuration file. Generating an empty one.")
 
     # TODO: maybe put in a separate module
-    if config_dict['lattice']['simulator'] == 'at':
-        lattice_file = config_dict['lattice']['lattice_file']
+    lattice_file = config_dict['lattice']['lattice_file']
 
-        if 'no_6d' in config_dict['lattice']:
-            no_6d = config_dict['lattice']['no_6d']
-        else:
-            no_6d = False
+    if 'no_6d' in config_dict['lattice']:
+        no_6d = config_dict['lattice']['no_6d']
+    else:
+        no_6d = False
 
+    simulator = config_dict['lattice']['simulator']
+    if simulator == 'at':
         if 'use' in config_dict['lattice']:
             use = config_dict['lattice']['use']
         else:
-            use = 'RING'
+            use = 'RING' #is this correct?
 
         if 'naming' in config_dict['lattice']:
             naming = config_dict['lattice']['naming']
@@ -53,6 +55,11 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
 
         logger.info(f'Loading AT lattice from {lattice_file}')
         lattice = ATLattice(lattice_file=lattice_file, no_6d=no_6d, use=use, naming=naming)
+    elif simulator == 'xsuite':
+        if XSUITE_NOT_INSTALLED:
+            raise Exception('xsuite installation not found (could not import xtrack and xobjects).')
+        logger.info(f'Loading XSuite lattice from {lattice_file}')
+        lattice = XSuiteLattice(lattice_file=lattice_file, no_6d=no_6d)
     else:
         raise NotImplementedError(f"Simulator {config_dict['lattice']['simulator']} is not implemented.")
 

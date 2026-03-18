@@ -98,8 +98,10 @@ class BPMSystem(BaseModel, extra='forbid'):
         noise_x = self._parent.rng.normal(scale=self.noise_co_x)
         noise_y = self._parent.rng.normal(scale=self.noise_co_y)
 
-        fake_orbit_x = (rotated_orbit[0] - self.offsets_x) * (1 + self.calibration_errors_x) * self.gain_corrections_x + noise_x
-        fake_orbit_y = (rotated_orbit[1] - self.offsets_y) * (1 + self.calibration_errors_y) * self.gain_corrections_y + noise_y
+        fake_orbit_x = (rotated_orbit[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
+        fake_orbit_y = (rotated_orbit[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+        fake_orbit_x *= self.gain_corrections_x
+        fake_orbit_y *= self.gain_corrections_y
 
         if bba:
             # Apply BBA offsets
@@ -145,8 +147,10 @@ class BPMSystem(BaseModel, extra='forbid'):
             noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
             noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
 
-            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) * self.gain_corrections_x + noise_x
-            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) * self.gain_corrections_y + noise_y
+            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
+            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+            fake_trajectory_x *= self.gain_corrections_x
+            fake_trajectory_y *= self.gain_corrections_y
 
             if bba:
                 # Apply BBA offsets
@@ -198,8 +202,10 @@ class BPMSystem(BaseModel, extra='forbid'):
             noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
             noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
 
-            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) * self.gain_corrections_x + noise_x
-            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) * self.gain_corrections_y + noise_y
+            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
+            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+            fake_trajectory_x *= self.gain_corrections_x
+            fake_trajectory_y *= self.gain_corrections_y
 
             if bba:
                 # Apply BBA offsets

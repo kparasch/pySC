@@ -129,17 +129,20 @@ class ResponseMatrix(BaseModel):
                 logger.warning(f'RF response does not have the correct length: {len(self.rf_response)} (should have been {self._n_outputs}).')
                 logger.warning('RF response will be removed.')
                 self.rf_response = np.zeros(self._n_outputs)
+            else: # self.rf_response is not None and is valid
+                if self.rf_weight is None:
+                    default_rf_weight = self.default_rf_weight()
+                    logger.info(f'Setting the rf_weight by default to {default_rf_weight}.')
+                    self.rf_weight = default_rf_weight
+
+        if self.rf_weight is None: #if it is still None, rf_response is not valid and set it to 0.
+            self.rf_weight = 0
 
         if self.input_weights is None:
             self.input_weights = np.ones(self._n_inputs, dtype=float)
 
         if self.output_weights is None:
             self.output_weights = np.ones(self._n_outputs, dtype=float)
-
-        if self.rf_response is not None and self.rf_weight is None:
-            default_rf_weight = self.default_rf_weight()
-            logger.info(f'Setting the rf_weight by default to {default_rf_weight}.')
-            self.rf_weight = default_rf_weight
 
         return self
 

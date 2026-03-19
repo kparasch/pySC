@@ -119,23 +119,11 @@ class BPMSystem(BaseModel, extra='forbid'):
         '''
         if use_design:
             bunch = self._parent.injection.generate_bunch(use_design=True)
-            track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
-            transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
-            with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
-                warnings.simplefilter("ignore", category=RuntimeWarning)
-                trajectory = np.nanmean(track_data, axis=1) # average over all particles
-            trajectory[0][transmission < self.transmission_threshold] = np.nan
-            trajectory[1][transmission < self.transmission_threshold] = np.nan
+            trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
             return trajectory[0], trajectory[1]
 
         bunch = self._parent.injection.generate_bunch()
-        track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=False)
-        transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
-        with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            trajectory = np.nanmean(track_data, axis=1) # average over all particles
-        trajectory[0][transmission < self.transmission_threshold] = np.nan
-        trajectory[1][transmission < self.transmission_threshold] = np.nan
+        trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False)
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])
@@ -179,25 +167,13 @@ class BPMSystem(BaseModel, extra='forbid'):
             bunch = self._parent.injection.generate_orbit_centered_bunch(use_design=True)
             bunch[:, 1] += kick_px
             bunch[:, 3] += kick_py
-            track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
-            transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
-            with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
-                warnings.simplefilter("ignore", category=RuntimeWarning)
-                trajectory = np.nanmean(track_data, axis=1) # average over all particles
-            trajectory[0][transmission < self.transmission_threshold] = np.nan
-            trajectory[1][transmission < self.transmission_threshold] = np.nan
+            trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
             return trajectory[0], trajectory[1]
 
         bunch = self._parent.injection.generate_orbit_centered_bunch()
         bunch[:, 1] += kick_px
         bunch[:, 3] += kick_py
-        track_data = self._parent.lattice.track(bunch, indices=self.indices, n_turns=n_turns, use_design=False)
-        transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
-        with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
-            warnings.simplefilter("ignore", category=RuntimeWarning)
-            trajectory = np.nanmean(track_data, axis=1) # average over all particles
-        trajectory[0][transmission < self.transmission_threshold] = np.nan
-        trajectory[1][transmission < self.transmission_threshold] = np.nan
+        trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False)
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])
@@ -226,21 +202,4 @@ class BPMSystem(BaseModel, extra='forbid'):
             fake_trajectory_y_tbt[:, n] = fake_trajectory_y
 
         return fake_trajectory_x_tbt, fake_trajectory_y_tbt
-    # def capture_turn_by_turn(self, num_turns=1, return_sigma=False, Z0=None):
-    #     if Z0 is None:
-    #         self.SC.INJ.Z0 = np.zeros(6)
-    #     self.SC.INJ.trackMode = 'TBT'
-    #     SC = self.SC
-    #     SC.INJ.nTurns = num_turns
-    #     delta, sigma = bpm_reading(SC)
-
-    #     tbt_data = np.full((2, len(SC.ORD.BPM), SC.INJ.nTurns), np.nan)
-    #     for turn in range(self.SC.INJ.nTurns):
-    #         tbt_data[0, :, turn] = delta[0, turn*len(SC.ORD.BPM):(turn+1)*len(SC.ORD.BPM)]
-
-    #     if return_sigma:
-    #         return tbt_data, sigma
-    #     else:
-    #         return tbt_data
-
 

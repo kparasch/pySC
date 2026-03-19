@@ -344,8 +344,10 @@ class Tuning(BaseModel, extra="forbid"):
             logger.info(f'Trajectory BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         for ii, bpm_number in enumerate(bpm_numbers):
-            SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
-            SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
+            if offsets_x[ii] == offsets_x[ii]: #is not nan
+                SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
+            if offsets_y[ii] == offsets_y[ii]: #is not nan
+                SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
     def do_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, skip_summary: bool = False, n_corr_steps: int = 5):
@@ -381,8 +383,10 @@ class Tuning(BaseModel, extra="forbid"):
             logger.info(f'Orbit BBA accuracy, H: {acc_x:.1f} um, V: {acc_y:.1f} um')
 
         for ii, bpm_number in enumerate(bpm_numbers):
-            SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
-            SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
+            if offsets_x[ii] == offsets_x[ii]: #is not nan
+                SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
+            if offsets_y[ii] == offsets_y[ii]: #is not nan
+                SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
     def do_parallel_trajectory_bba(self, bpm_names: Optional[list[str]] = None, shots_per_trajectory: int = 1, omp_num_threads: int = 2,
@@ -443,8 +447,10 @@ class Tuning(BaseModel, extra="forbid"):
 
         bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
         for ii, bpm_number in enumerate(bpm_numbers):
-            SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
-            SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
+            if offsets_x[ii] == offsets_x[ii]: #is not nan
+                SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
+            if offsets_y[ii] == offsets_y[ii]: #is not nan
+                SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
     def do_parallel_orbit_bba(self, bpm_names: Optional[list[str]] = None, shots_per_orbit: int = 1, omp_num_threads: int = 2, n_corr_steps: int = 5):
@@ -504,8 +510,10 @@ class Tuning(BaseModel, extra="forbid"):
 
         bpm_numbers = [SC.bpm_system.bpm_number(name=name) for name in bpm_names]
         for ii, bpm_number in enumerate(bpm_numbers):
-            SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
-            SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
+            if offsets_x[ii] == offsets_x[ii]: #is not nan
+                SC.bpm_system.bba_offsets_x[bpm_number] = offsets_x[ii]
+            if offsets_y[ii] == offsets_y[ii]: #is not nan
+                SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
     def injection_efficiency(self, n_turns: int = 1, omp_num_threads: Optional[int] = None) -> float:
@@ -516,10 +524,9 @@ class Tuning(BaseModel, extra="forbid"):
             SC.lattice.omp_num_threads = omp_num_threads
 
         bunch = SC.injection.generate_bunch()
-        track_data = SC.lattice.track(bunch, indices=SC.bpm_system.indices, n_turns=n_turns, use_design=False)
-        transmission = np.sum(~np.isnan(track_data[0]), axis=0) / len(bunch)
+        _, transmission = SC.lattice.track_mean(bunch, indices=SC.bpm_system.indices, n_turns=n_turns, use_design=False)
 
         if omp_num_threads is not None:
             SC.lattice.omp_num_threads = previous_threads
 
-        return transmission[-1, :]
+        return transmission

@@ -73,6 +73,8 @@ class BPMSystem(BaseModel, extra='forbid'):
 
     def reconstruct_true_orbit(self, name: BPM_NAME_TYPE, x: float, y: float) -> Tuple[float,float]:
         bpm_number = self.bpm_number(name=name)
+        x = x / self.gain_corrections_x[bpm_number]
+        y = y / self.gain_corrections_y[bpm_number]
         rot_x = x/(1 + self.calibration_errors_x[bpm_number])
         rot_y = y/(1 + self.calibration_errors_y[bpm_number])
         reconstructed_x, reconstructed_y = np.matmul(self._rot_matrices[:,:,bpm_number].T, np.array([rot_x, rot_y]))

@@ -68,7 +68,7 @@ class ResponseMatrix(BaseModel):
     _inverse_RM_H: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
     _inverse_RM_V: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @property
     def RM(self):

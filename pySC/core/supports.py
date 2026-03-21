@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-class ElementOffset(BaseModel):
+class ElementOffset(BaseModel, extra="forbid"):
     """
     Element offset: represents an element in the support system with its misalignments.
     """
@@ -30,7 +30,7 @@ class ElementOffset(BaseModel):
     s: Optional[float] = None  # s position in the ring, to be filled later
 
 
-class SupportEndpoint(BaseModel):
+class SupportEndpoint(BaseModel, extra="forbid"):
     """
     Support endpoint: represents an endpoint of a support structure.
     """
@@ -41,7 +41,7 @@ class SupportEndpoint(BaseModel):
     s: Optional[float] = None  # s position in the ring, to be filled later
 
 
-class Support(BaseModel):
+class Support(BaseModel, extra="forbid"):
     """Support structure: represents a support with two endpoints."""
     start: SupportEndpoint
     end: SupportEndpoint
@@ -69,7 +69,7 @@ class Support(BaseModel):
         return f'({self.name}: {self.start.index}-{self.end.index})'
 
 
-class SupportSystem(BaseModel):
+class SupportSystem(BaseModel, extra="forbid"):
     '''
     Support system: handles all misalignments through a graph-like structure.
     It is composed in level of supports, where L0 is the level of elements (offsets),

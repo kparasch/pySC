@@ -41,7 +41,7 @@ class DispersionData(BaseModel):
     timestamp: Optional[float] = None
     original_save_path: Optional[str] = None
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @property
     def frequency_response(self) -> Tuple[NPARRAY]:
@@ -63,7 +63,7 @@ class DispersionData(BaseModel):
         return filename
 
 
-class DispersionMeasurement(BaseModel):
+class DispersionMeasurement(BaseModel, extra="forbid"):
     delta: float
     shots_per_orbit: int = 1
     bipolar: bool = True

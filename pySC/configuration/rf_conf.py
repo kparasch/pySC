@@ -49,7 +49,7 @@ def configure_rf(SC: SimulatedCommissioning) -> None:
                 cavity.phase_error = SC.rng.normal_trunc(0, sig)
 
             if 'frequency' in rf_conf:
-                sig = get_error(rf_conf['frequncy'], error_table=error_table)
+                sig = get_error(rf_conf['frequency'], error_table=error_table)
                 cavity.frequency_error = SC.rng.normal_trunc(0, sig)
 
             SC.rf_settings.cavities[name] = cavity

@@ -37,7 +37,7 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
             raise Exception(f'ERROR: At least one bpm in category {bpms_category} has already been registered.')
         bpms_indices = bpms_indices + indices
         bpms_names = bpms_names + names
-        nbpm = len(bpms_indices)
+        nbpm = len(indices)
 
         bpms_categories = bpms_categories + [bpms_category] * nbpm
 

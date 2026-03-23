@@ -28,4 +28,4 @@ class DispersionCode(IntEnum):
     AFTER_GET = 4
     AFTER_RESTORE = 5
     MEASURING = 5 # same as AFTER_RESTORE on purpose
-    DONE = 4
+    DONE = 6

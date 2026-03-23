@@ -13,7 +13,7 @@ from ..core.types import NPARRAY
 
 logger = logging.getLogger(__name__)
 
-class BBAData(BaseModel):
+class BBAData(BaseModel, extra="forbid"):
     """
     A class to hold the data collected during a BBA measurement.
     It contains the BPM positions and the orbit data.
@@ -82,7 +82,7 @@ def hysteresis_loop(name, settings, delta, n_cycles=1, bipolar=True):
         settings.set(name, sp0)
     yield BBACode.HYSTERESIS_DONE
 
-class BBA_Measurement(BaseModel):
+class BBA_Measurement(BaseModel, extra="forbid"):
     """
     A class to perform a beam-based alignment measurement to find the quadrupole center in a storage ring.
     It sets the quadrupole and corrector strengths, collects orbit data.
@@ -362,6 +362,7 @@ class BBAAnalysis(BaseModel):
     rejected_outliers: int
     rejected_slopes: int
     rejected_centers: int
+    total_rejections: int = 0
 
     bpm_outlier_sigma: float
     slope_cutoff: float
@@ -371,7 +372,7 @@ class BBAAnalysis(BaseModel):
     default_slope_cutoff: ClassVar[float] = 0.10 # of max slope
     default_center_cutoff: ClassVar[int] = 1 # number of sigma
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @classmethod
     def analyze(cls, data: BBAData, n_downstream: Optional[int] = None, bpm_outlier_sigma: Optional[float] = None,

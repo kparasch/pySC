@@ -8,7 +8,7 @@ NPARRAY = Annotated[np.ndarray,
                     PlainSerializer(lambda x: x.tolist(), return_type=list)
                    ]
 
-class BaseModelWithSave(BaseModel):
+class BaseModelWithSave(BaseModel, extra="forbid"):
     def save_as(self, filename: Union[Path, str], indent: Optional[int] = None) -> None:
         if type(filename) is not Path:
             filename = Path(filename)

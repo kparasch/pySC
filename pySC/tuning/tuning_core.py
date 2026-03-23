@@ -516,109 +516,95 @@ class Tuning(BaseModel, extra="forbid"):
                 SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-    def tune_scan(self, quad_controls_1: list[str], quad_controls_2: list[str],
-                  sp_vec_1: np.ndarray, sp_vec_2: np.ndarray,
-                  n_particles: int = 100, n_turns: int = 50,
-                  target: float = 0.8, full_scan: bool = False) -> tuple[np.ndarray, np.ndarray, int]:
-        """Spiral grid scan of two quad families for beam survival.
+    def tune_scan(self, dqx_range: np.ndarray, dqy_range: np.ndarray,
+                  n_turns: int = 50, target: float = 0.8,
+                  full_scan: bool = False,
+                  omp_num_threads: Optional[int] = None) -> tuple[float, float, np.ndarray, int]:
+        """Spiral grid scan of tune deltas for beam survival.
 
-        Ports SCtuneScan from MATLAB SC toolkit. Scans quad setpoints in a
-        spiral pattern starting from the center of the grid, looking for
-        settings that achieve the target transmission.
+        Scans tune knob setpoints in a spiral pattern starting from the
+        center of the grid, looking for settings that achieve the target
+        transmission.  Uses the registered tune knobs (see
+        ``create_tune_knobs()``) and ``injection_efficiency()`` for tracking.
 
         Args:
-            quad_controls_1: List of control names for quad family 1.
-            quad_controls_2: List of control names for quad family 2.
-            sp_vec_1: Relative setpoint multipliers for family 1.
-            sp_vec_2: Relative setpoint multipliers for family 2.
-            n_particles: Number of particles for tracking.
-            n_turns: Number of turns for tracking.
-            target: Target final-turn transmission fraction.
+            dqx_range: 1-D array of horizontal tune deltas.
+            dqy_range: 1-D array of vertical tune deltas.
+            n_turns: Number of turns for tracking (default 50).
+            target: Target final-turn transmission fraction (default 0.8).
             full_scan: If True, scan entire grid even after target is reached.
+            omp_num_threads: Optional thread count forwarded to tracking.
 
         Returns:
-            (best_setpoints, transmission_map, error) where:
-            - best_setpoints: [sp1, sp2] relative setpoints
-            - transmission_map: 2D array of final-turn transmissions
-            - error: 0=target reached, 1=improved but not target, 2=no improvement
+            (best_dqx, best_dqy, survival_map, error) where:
+            - best_dqx: Best horizontal tune delta.
+            - best_dqy: Best vertical tune delta.
+            - survival_map: 2-D array of final-turn transmissions.
+            - error: 0 = target reached, 1 = improved but not target,
+              2 = no transmission.
         """
         SC = self._parent
-        n1, n2 = len(sp_vec_1), len(sp_vec_2)
-        assert n1 == n2, 'Both quad setpoint vectors must have the same length.'
 
-        # Save original setpoints
-        original_sp_1 = {c: SC.magnet_settings.get(c) for c in quad_controls_1}
-        original_sp_2 = {c: SC.magnet_settings.get(c) for c in quad_controls_2}
+        # Assert knobs are registered
+        assert self.tune.knob_qx in SC.magnet_settings.controls, \
+            f"Knob '{self.tune.knob_qx}' not registered — call create_tune_knobs() first"
+        assert self.tune.knob_qy in SC.magnet_settings.controls, \
+            f"Knob '{self.tune.knob_qy}' not registered — call create_tune_knobs() first"
+
+        # Save initial knob setpoints
+        initial_qx = SC.magnet_settings.get(self.tune.knob_qx)
+        initial_qy = SC.magnet_settings.get(self.tune.knob_qy)
+
+        n1, n2 = len(dqx_range), len(dqy_range)
 
         # Allocate output
-        transmission_map = np.full((n1, n2), np.nan)
-        turns_map = np.full((n1, n2), np.nan)
+        survival_map = np.full((n1, n2), np.nan)
 
         # Generate spiral scan order (center-first)
         n_max = max(n1, n2)
         spiral_indices = self._spiral_order(n_max)
 
-        best_sp = np.array([sp_vec_1[n1//2], sp_vec_2[n2//2]])
+        best_dqx = float(dqx_range[n1 // 2])
+        best_dqy = float(dqy_range[n2 // 2])
         best_trans = 0.0
-        best_turns = 0
-        scan_order = []
 
         for q1, q2 in spiral_indices:
             if q1 >= n1 or q2 >= n2:
                 continue
 
-            # Set quad setpoints (relative to design)
-            for c in quad_controls_1:
-                design_sp = SC.design_magnet_settings.get(c)
-                SC.magnet_settings.set(c, sp_vec_1[q1] * design_sp)
-            for c in quad_controls_2:
-                design_sp = SC.design_magnet_settings.get(c)
-                SC.magnet_settings.set(c, sp_vec_2[q2] * design_sp)
+            # Set tune knobs (absolute, not cumulative)
+            SC.magnet_settings.set(self.tune.knob_qx, initial_qx + dqx_range[q1])
+            SC.magnet_settings.set(self.tune.knob_qy, initial_qy + dqy_range[q2])
 
-            # Track beam
-            bunch = SC.injection.generate_bunch(n_particles=n_particles)
-            track_data = SC.lattice.track(bunch, indices=SC.bpm_system.indices,
-                                          n_turns=n_turns, use_design=False)
-            survival = np.sum(~np.isnan(track_data[0]), axis=0) / n_particles
-            final_trans = float(survival[-1, -1]) if survival.ndim > 1 else float(survival[-1])
+            survival = self.injection_efficiency(n_turns=n_turns, omp_num_threads=omp_num_threads)
 
-            # Find max turns with any survival
-            turn_survival = np.mean(survival, axis=0) if survival.ndim > 1 else survival
-            max_turns_achieved = np.sum(turn_survival > 0)
+            survival_map[q1, q2] = survival
 
-            transmission_map[q1, q2] = final_trans
-            turns_map[q1, q2] = max_turns_achieved
-            scan_order.append((q1, q2))
-
-            if final_trans > best_trans or (final_trans == best_trans and max_turns_achieved > best_turns):
-                best_trans = final_trans
-                best_turns = max_turns_achieved
-                best_sp = np.array([sp_vec_1[q1], sp_vec_2[q2]])
+            if survival > best_trans:
+                best_trans = survival
+                best_dqx = float(dqx_range[q1])
+                best_dqy = float(dqy_range[q2])
 
             # Early termination
-            if not full_scan and final_trans >= target:
-                logger.info(f'tune_scan: target reached at sp1={sp_vec_1[q1]:.4f}, sp2={sp_vec_2[q2]:.4f}, '
-                           f'transmission={final_trans:.2%}')
-                return best_sp, transmission_map, 0
+            if not full_scan and survival >= target:
+                logger.info(f'tune_scan: target reached at dqx={dqx_range[q1]:.4f}, '
+                            f'dqy={dqy_range[q2]:.4f}, transmission={survival:.2%}')
+                return best_dqx, best_dqy, survival_map, 0
 
-        # Apply best setpoints
-        for c in quad_controls_1:
-            design_sp = SC.design_magnet_settings.get(c)
-            SC.magnet_settings.set(c, best_sp[0] * design_sp)
-        for c in quad_controls_2:
-            design_sp = SC.design_magnet_settings.get(c)
-            SC.magnet_settings.set(c, best_sp[1] * design_sp)
+        # Apply best deltas at end
+        SC.magnet_settings.set(self.tune.knob_qx, initial_qx + best_dqx)
+        SC.magnet_settings.set(self.tune.knob_qy, initial_qy + best_dqy)
 
-        if best_trans == 0 and best_turns == 0:
+        if best_trans == 0.0:
             logger.info('tune_scan: no transmission at all')
-            return best_sp, transmission_map, 2
+            return best_dqx, best_dqy, survival_map, 2
 
         if best_trans >= target:
             logger.info(f'tune_scan: target reached (full scan), transmission={best_trans:.2%}')
-            return best_sp, transmission_map, 0
+            return best_dqx, best_dqy, survival_map, 0
 
         logger.info(f'tune_scan: best transmission={best_trans:.2%} (target={target:.2%})')
-        return best_sp, transmission_map, 1
+        return best_dqx, best_dqy, survival_map, 1
 
     @staticmethod
     def _spiral_order(n: int) -> list[tuple[int, int]]:
@@ -662,17 +648,17 @@ class Tuning(BaseModel, extra="forbid"):
             - error: 0=success, 1=no transmission, 2=NaN result
         """
         SC = self._parent
-        n_bpm = len(SC.bpm_system.indices)
+        interface = pySCOrbitInterface(SC=SC)
 
         f_test_vec = np.linspace(freq_range[0], freq_range[1], n_steps)
         bpm_shift = np.full(n_steps, np.nan)
 
         # Save original frequency
-        original_freq = SC.rf_settings.main.frequency
+        original_freq = interface.get_rf_main_frequency()
 
         for i, df in enumerate(f_test_vec):
             # Temporarily change RF frequency
-            SC.rf_settings.main.set_frequency(original_freq + df)
+            interface.set_rf_main_frequency(original_freq + df)
 
             # Get turn-by-turn BPM readings
             x, y = SC.bpm_system.capture_injection(n_turns=n_turns)
@@ -698,7 +684,7 @@ class Tuning(BaseModel, extra="forbid"):
             bpm_shift[i] = np.dot(x_fit, y_fit) / np.dot(x_fit, x_fit)
 
         # Restore original frequency
-        SC.rf_settings.main.set_frequency(original_freq)
+        interface.set_rf_main_frequency(original_freq)
 
         # Fit line to slope vs frequency
         valid = ~np.isnan(bpm_shift)

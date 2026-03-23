@@ -327,7 +327,7 @@ def reject_bpm_outlier(induced_orbit_shift: np.ndarray, bpm_outlier_sigma: float
     mask = np.ones(n_bpms, dtype=bool)
     for bpm in range(n_bpms):
         data = induced_orbit_shift[:, bpm]
-        if np.any(data - np.mean(data) > bpm_outlier_sigma * np.std(data)):
+        if np.any(np.abs(data - np.mean(data)) > bpm_outlier_sigma * np.std(data)):
             mask[bpm] = False
     return mask
 
@@ -370,7 +370,7 @@ class BBAAnalysis(BaseModel):
 
     default_bpm_outlier_sigma: ClassVar[float] = 6 # number of sigma
     default_slope_cutoff: ClassVar[float] = 0.10 # of max slope
-    default_center_cutoff: ClassVar[int] = 1 # number of sigma
+    default_center_cutoff: ClassVar[int] = 3 # number of sigma
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 

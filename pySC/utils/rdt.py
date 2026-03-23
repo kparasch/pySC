@@ -142,8 +142,11 @@ def fjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0,
     ii = 0
     f = np.zeros_like(twiss['s'], dtype=complex)
     for ii in range(len(twiss['s'])):
-        dphix = 2. * np.pi * np.abs(twiss['mux'][ii] - mux)
-        dphiy = 2. * np.pi * np.abs(twiss['muy'][ii] - muy)
+        dphix = 2. * np.pi * (twiss['mux'][ii] - mux)
+        dphiy = 2. * np.pi * (twiss['muy'][ii] - muy)
+        # Wrap negative phase advances around the ring
+        dphix = np.where(dphix < 0, dphix + 2. * np.pi * qx, dphix)
+        dphiy = np.where(dphiy < 0, dphiy + 2. * np.pi * qy, dphiy)
         expo = np.exp(1.j * ( (j-k) * dphix + (l-m) * dphiy))
         f[ii] = np.sum(hm * expo)
     if normalized:

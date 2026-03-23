@@ -158,8 +158,8 @@ class ResponseMeasurement(BaseModel, extra="forbid"):
             progress.update(task_id, total=n_inputs)
 
             x_ref, y_ref, x_ref_err, y_ref_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
-            ref = np.concat((x_ref.flatten(order='F'), y_ref.flatten(order='F')))
-            ref_err = np.concat((x_ref_err.flatten(order='F'), y_ref_err.flatten(order='F')))
+            ref = np.concatenate((x_ref.flatten(order='F'), y_ref.flatten(order='F')))
+            ref_err = np.concatenate((x_ref_err.flatten(order='F'), y_ref_err.flatten(order='F')))
             self.response_data.reference = ref
             self.response_data.reference_err = ref_err
 
@@ -177,15 +177,15 @@ class ResponseMeasurement(BaseModel, extra="forbid"):
                     self._interface.set(control, ref_setpoint - step)
                     yield ResponseCode.AFTER_SET
                     x_down, y_down, x_down_err, y_down_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
-                    down = np.concat((x_down.flatten(order='F'), y_down.flatten(order='F')))
-                    down_err = np.concat((x_down_err.flatten(order='F'), y_down_err.flatten(order='F')))
+                    down = np.concatenate((x_down.flatten(order='F'), y_down.flatten(order='F')))
+                    down_err = np.concatenate((x_down_err.flatten(order='F'), y_down_err.flatten(order='F')))
                     self.response_data.raw_down[:, i] = down
                     self.response_data.raw_err_down[:, i] = down_err
                     yield ResponseCode.AFTER_GET
                 else:
                     x_center, y_center, x_center_err, y_center_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
-                    center = np.concat((x_center.flatten(order='F'), y_center.flatten(order='F')))
-                    center_err = np.concat((x_center_err.flatten(order='F'), y_center_err.flatten(order='F')))
+                    center = np.concatenate((x_center.flatten(order='F'), y_center.flatten(order='F')))
+                    center_err = np.concatenate((x_center_err.flatten(order='F'), y_center_err.flatten(order='F')))
                     self.response_data.raw_center[:, i] = center
                     self.response_data.raw_err_center[:, i] = center_err
                     yield ResponseCode.AFTER_GET
@@ -196,8 +196,8 @@ class ResponseMeasurement(BaseModel, extra="forbid"):
                 yield ResponseCode.AFTER_SET
 
                 x_up, y_up, x_up_err, y_up_err = get_average_orbit(get_orbit=self._get_output, n_orbits=self.shots_per_orbit)
-                up = np.concat((x_up.flatten(order='F'), y_up.flatten(order='F')))
-                up_err = np.concat((x_up_err.flatten(order='F'), y_up_err.flatten(order='F')))
+                up = np.concatenate((x_up.flatten(order='F'), y_up.flatten(order='F')))
+                up_err = np.concatenate((x_up_err.flatten(order='F'), y_up_err.flatten(order='F')))
                 self.response_data.raw_up[:, i] = up
                 self.response_data.raw_err_up[:, i] = up_err
                 yield ResponseCode.AFTER_GET

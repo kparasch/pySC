@@ -523,7 +523,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return transmission
 
-    def correct_orbit_with_dispersion(self, alpha_sequence=None, dispersion_scale=1.0,
+    def correct_orbit_with_dispersion(self, alpha_sequence=None,
                                       n_reps=1, method='tikhonov', gain=1.0, virtual=False):
         SC = self._parent
 
@@ -534,7 +534,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         # 2. Add dispersion to response matrix
         dispersion = measure_RFFrequencyOrbitResponse(SC, use_design=True)
-        response_matrix.rf_response = dispersion * dispersion_scale
+        response_matrix.set_rf_response(dispersion)
 
         # 3. Default alpha sequence
         if alpha_sequence is None:

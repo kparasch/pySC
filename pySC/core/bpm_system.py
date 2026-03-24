@@ -227,4 +227,3 @@ class BPMSystem(BaseModel, extra='forbid'):
             fake_trajectory_y_tbt[:, n] = fake_trajectory_y
 
         return fake_trajectory_x_tbt, fake_trajectory_y_tbt
-

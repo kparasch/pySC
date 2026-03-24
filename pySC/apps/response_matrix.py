@@ -69,7 +69,7 @@ class ResponseMatrix(BaseModel):
     _inverse_RM_V: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
     _rf_weight_is_default: bool = PrivateAttr(default=True)
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @property
     def RM(self):
@@ -123,6 +123,8 @@ class ResponseMatrix(BaseModel):
                                'Misinterpretation of the output plane is guaranteed!')
             self.output_planes = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
 
+        user_provided_rf_weight = self.rf_weight is not None
+        self._rf_weight_is_default = not user_provided_rf_weight
         if self.rf_response is None:
             self.rf_response = np.zeros(self._n_outputs)
         else:
@@ -130,19 +132,20 @@ class ResponseMatrix(BaseModel):
                 logger.warning(f'RF response does not have the correct length: {len(self.rf_response)} (should have been {self._n_outputs}).')
                 logger.warning('RF response will be removed.')
                 self.rf_response = np.zeros(self._n_outputs)
+            else: # self.rf_response is not None and is valid
+                if not user_provided_rf_weight:
+                    default_rf_weight = self.default_rf_weight()
+                    logger.info(f'Setting the rf_weight by default to {default_rf_weight}.')
+                    self.rf_weight = default_rf_weight
+
+        if self.rf_weight is None: #if it is still None, rf_response is not valid and set it to 0.
+            self.rf_weight = 0
 
         if self.input_weights is None:
             self.input_weights = np.ones(self._n_inputs, dtype=float)
 
         if self.output_weights is None:
             self.output_weights = np.ones(self._n_outputs, dtype=float)
-
-        user_provided_rf_weight = self.rf_weight is not None
-        if self.rf_response is not None and self.rf_weight is None:
-            default_rf_weight = self.default_rf_weight()
-            logger.info(f'Setting the rf_weight by default to {default_rf_weight}.')
-            self.rf_weight = default_rf_weight
-        self._rf_weight_is_default = not user_provided_rf_weight
 
         return self
 
@@ -204,6 +207,7 @@ class ResponseMatrix(BaseModel):
             self.rf_response[output_plane_mask] = np.array(rf_response)
         if self._rf_weight_is_default:
             self.rf_weight = self.default_rf_weight()
+            logger.info(f'Setting the rf_weight by default to {self.rf_weight}, after rf_response was changed.')
         return
 
     def get_matrix_in_plane(self, plane: Optional[PLANE_TYPE] = None) -> np.array:

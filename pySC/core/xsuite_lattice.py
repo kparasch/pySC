@@ -6,6 +6,7 @@ import numpy as np
 from numpy import array as nparray
 from contextlib import redirect_stdout
 from io import StringIO
+from scipy.constants import c as clight
 
 try:
     import xtrack as xt
@@ -69,7 +70,14 @@ class XSuiteLattice(Lattice):
                         el.k0_from_h = False
                         el.k0 = h
                     if el.__class__ is xt.Cavity:
-                        el.absolute_time = 0
+                        el.absolute_time = 1
+                        if el.frequency == 0 and el.harmonic != 0:
+                            harmonic = el.harmonic
+                            circumference = self._twiss['s'][-1]
+                            frev = clight / circumference
+                            frequency = frev * harmonic
+                            el.harmonic = 0
+                            el.frequency = frequency
 
             self._index_to_name = {ii: name for ii, name in enumerate(line.element_names)}
 
@@ -81,12 +89,16 @@ class XSuiteLattice(Lattice):
 
     @omp_num_threads.setter
     def omp_num_threads(self, value: int):
-        self._omp_num_threads = value
-        self._context = xo.ContextCpu(omp_num_threads=value)
-        self._ring.discard_tracker()
-        self._design.discard_tracker()
-        self._ring.build_tracker(_context=self._context)
-        self._design.build_tracker(_context=self._context)
+        if value != self._omp_num_threads:
+            self._omp_num_threads = value
+            if value is None:
+                self._context = xo.ContextCpu()
+            else:
+                self._context = xo.ContextCpu(omp_num_threads=value)
+            self._ring.discard_tracker()
+            self._design.discard_tracker()
+            self._ring.build_tracker(_context=self._context)
+            self._design.build_tracker(_context=self._context)
 
     def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False,
               coordinates: Optional[list] = None, modify_bunch_in_place: bool = False) -> nparray:
@@ -114,15 +126,29 @@ class XSuiteLattice(Lattice):
         n_coords = len(coordinates)
         out = np.full((n_coords, n_particles, n_indices, n_turns), np.nan)
 
+        # element_names = line.element_names
+        # names = [element_names[idx] for idx in indices]
+        # line.track(particles, num_turns=n_turns, multi_element_monitor_at=names)
+        # mon = line.record_multi_element_last_track
+        # for ii in range(n_coords):
+        #     mon.get(coords[ii])
+
         for turn in range(n_turns):
             if sum(particles.state > 0): #track only if there are alive particles
                 line.track(particles, turn_by_turn_monitor='ONE_TURN_EBE')
                 record = line.record_last_track
-                lost = record.state[:, indices] != 1
+                state = record.state[:, indices]
+                pid = record.particle_id[:, indices]
+                gathered_coords = [getattr(record, coords[ii])[:, indices] for ii in range(n_coords)]
+                #lost = state != 1
                 for ii in range(n_coords):
-                    one_coord = getattr(record, coords[ii])[:, indices]
-                    out[ii, :, :, turn] = one_coord
-                    out[ii, :, :, turn][lost] = np.nan
+                    out[ii, :, :, turn] = np.nan
+                for jj in range(state.shape[0]):
+                    for kk in range(n_indices):
+                        if state[jj, kk] == 1:
+                            pid_idx = pid[jj, kk] - 1
+                            for ii in range(n_coords):
+                                out[ii, pid_idx, kk, turn] = gathered_coords[ii][jj, kk]
             else:
                 break
 
@@ -240,6 +266,25 @@ class XSuiteLattice(Lattice):
 
         return qx, qy
 
+    def get_chromaticity(self, method='6d', use_design=False) -> tuple[float, float]:
+        assert method in ['4d', '6d']
+        line = self._design if use_design else self._ring
+
+        if self.no_6d:
+            logger.warning("Lattice has 6d disabled, using 4d method instead.")
+            method = '4d'
+
+        try:
+            twiss = line.twiss(method=method)
+            dqx = twiss.dqx
+            dqy = twiss.dqy
+        except Exception as e:
+            logger.error(f"Error computing chromaticity, {type(e)}: {e}")
+            dqx = np.nan
+            dqy = np.nan
+
+        return dqx, dqy
+
     def find_with_regex(self, regex: str) -> list[int]:
         """
         Find elements in the ring that match the given regular expression.
@@ -316,12 +361,15 @@ class XSuiteLattice(Lattice):
             raise NotImplementedError(f'Element type {elem.__class__} not implemented in get_magnet_component.')
 
         length = self.get_length(index)
-        if component_type == 'B':
-            value = elem.knl[order] / length
-        elif component_type == 'A':
-            value = elem.ksl[order] / length
+        if order > elem.order:
+            value = 0
         else:
-            raise ValueError(f'Unknown component type {component_type}')
+            if component_type == 'B':
+                value = elem.knl[order] / length
+            elif component_type == 'A':
+                value = elem.ksl[order] / length
+            else:
+                raise ValueError(f'Unknown component type {component_type}')
 
         return value + extra
 
@@ -376,6 +424,8 @@ class XSuiteLattice(Lattice):
                     env.ref[element_name].k3s += env.ref['pySC'] * env.ref[expression_name]
                     assigned = True
             if not assigned:
+                if env[element_name].order < order:
+                    line.extend_knl_ksl(order=order, element_names=[element_name])
                 if component_type == 'B':
                     env.ref[element_name].knl[order] += env.ref['pySC'] * env.ref[expression_name] * length
                 else:
@@ -439,6 +489,23 @@ class XSuiteLattice(Lattice):
         env[expression_name_phase] += phase_difference
         env[expression_name_frequency] += frequency_difference
         return
+
+    def one_turn_matrix(self, use_design=False):
+        line = self._design if use_design else self._ring
+
+        if self.no_6d:
+            method = '4d'
+        else:
+            method = '6d'
+
+        twiss = line.twiss(method=method)
+        M = twiss.R_matrix
+
+
+        if self.no_6d:
+            M = M[:4,:4]
+
+        return M
 
     def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
                             dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,

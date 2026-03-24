@@ -62,7 +62,7 @@ class ResponseData(BaseModel):
     timestamp: Optional[float] = None
     original_save_path: Optional[str] = None
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @property
     def not_normalized_response_matrix(self):
@@ -84,7 +84,7 @@ class ResponseData(BaseModel):
         return filename
 
 
-class ResponseMeasurement(BaseModel):
+class ResponseMeasurement(BaseModel, extra="forbid"):
     inputs_delta: Union[float, list[float]]
     shots_per_orbit: int = 1
     bipolar: bool = True

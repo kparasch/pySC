@@ -41,8 +41,8 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
         bba_magnets = SC.tuning.bba_magnets
         bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
 
-        mask_H = np.array(RM.inputs_plane) == 'H'
-        mask_V = np.array(RM.inputs_plane) == 'V'
+        mask_H = np.array(RM.input_planes) == 'H'
+        mask_V = np.array(RM.input_planes) == 'V'
         d1, _ = RM.matrix.shape
         HRM = RM.matrix[:d1//2, mask_H]
         VRM = RM.matrix[d1//2:, mask_V]

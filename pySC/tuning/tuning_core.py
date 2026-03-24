@@ -14,6 +14,7 @@ from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 from ..apps import orbit_correction
 
 import numpy as np
+import warnings
 from pathlib import Path
 import logging
 from multiprocessing import Process, Queue
@@ -691,18 +692,22 @@ class Tuning(BaseModel, extra="forbid"):
             # Compute mean TBT difference from first turn
             # BB[i,j] = x reading at BPM i, turn j
             BB = x  # [n_bpm, n_turns]
-            tbt_de = np.nanmean(BB - BB[:, 0:1], axis=0)  # [n_turns]
+            with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                tbt_de = np.nanmean(BB - BB[:, 0:1], axis=0)  # [n_turns]
 
             # Fit line: slope of energy shift vs turn number
             turns = np.arange(1, n_turns + 1, dtype=float)
             valid = ~np.isnan(tbt_de)
             if np.sum(valid) < min_turns:
+                logger.info(f'synch_energy_correction: frequency_shift={df:.2f} Hz, measurement invalid.')
                 continue
 
             x_fit = turns[valid]
             y_fit = tbt_de[valid]
             # Least-squares slope: x \ y
             bpm_shift[i] = np.dot(x_fit, y_fit) / np.dot(x_fit, x_fit)
+            logger.info(f'synch_energy_correction: frequency_shift={df:.2f} Hz, bpm_shift={1e6*bpm_shift[i]:.3f} um')
 
         # Restore original frequency
         interface.set_rf_main_frequency(original_freq)

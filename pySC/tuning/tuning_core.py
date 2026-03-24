@@ -530,3 +530,51 @@ class Tuning(BaseModel, extra="forbid"):
             SC.lattice.omp_num_threads = previous_threads
 
         return transmission
+
+    def correct_orbit_with_dispersion(self, alpha_sequence=None,
+                                      n_reps=1, method='tikhonov', gain=1.0, virtual=False):
+        SC = self._parent
+
+        # 1. Fetch and configure response matrix
+        self.fetch_response_matrix('orbit')
+        response_matrix = self.response_matrix['orbit']
+        response_matrix.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms)
+
+        # 2. Add dispersion to response matrix
+        dispersion = measure_RFFrequencyOrbitResponse(SC, use_design=True)
+        response_matrix.set_rf_response(dispersion)
+
+        # 3. Default alpha sequence
+        if alpha_sequence is None:
+            alpha_sequence = [30, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+
+        # 4. Create interface
+        interface = pySCOrbitInterface(SC=SC)
+
+        # 5. Progressive correction
+        orbit_x, orbit_y = SC.bpm_system.capture_orbit()
+        best_rms = np.sqrt(np.nanmean(orbit_x**2) + np.nanmean(orbit_y**2))
+        logger.info(f'Orbit+dispersion correction: initial RMS = {best_rms*1e6:.1f} um')
+
+        for alpha in alpha_sequence:
+            saved = SC.magnet_settings.get_many(self.CORR)
+            saved_rf = interface.get_rf_main_frequency()
+
+            for _ in range(n_reps):
+                orbit_correction(interface=interface, response_matrix=response_matrix,
+                                 rf=True, method=method, parameter=alpha, gain=gain,
+                                 virtual=virtual, apply=True)
+
+            orbit_x, orbit_y = SC.bpm_system.capture_orbit()
+            new_rms = np.sqrt(np.nanmean(orbit_x**2) + np.nanmean(orbit_y**2))
+
+            if new_rms < best_rms:
+                best_rms = new_rms
+                logger.info(f'  alpha={alpha}: RMS improved to {new_rms*1e6:.1f} um')
+            else:
+                SC.magnet_settings.set_many(saved)
+                interface.set_rf_main_frequency(saved_rf)
+                logger.info(f'  alpha={alpha}: RMS worsened ({new_rms*1e6:.1f} um), reverting')
+                break
+
+        logger.info(f'Orbit+dispersion correction: final RMS = {best_rms*1e6:.1f} um')

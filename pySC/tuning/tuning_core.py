@@ -727,7 +727,7 @@ class Tuning(BaseModel, extra="forbid"):
         logger.info(f'synch_energy_correction: correction = {delta_f:.1f} Hz')
         return delta_f, 0
 
-    def injection_efficiency(self, n_turns: int = 1, omp_num_threads: Optional[int] = None) -> float:
+    def injection_efficiency(self, n_turns: int = 1, omp_num_threads: Optional[int] = None) -> np.ndarray[float]:
         SC = self._parent
 
         if omp_num_threads is not None:

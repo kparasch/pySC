@@ -558,7 +558,8 @@ class Tuning(BaseModel, extra="forbid"):
         n1, n2 = len(dqx_range), len(dqy_range)
 
         # Allocate output
-        survival_map = np.full((n1, n2), np.nan)
+        transmission_map = np.full((n1, n2), np.nan)
+        turns_map = np.full((n1, n2), np.nan)
 
         # Generate spiral scan order (center-first)
         n_max = max(n1, n2)
@@ -567,6 +568,8 @@ class Tuning(BaseModel, extra="forbid"):
         best_dqx = float(dqx_range[n1 // 2])
         best_dqy = float(dqy_range[n2 // 2])
         best_trans = 0.0
+        best_turns = 0
+        scan_order = []
 
         for q1, q2 in spiral_indices:
             if q1 >= n1 or q2 >= n2:
@@ -577,19 +580,28 @@ class Tuning(BaseModel, extra="forbid"):
             SC.magnet_settings.set(self.tune.knob_qy, initial_qy + dqy_range[q2])
 
             survival = self.injection_efficiency(n_turns=n_turns, omp_num_threads=omp_num_threads)
+            final_trans = float(survival[-1, -1]) if survival.ndim > 1 else float(survival[-1])
+            #survival_map[q1, q2] = survival
 
-            survival_map[q1, q2] = survival
+            # Find max turns with any survival
+            turn_survival = np.mean(survival, axis=0) if survival.ndim > 1 else survival
+            max_turns_achieved = np.sum(turn_survival > 0)
 
-            if survival > best_trans:
-                best_trans = survival
+            transmission_map[q1, q2] = final_trans
+            turns_map[q1, q2] = max_turns_achieved
+            scan_order.append((q1, q2))
+
+            if final_trans > best_trans or (final_trans == best_trans and max_turns_achieved > best_turns):
+                best_trans = final_trans
+                best_turns = max_turns_achieved
                 best_dqx = float(dqx_range[q1])
                 best_dqy = float(dqy_range[q2])
 
             # Early termination
-            if not full_scan and survival >= target:
-                logger.info(f'tune_scan: target reached at dqx={dqx_range[q1]:.4f}, '
-                            f'dqy={dqy_range[q2]:.4f}, transmission={survival:.2%}')
-                return best_dqx, best_dqy, survival_map, 0
+            if not full_scan and final_trans >= target:
+                logger.info(f'tune_scan: target reached at dqx={dqx_range[q1]:.3f}, dqy={dqy_range[q2]:.3f}, '
+                           f'transmission={final_trans:.2%}')
+                return best_dqx, best_dqy, transmission_map, 0
 
         # Apply best deltas at end
         SC.magnet_settings.set(self.tune.knob_qx, initial_qx + best_dqx)
@@ -597,35 +609,44 @@ class Tuning(BaseModel, extra="forbid"):
 
         if best_trans == 0.0:
             logger.info('tune_scan: no transmission at all')
-            return best_dqx, best_dqy, survival_map, 2
+            return best_dqx, best_dqy, transmission_map, 2
 
         if best_trans >= target:
             logger.info(f'tune_scan: target reached (full scan), transmission={best_trans:.2%}')
-            return best_dqx, best_dqy, survival_map, 0
+            return best_dqx, best_dqy, transmission_map, 0
 
         logger.info(f'tune_scan: best transmission={best_trans:.2%} (target={target:.2%})')
-        return best_dqx, best_dqy, survival_map, 1
+        return best_dqx, best_dqy, transmission_map, 1
 
     @staticmethod
     def _spiral_order(n: int) -> list[tuple[int, int]]:
         """Generate spiral scan indices for an n x n grid, starting from center."""
-        # Create spiral matrix (MATLAB's spiral() equivalent)
-        mat = np.zeros((n, n), dtype=int)
-        x, y = n // 2, n // 2
-        dx, dy = 0, -1
-        for i in range(1, n * n + 1):
-            if 0 <= x < n and 0 <= y < n:
-                mat[x, y] = i
-            if x == y or (x < y and x + y == n - 1) or (x > y and x + y == n):
-                dx, dy = -dy, dx
-            x, y = x + dx, y + dy
+        x = (n - 1) // 2
+        y = (n - 1) // 2
+        result = [(x, y)]
 
-        # Sort by spiral value to get center-first order
-        flat = mat.flatten()
-        order = np.argsort(flat)
-        indices = [(idx // n, idx % n) for idx in order]
-        # Filter out zeros (unfilled cells)
-        return [(i, j) for i, j in indices if mat[i, j] > 0]
+        # directions: right, down, left, up
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+
+        step_size = 1
+        while len(result) < n * n:
+            for d in range(4):
+                dx, dy = directions[d]
+                steps = step_size
+
+                for _ in range(steps):
+                    x += dx
+                    y += dy
+                    if 0 <= x < n and 0 <= y < n:
+                        result.append((x, y))
+                        if len(result) == n * n:
+                            return result
+
+                # increase step size after moving horizontally (every 2 directions)
+                if d % 2 == 1:
+                    step_size += 1
+
+        return result
 
     def synch_energy_correction(self, freq_range: tuple[float, float] = (-1e3, 1e3),
                                 n_steps: int = 15, n_turns: int = 150,

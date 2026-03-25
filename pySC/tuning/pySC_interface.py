@@ -63,3 +63,13 @@ class pySCInjectionInterface(pySCOrbitInterface):
         x_ref = np.repeat(self.SC.bpm_system.reference_x[:, np.newaxis], self.n_turns, axis=1)
         y_ref = np.repeat(self.SC.bpm_system.reference_y[:, np.newaxis], self.n_turns, axis=1)
         return x_ref.flatten(order='F'), y_ref.flatten(order='F')
+
+class pySCPseudoOrbitInterface(pySCOrbitInterface):
+    SC: "SimulatedCommissioning" = Field(repr=False)
+    n_turns: int = 1
+
+    def get_orbit(self) -> tuple[np.ndarray, np.ndarray]:
+        return self.SC.bpm_system.capture_pseudo_orbit(
+            n_turns=self.n_turns, use_design=self.use_design,
+            bba=self.bba, subtract_reference=self.subtract_reference
+        )

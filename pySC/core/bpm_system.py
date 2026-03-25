@@ -172,6 +172,19 @@ class BPMSystem(BaseModel, extra='forbid'):
         else:
             return fake_trajectory_x_tbt, fake_trajectory_y_tbt
 
+    def capture_pseudo_orbit(self, n_turns=1, bba=True, subtract_reference=True,
+                             use_design=False, return_transmission=False):
+        result = self.capture_injection(
+            n_turns=n_turns, bba=bba, subtract_reference=subtract_reference,
+            use_design=use_design, return_transmission=return_transmission
+        )
+        if return_transmission:
+            x, y, transmission = result
+            return np.nanmean(x, axis=1), np.nanmean(y, axis=1), transmission
+        else:
+            x, y = result
+            return np.nanmean(x, axis=1), np.nanmean(y, axis=1)
+
     def capture_kick(self, n_turns=1, kick_px=0, kick_py=0, bba=True, subtract_reference=True, use_design=False) -> tuple[np.ndarray, np.ndarray]:
         '''
         Simulates an orbit reading, after kicking a stored beam, from the BPMs, applying calibration errors, offsets/rolls, and noise.

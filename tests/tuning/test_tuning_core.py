@@ -88,6 +88,22 @@ def test_correct_injection_basic(sc_tuning):
 
 
 @pytest.mark.slow
+def test_correct_pseudo_orbit_basic(sc_tuning):
+    """Pseudo-orbit correction runs without error."""
+    sc = sc_tuning
+
+    # Apply a small kick to create an orbit offset
+    corr = sc.tuning.HCORR[0]
+    sc.magnet_settings.set(corr, 1e-5)
+
+    # Build the orbit RM (pseudo-orbit reuses it)
+    sc.tuning.calculate_model_orbit_response_matrix()
+
+    # Should run without raising
+    sc.tuning.correct_orbit(pseudo=True, n_turns=2, n_reps=1, method='svd_cutoff', parameter=0)
+
+
+@pytest.mark.slow
 def test_wiggle_last_corrector(sc_tuning):
     """wiggle_last_corrector runs without error on HMBA ring."""
     sc = sc_tuning

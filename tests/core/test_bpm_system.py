@@ -302,3 +302,39 @@ def test_capture_injection_design_mode(sc):
     x_design2, y_design2 = bpm.capture_injection(n_turns=1, use_design=True)
     np.testing.assert_array_equal(x_design, x_design2)
     np.testing.assert_array_equal(y_design, y_design2)
+
+
+# ---------------------------------------------------------------------------
+# capture_pseudo_orbit tests
+# ---------------------------------------------------------------------------
+
+@pytest.mark.slow
+def test_capture_pseudo_orbit_shape(sc):
+    """Output shape is (n_bpms,) for each of x, y — averaged across turns."""
+    bpm = sc.bpm_system
+    n_turns = 3
+    x, y = bpm.capture_pseudo_orbit(n_turns=n_turns, bba=False, subtract_reference=False, use_design=True)
+    assert x.shape == (len(bpm.indices),)
+    assert y.shape == (len(bpm.indices),)
+
+
+@pytest.mark.slow
+def test_capture_pseudo_orbit_with_transmission(sc):
+    """return_transmission=True returns a 3-tuple (x, y, transmission)."""
+    bpm = sc.bpm_system
+    result = bpm.capture_pseudo_orbit(n_turns=2, return_transmission=True, use_design=True)
+    assert len(result) == 3
+    x, y, transmission = result
+    assert x.shape == (len(bpm.indices),)
+    assert y.shape == (len(bpm.indices),)
+
+
+@pytest.mark.slow
+def test_capture_pseudo_orbit_single_turn(sc):
+    """n_turns=1 degenerates to a squeezed single-turn injection reading."""
+    bpm = sc.bpm_system
+    x_pseudo, y_pseudo = bpm.capture_pseudo_orbit(n_turns=1, bba=False, subtract_reference=False, use_design=True)
+    x_inj, y_inj = bpm.capture_injection(n_turns=1, bba=False, subtract_reference=False, use_design=True)
+    # With use_design=True (no RNG noise), pseudo-orbit of 1 turn == injection squeezed
+    np.testing.assert_allclose(x_pseudo, x_inj.squeeze())
+    np.testing.assert_allclose(y_pseudo, y_inj.squeeze())

@@ -15,7 +15,7 @@ from .apps.measurements import orbit_correction
 from .apps.measurements import measure_bba
 from .apps.measurements import measure_ORM
 from .apps.measurements import measure_dispersion
-from .tuning.pySC_interface import pySCInjectionInterface, pySCOrbitInterface
+from .tuning.pySC_interface import pySCInjectionInterface, pySCOrbitInterface, pySCPseudoOrbitInterface
 import logging
 import sys
 
@@ -46,3 +46,4 @@ def disable_pySC_rich():
 # the model_rebuild is "almost certainly"? triggered.
 pySCInjectionInterface.model_rebuild()
 pySCOrbitInterface.model_rebuild()
+pySCPseudoOrbitInterface.model_rebuild()

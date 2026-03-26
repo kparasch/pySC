@@ -38,9 +38,6 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
         SC.tuning.fetch_response_matrix(RM_name, orbit=True)
         RM = SC.tuning.response_matrix[RM_name]
 
-        bba_magnets = SC.tuning.bba_magnets
-        bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
-
         mask_H = np.array(RM.input_planes) == 'H'
         mask_V = np.array(RM.input_planes) == 'V'
         d1, _ = RM.matrix.shape
@@ -56,9 +53,8 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
         for bpm_number in range(len(SC.bpm_system.indices)):
             bpm_index = SC.bpm_system.indices[bpm_number]
             bpm_s = SC.lattice.twiss['s'][bpm_index]
-
-            bba_magnet_number = np.argmin(np.abs(bba_magnets_s - bpm_s))
-            the_bba_magnet = bba_magnets[bba_magnet_number]
+            bpm_name = SC.bpm_system.names[bpm_number]
+            the_bba_magnet = SC.tuning.get_bba_magnet_for_bpm(bpm_name)
             bba_magnet_info = SC.magnet_settings.controls[the_bba_magnet].info
             assert type(bba_magnet_info) is IndivControl, f'BBA magnet of unsupported type: {type(bba_magnet_info)}'
             bba_magnet_is_integrated = bba_magnet_info.is_integrated
@@ -106,7 +102,6 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
                 quad_dk_h = quad_dkl_h
                 quad_dk_v = quad_dkl_v
 
-            bpm_name = SC.bpm_system.names[bpm_number]
             config[bpm_name] = {'index': bpm_index,
                                 'number': bpm_number,
                                 'QUAD': the_bba_magnet,

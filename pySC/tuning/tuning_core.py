@@ -35,6 +35,7 @@ class Tuning(BaseModel, extra="forbid"):
     rf: RF_tuning = RF_tuning() ## TODO: generate config from yaml file
 
     bba_magnets: list[str] = []
+    bba_mapping: dict[str, str] = {}
     trajectory_bba_config: Optional[Trajectory_BBA_Configuration] = None
     orbit_bba_config: Optional[Orbit_BBA_Configuration] = None
     RM_folder: Optional[str] = None
@@ -244,6 +245,17 @@ class Tuning(BaseModel, extra="forbid"):
             setpoint = self._parent.design_magnet_settings.get(control_name)
             self._parent.magnet_settings.set(control_name, scale*setpoint)
 
+    def get_bba_magnet_for_bpm(self, bpm_name: str) -> str:
+        if bpm_name in self.bba_mapping:
+            return self.bba_mapping[bpm_name]
+        SC = self._parent
+        bpm_number = SC.bpm_system.bpm_number(name=bpm_name)
+        bpm_index = SC.bpm_system.indices[bpm_number]
+        bpm_position = SC.lattice.twiss['s'][bpm_index]
+        bba_magnets_s = get_mag_s_pos(SC, self.bba_magnets)
+        bba_magnet_number = np.argmin(np.abs(bba_magnets_s - bpm_position))
+        return self.bba_magnets[bba_magnet_number]
+
     def reset_to_design(self):
         for control_name in self._parent.magnet_settings.controls.keys():
             setpoint = self._parent.design_magnet_settings.get(control_name)
@@ -277,10 +289,7 @@ class Tuning(BaseModel, extra="forbid"):
         bpm_index = SC.bpm_system.indices[bpm_number]
         bpm_s = SC.lattice.twiss['s'][bpm_index]
 
-        bba_magnet_controls = SC.tuning.bba_magnets
-        bba_magnets_s = get_mag_s_pos(SC, bba_magnet_controls)
-        bba_magnet_number = np.argmin(np.abs(bba_magnets_s - bpm_s))
-        quad = bba_magnet_controls[bba_magnet_number]
+        quad = SC.tuning.get_bba_magnet_for_bpm(bpm_name)
         bba_control_info = SC.magnet_settings.controls[quad].info
         assert type(bba_control_info) is IndivControl
         bba_magnet_name = bba_control_info.magnet_name

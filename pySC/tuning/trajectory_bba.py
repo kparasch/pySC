@@ -40,9 +40,6 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         SC.tuning.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         RM = SC.tuning.response_matrix[RM_name]
 
-        bba_magnets = SC.tuning.bba_magnets
-        bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
-
         #d1, d2 = RM.RM.shape
         nh = len(SC.tuning.HCORR)
         nbpm = len(SC.bpm_system.indices)
@@ -52,9 +49,8 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         for bpm_number in range(len(SC.bpm_system.indices)):
             bpm_index = SC.bpm_system.indices[bpm_number]
             bpm_s = SC.lattice.twiss['s'][bpm_index]
-
-            bba_magnet_number = np.argmin(np.abs(bba_magnets_s - bpm_s))
-            the_bba_magnet = bba_magnets[bba_magnet_number]
+            bpm_name = SC.bpm_system.names[bpm_number]
+            the_bba_magnet = SC.tuning.get_bba_magnet_for_bpm(bpm_name)
 
             HCORR_s = np.array(get_mag_s_pos(SC, SC.tuning.HCORR))
             HCORR_numbers = list(np.where(HCORR_s < bpm_s)[0])
@@ -121,7 +117,6 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
             else:
                 quad_dk_v = (max_modulation/max_response) / max_dx_at_bpm
 
-            bpm_name = SC.bpm_system.names[bpm_number]
             config[bpm_name] = {'index': bpm_index,
                                 'number': bpm_number,
                                 'QUAD': the_bba_magnet,

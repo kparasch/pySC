@@ -1,6 +1,7 @@
 from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.control import IndivControl
 from .general import get_indices_and_names
+from .load_config import load_yaml
 import numpy as np
 
 def sort_controls(SC: SimulatedCommissioning, control_names: list[str]) -> list[str]:
@@ -30,6 +31,58 @@ def configure_family(SC: SimulatedCommissioning, config_dict: dict) -> list[str]
                 family.append(control_name)
     return family
 
+
+def get_index_from_lattice_name(SC: SimulatedCommissioning, lattice_name: str) -> int:
+    design = getattr(SC.lattice, 'design', None)
+    if design is not None:
+        for index in range(len(SC.lattice.twiss['s'])):
+            try:
+                element = design[index]
+            except Exception:
+                element = None
+            if element is not None and hasattr(element, 'FamName') and element.FamName == lattice_name:
+                return index
+    for index in range(len(SC.lattice.twiss['s'])):
+        if SC.lattice.get_name_from_index(index) == lattice_name:
+            return index
+    raise KeyError(f'Latice element "{lattice_name}" was not found')
+
+
+def get_cs_name_from_lattice_name(SC: SimulatedCommissioning, lattice_name: str) -> str:
+    bpm_index = get_index_from_lattice_name(SC, lattice_name)
+    bpm_number = SC.bpm_system.bpm_number(index=bpm_index)
+    return SC.bpm_system.names[bpm_number]
+
+
+def get_cs_name_from_lattice_data(SC: SimulatedCommissioning, lattice_data: str) -> str:
+    lattice_name, component = lattice_data.split('/')
+    lattice_index = get_index_from_lattice_name(SC, lattice_name)
+    magnet_name = None
+    for candidate_name, magnet in SC.magnet_settings.magnets.items():
+        if magnet.sim_index == lattice_index:
+            magnet_name = candidate_name
+            break
+    if magnet_name is None:
+        raise KeyError(f'No registered magnet was found at lattice element "{lattice_name}"')
+    for control_name, control in SC.design_magnet_settings.controls.items():
+        if type(control.info) is not IndivControl:
+            continue
+        control_component = f"{control.info.component}{control.info.order}"
+        if control.info.is_integrated:
+            control_component = f"{control_component}L"
+        if control.info.magnet_name == magnet_name and control_component == component:
+            return control_name
+    raise KeyError(f'No control matching "{lattice_data}" was found')
+
+
+def configure_bba_mapping(SC: SimulatedCommissioning, mapping_file: str) -> dict[str, str]:
+    mapping = load_yaml(mapping_file)
+    result = {}
+    for lattice_name, lattice_data in mapping.items():
+        bpm_name = get_cs_name_from_lattice_name(SC, lattice_name)
+        result[bpm_name] = get_cs_name_from_lattice_data(SC, lattice_data)
+    return result
+
 def configure_tuning(SC: SimulatedCommissioning) -> None:
     tuning_conf = dict.get(SC.configuration, 'tuning', {})
 
@@ -52,9 +105,13 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
         SC.tuning.multipoles = multipoles
 
     if 'bba_magnets' in tuning_conf:
-        bba_magnets = configure_family(SC, config_dict=tuning_conf['bba_magnets'])
-        bba_magnets = sort_controls(SC, bba_magnets)
-        SC.tuning.bba_magnets = bba_magnets
+        bba_magnets_conf = tuning_conf['bba_magnets']
+        if isinstance(bba_magnets_conf, dict) and 'mapping' in bba_magnets_conf:
+            SC.tuning.bba_mapping = configure_bba_mapping(SC, bba_magnets_conf['mapping'])
+        else:
+            bba_magnets = configure_family(SC, config_dict=bba_magnets_conf)
+            bba_magnets = sort_controls(SC, bba_magnets)
+            SC.tuning.bba_magnets = bba_magnets
 
     if 'tune' in tuning_conf:
         tune_conf = tuning_conf['tune']

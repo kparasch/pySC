@@ -51,11 +51,14 @@ def _bba_config():
 
 class TestOrbitCorrection:
     def test_computes_trims(self, mock_interface):
-        """orbit_correction returns a dict of corrector trims."""
+        """orbit_correction returns a dict of finite corrector trims."""
         iface = mock_interface(n_bpms=5)
+        iface._orbit_x = np.array([0.001, -0.002, 0.003, -0.001, 0.002])
         rm = _make_rm()
         trims = orbit_correction(iface, rm)
         assert isinstance(trims, dict)
+        assert len(trims) > 0, "Expected non-empty trims dict"
+        assert all(np.isfinite(v) for v in trims.values()), "All trim values should be finite"
 
     def test_apply_false(self, mock_interface):
         """apply=False does not modify setpoints."""

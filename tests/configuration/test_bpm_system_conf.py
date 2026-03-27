@@ -84,6 +84,9 @@ def test_configure_bpms_calibration_errors(hmba_lattice_file):
     # With sigma=0.05 and 10 BPMs, it would be extremely unlikely for all to be exactly 0
     assert not np.allclose(SC.bpm_system.calibration_errors_x, 0)
     assert not np.allclose(SC.bpm_system.calibration_errors_y, 0)
+    # Errors should be consistent with sigma=0.05 (truncated normal centered at 0)
+    assert np.std(SC.bpm_system.calibration_errors_x) < 0.5, "Cal error std far exceeds expected sigma=0.05"
+    assert np.max(np.abs(SC.bpm_system.calibration_errors_x)) < 0.2, "Cal errors outside plausible range for sigma=0.05"
 
 
 @pytest.mark.slow
@@ -113,11 +116,19 @@ def test_configure_bpms_gain_corrections_ones(hmba_lattice_file):
 
 @pytest.mark.slow
 def test_configure_bpms_rot_matrices_updated(hmba_lattice_file):
-    """_rot_matrices is not None after configuration."""
+    """_rot_matrices has correct shape and is identity when all rolls are zero."""
     SC = _make_sc_with_bpm_config(hmba_lattice_file)
     configure_bpms(SC)
 
+    nbpm = len(SC.bpm_system.indices)
     assert SC.bpm_system._rot_matrices is not None
+    assert SC.bpm_system._rot_matrices.shape == (2, 2, nbpm)
+    # All rolls are zero, so each 2x2 slice should be the identity matrix
+    for i in range(nbpm):
+        np.testing.assert_array_almost_equal(
+            SC.bpm_system._rot_matrices[:, :, i], np.eye(2),
+            err_msg=f"Rotation matrix at BPM {i} should be identity when roll=0"
+        )
 
 
 @pytest.mark.slow
@@ -156,6 +167,13 @@ def test_configure_bpms_multi_category_noise(hmba_lattice_file):
     configure_bpms(SC)
 
     total_bpms = len(SC.bpm_system.indices)
+    assert total_bpms > 0, "No BPMs matched — test is vacuous"
+    # Verify both categories matched at least one BPM
+    cat_a_count = sum(1 for n in SC.bpm_system.names if n.startswith("BPM_0"))
+    cat_b_count = sum(1 for n in SC.bpm_system.names if n.startswith("BPM_1"))
+    assert cat_a_count > 0, "cat_a regex '^BPM_0' matched no BPMs — test is vacuous"
+    assert cat_b_count > 0, "cat_b regex '^BPM_1' matched no BPMs — test is vacuous"
+
     # Arrays should have exactly the total number of BPMs (no over-count)
     assert len(SC.bpm_system.noise_co_x) == total_bpms
     assert len(SC.bpm_system.noise_tbt_x) == total_bpms

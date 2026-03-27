@@ -23,7 +23,7 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
     bpms_categories = []
 
     if len(bpms_conf.keys()) > 1:
-        logger.fatal('More than one bpm category found in the configuration file. Not tested! Proceed with caution and ask for help!')
+        logger.info('Multiple BPM categories configured.')
 
     for bpms_category in bpms_conf.keys():
         bpms_category_conf = bpms_conf[bpms_category]

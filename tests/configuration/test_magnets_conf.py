@@ -15,7 +15,6 @@ def _make_sc_with_magnet_config(hmba_lattice_file, cal_error_sigma="0.01"):
         "error_table": {
             "quad_cal": cal_error_sigma,
             "sext_cal": cal_error_sigma,
-            "quad_limit": "100",
         },
         "parameters": {
             "quad_limit": "100",
@@ -74,6 +73,9 @@ def test_configure_magnets_applies_calibration_errors(hmba_lattice_file):
     for link_name, link in SC.magnet_settings.links.items():
         if link.error.factor != pytest.approx(1.0):
             non_unity.append(link_name)
+            # Factor = 1 + normal(0, 0.05); should be within a reasonable range of 1.0
+            assert 0.5 <= link.error.factor <= 1.5, \
+                f"Link {link_name} factor={link.error.factor} implausibly far from 1.0 for sigma=0.05"
     assert len(non_unity) > 0, "Expected at least one link with factor != 1"
 
 

@@ -73,7 +73,12 @@ def test_correct_orbit_reduces_rms(sc_tuning):
 
 @pytest.mark.slow
 def test_correct_injection_basic(sc_tuning):
-    """Injection correction runs without error."""
+    """Injection correction runs the full pipeline without error.
+
+    Note: HMBA single-cell ring is too small for corrections to have measurable
+    effect on corrector setpoints (see xfail on test_correct_orbit_reduces_rms).
+    This test verifies the code path executes without exceptions.
+    """
     sc = sc_tuning
 
     # Apply a small kick to create a trajectory offset
@@ -82,17 +87,41 @@ def test_correct_injection_basic(sc_tuning):
 
     # Build the trajectory RM first (n_turns=1)
     sc.tuning.calculate_model_trajectory_response_matrix(n_turns=1)
-
-    # Should run without raising
     sc.tuning.correct_injection(n_turns=1, n_reps=1, method='svd_cutoff', parameter=0)
 
 
 @pytest.mark.slow
-def test_wiggle_last_corrector(sc_tuning):
-    """wiggle_last_corrector runs without error on HMBA ring."""
+def test_correct_orbit_basic(sc_tuning):
+    """Orbit correction runs the full pipeline without error.
+
+    Note: HMBA single-cell ring is too small for corrections to have measurable
+    effect on corrector setpoints (see xfail on test_correct_orbit_reduces_rms).
+    This test verifies the code path executes without exceptions.
+    """
     sc = sc_tuning
-    # With full transmission, wiggle should log "no need to wiggle" and return
+
+    # Apply a small kick to create an orbit offset
+    corr = sc.tuning.HCORR[0]
+    sc.magnet_settings.set(corr, 1e-5)
+
+    # Build the orbit RM
+    sc.tuning.calculate_model_orbit_response_matrix()
+    sc.tuning.correct_orbit(n_reps=1, method='svd_cutoff', parameter=0)
+
+
+@pytest.mark.slow
+def test_wiggle_last_corrector(sc_tuning):
+    """With full transmission, wiggle_last_corrector leaves correctors unchanged."""
+    sc = sc_tuning
+
+    # Record corrector setpoints before
+    sp_before = {c: sc.magnet_settings.get(c) for c in sc.tuning.HCORR + sc.tuning.VCORR}
+
     sc.tuning.wiggle_last_corrector(max_steps=5, max_sp=100e-6)
+
+    # With full transmission, no wiggling needed — setpoints should be unchanged
+    sp_after = {c: sc.magnet_settings.get(c) for c in sc.tuning.HCORR + sc.tuning.VCORR}
+    assert sp_before == sp_after, "Corrector setpoints changed despite full transmission"
 
 
 @pytest.mark.slow
@@ -100,13 +129,29 @@ def test_wiggle_last_corrector(sc_tuning):
 def test_wiggle_last_corrector_no_upstream_corrector(sc_tuning):
     """When no corrector is upstream of last good BPM, should not raise UnboundLocalError.
 
-    Regression: the original code uses `last_hcor` / `last_vcor` which would be
+    Regression: the original code used `last_hcor` / `last_vcor` which would be
     unbound if no corrector has sim_index < last_good_bpm_index.
     """
     sc = sc_tuning
-    # This test just verifies the method doesn't crash with the default
-    # configuration where correctors and BPMs coexist. The real regression
-    # scenario is when correctors are all downstream of where beam is lost,
-    # which is hard to reproduce without heavy lattice manipulation.
-    # At minimum, the method should not raise UnboundLocalError.
-    sc.tuning.wiggle_last_corrector(max_steps=3, max_sp=100e-6)
+    nbpm = len(sc.bpm_system.indices)
+
+    # Simulate beam lost at last BPM (partial transmission)
+    fake_x = np.zeros(nbpm)
+    fake_x[-1] = np.nan  # last BPM has no reading
+    fake_y = np.zeros(nbpm)
+
+    original_capture = sc.bpm_system.__class__.capture_injection
+    original_hcorr = sc.tuning.HCORR
+    original_vcorr = sc.tuning.VCORR
+    try:
+        # Empty corrector lists → no corrector is upstream of anything
+        sc.tuning.HCORR = []
+        sc.tuning.VCORR = []
+        # Monkeypatch at the class level since Pydantic blocks instance attribute patching
+        sc.bpm_system.__class__.capture_injection = lambda self, **kw: (fake_x, fake_y)
+        # This should not raise UnboundLocalError — it should log a warning and return
+        sc.tuning.wiggle_last_corrector(max_steps=3, max_sp=100e-6)
+    finally:
+        sc.bpm_system.__class__.capture_injection = original_capture
+        sc.tuning.HCORR = original_hcorr
+        sc.tuning.VCORR = original_vcorr

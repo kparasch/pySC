@@ -82,15 +82,23 @@ def test_rf_system_set_voltage_triggers_update():
     rf, system, cavs = _make_rf_stack(n_cavities=1, voltage=1e6)
     system.set_voltage(2e6)
     assert system.voltage == pytest.approx(2e6)
-    # Verify update was called on the cavity (the mock SC lattice receives it)
-    rf._parent.lattice.update_cavity.assert_called()
+    # Verify update was called with the correct arguments
+    mock_update = rf._parent.lattice.update_cavity
+    mock_update.assert_called_once()
+    call_kwargs = mock_update.call_args[1]
+    assert call_kwargs["index"] == 0
+    assert call_kwargs["voltage"] == pytest.approx(2e6)
 
 
 def test_rf_system_set_frequency_triggers_update():
     rf, system, cavs = _make_rf_stack(frequency=500e6)
     system.set_frequency(499e6)
     assert system.frequency == pytest.approx(499e6)
-    rf._parent.lattice.update_cavity.assert_called()
+    # Verify update was called for each cavity with correct frequency
+    mock_update = rf._parent.lattice.update_cavity
+    assert mock_update.call_count == 2  # 2 cavities
+    for call in mock_update.call_args_list:
+        assert call[1]["frequency"] == pytest.approx(499e6)
 
 
 # ---------------------------------------------------------------------------

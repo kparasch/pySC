@@ -79,13 +79,16 @@ def test_configure_supports_applies_misalignments(hmba_lattice_file):
     configure_bpms(SC)
     configure_supports(SC)
 
-    # Check L1 supports have been assigned dx/dy
-    has_nonzero = False
+    # Check L1 supports have been assigned dx/dy for both start and end endpoints
+    has_nonzero_start = False
+    has_nonzero_end = False
     for support_idx, support in SC.support_system.data["L1"].items():
         if support.start.dx != 0 or support.start.dy != 0:
-            has_nonzero = True
-            break
-    assert has_nonzero, "Expected at least one support with non-zero endpoint misalignment"
+            has_nonzero_start = True
+        if support.end.dx != 0 or support.end.dy != 0:
+            has_nonzero_end = True
+    assert has_nonzero_start, "Expected at least one support with non-zero start endpoint misalignment"
+    assert has_nonzero_end, "Expected at least one support with non-zero end endpoint misalignment"
 
 
 # ---------------------------------------------------------------------------

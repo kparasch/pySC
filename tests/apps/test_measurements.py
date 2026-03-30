@@ -150,3 +150,38 @@ class TestMeasureDispersion:
         assert len(results) > 0
         for code, meas in results:
             assert isinstance(code, DispersionCode)
+
+class TestSolver:
+    def test_with_external_solver(self, mock_interface):
+        """orbit_correction supports method='solver' with external solver."""
+        iface = mock_interface(n_bpms=5)
+        iface._orbit_x = np.array([0.001, -0.002, 0.003, -0.001, 0.002])
+        rm = _make_rm()
+
+        class Solver:
+            def fit(self, X, y):
+                coef, *_ = np.linalg.lstsq(X, y, rcond=None)
+                self.coef_ = coef
+
+        trims = orbit_correction(iface, rm, method='solver', solver=Solver())
+
+        assert isinstance(trims, dict)
+        assert len(trims) > 0
+        assert all(np.isfinite(v) for v in trims.values())
+
+    def test_with_solver_and_rf(self, mock_interface):
+        """solver works together with rf=True."""
+        iface = mock_interface(n_bpms=5)
+        iface._orbit_x = np.ones(5) * 0.001
+        rm = _make_rm()
+
+        rm.rf_response = np.ones(rm._n_outputs) * 1e-3
+
+        class Solver:
+            def fit(self, X, y):
+                coef, *_ = np.linalg.lstsq(X, y, rcond=None)
+                self.coef_ = coef
+
+        trims = orbit_correction(iface, rm, method='solver', solver=Solver(), rf=True)
+
+        assert 'rf' in trims

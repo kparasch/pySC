@@ -603,3 +603,118 @@ class TestSolveCacheInvalidatedAfterSetRfResponse:
         # The results must differ because the rf_response (and therefore
         # the pseudoinverse) changed.
         assert not np.allclose(result1, result2)
+
+# ---------------------------------------------------------------------------
+# External solver support
+# ---------------------------------------------------------------------------
+
+class TestExternalSolver:
+    def test_solver_method_matches_svd_cutoff_identity(self):
+        """method='solver' with a least-squares solver matches svd_cutoff for identity RM."""
+        n = 4
+        rm = _make_identity_rm(n=n)
+        output = np.array([1.0, -2.0, 3.0, -4.0])
+
+        class Solver:
+            def fit(self, X, y):
+                coef, *_ = np.linalg.lstsq(X, y, rcond=None)
+                self.coef_ = coef
+
+        result_solver = rm.solve(output, method='solver', solver=Solver())
+        result_svd = rm.solve(output, method='svd_cutoff', parameter=0)
+
+        np.testing.assert_array_almost_equal(result_solver, result_svd)
+
+    def test_solver_requires_solver_argument(self):
+        """method='solver' without solver raises Exception."""
+        rm = _make_rm()
+        output = np.ones(rm.matrix.shape[0])
+
+        with pytest.raises(Exception):
+            rm.solve(output, method='solver')
+
+    def test_solver_warns_if_method_not_solver(self, caplog):
+        """Providing solver with method != 'solver' emits warning."""
+        rm = _make_rm()
+        output = np.ones(rm.matrix.shape[0])
+
+        class Solver:
+            def fit(self, X, y):
+                self.coef_ = np.zeros(X.shape[1])
+
+        rm.solve(output, method='svd_cutoff', solver=Solver())
+
+        assert "solver was provided but method" in caplog.text
+
+    def test_solver_missing_fit(self):
+        """Solver without fit() raises TypeError."""
+        rm = _make_rm()
+        output = np.ones(rm.matrix.shape[0])
+
+        class Solver:
+            pass
+
+        with pytest.raises(TypeError):
+            rm.solve(output, method='solver', solver=Solver())
+
+    def test_solver_missing_coef(self):
+        """Solver without coef_ raises TypeError."""
+        rm = _make_rm()
+        output = np.ones(rm.matrix.shape[0])
+
+        class Solver:
+            def fit(self, X, y):
+                pass
+
+        with pytest.raises(TypeError):
+            rm.solve(output, method='solver', solver=Solver())
+
+    def test_solver_wrong_coef_length(self):
+        """Solver returning wrong number of coefficients raises ValueError."""
+        rm = _make_rm()
+        output = np.ones(rm.matrix.shape[0])
+
+        class Solver:
+            def fit(self, X, y):
+                self.coef_ = np.zeros(X.shape[1] + 1)
+
+        with pytest.raises(ValueError):
+            rm.solve(output, method='solver', solver=Solver())
+
+    def test_solver_with_virtual(self):
+        """method='solver' works with virtual=True."""
+        rm = _make_rm(n_out=6, n_in=4)
+        output = np.ones(6)
+
+        class Solver:
+            def fit(self, X, y):
+                coef, *_ = np.linalg.lstsq(X, y, rcond=None)
+                self.coef_ = coef
+
+        result = rm.solve(output, method='solver', solver=Solver(), virtual=True)
+        assert len(result) == 4
+
+    def test_solver_with_rf(self):
+        """method='solver' works with rf=True and returns RF element."""
+        n_out, n_in = 6, 4
+        rng = np.random.default_rng(123)
+        matrix = rng.standard_normal((n_out, n_in))
+        rf_response = rng.standard_normal(n_out)
+
+        rm = ResponseMatrix(
+            matrix=matrix,
+            input_names=[f'cor_{i}' for i in range(n_in)],
+            output_names=[f'bpm_{i}' for i in range(n_out)],
+            rf_response=rf_response,
+        )
+        output = rng.standard_normal(n_out)
+
+        class Solver:
+            def fit(self, X, y):
+                coef, *_ = np.linalg.lstsq(X, y, rcond=None)
+                self.coef_ = coef
+
+        result = rm.solve(output, method='solver', solver=Solver(), rf=True)
+
+        assert len(result) == n_in + 1
+        assert result[-1] != 0.0

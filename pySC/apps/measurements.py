@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from typing import Optional, Generator, Union, Literal
+from typing import Optional, Generator, Union, Literal, Any
 from pathlib import Path
 
 from ..apps.response_matrix import ResponseMatrix
@@ -15,7 +15,7 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
                      parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
                      gain: float = 1, virtual: bool = False, plane: Optional[Literal['H', 'V']] = None,
                      rf: bool  = False, apply: bool = False, virtual_target: float = 0,
-                     gain_rf: float = 1, zerosum: Optional[bool] = None):
+                     gain_rf: float = 1, zerosum: Optional[bool] = None, solver: Optional[Any] = None):
 
     if zerosum is not None:
         logger.warning('`zerosum` argument in ResponseMatrix.solve is deprecated. Please use `virtual` instead.')
@@ -34,7 +34,16 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
         assert len(reference) == len(orbit), "Reference orbit has wrong length"
         orbit -= reference
 
-    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter, virtual=virtual, plane=plane, rf=rf, virtual_target=virtual_target)
+    trim_list = -response_matrix.solve(
+        orbit,
+        method=method,
+        parameter=parameter,
+        virtual=virtual,
+        plane=plane,
+        rf=rf,
+        virtual_target=virtual_target,
+        solver=solver
+    )
 
     trims = {corr: trim for corr, trim in zip(correctors, trim_list, strict=False) if trim != 0}
     # if rf is selected, trim_list will be larger than correctors by one element. The last element is the rf frequency.

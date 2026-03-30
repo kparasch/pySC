@@ -1,5 +1,5 @@
 from pydantic import BaseModel, PrivateAttr, model_validator, ConfigDict
-from typing import Optional, Literal
+from typing import Optional, Literal, Any
 from ..core.types import NPARRAY
 import numpy as np
 import logging
@@ -393,7 +393,7 @@ class ResponseMatrix(BaseModel):
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0., virtual: bool = False,
               zerosum: Optional[bool] = None, rf: bool = False, plane: Optional[Literal['H', 'V']] = None,
-              virtual_target: float = 0) -> np.ndarray:
+              virtual_target: float = 0, solver: Optional[Any] = None) -> np.ndarray:
         if zerosum is not None:
             logger.warning('`zerosum` argument in ResponseMatrix.solve is deprecated. Please use `virtual` instead.')
             virtual = zerosum
@@ -417,7 +417,7 @@ class ResponseMatrix(BaseModel):
             expected_shape = (expected_shape[0] + 1, expected_shape[1])
 
 
-        if method != 'micado':
+        if solver is None and method != 'micado':
             if plane is None:
                 active_inverse_RM = self._inverse_RM
             elif plane == 'H':
@@ -459,7 +459,19 @@ class ResponseMatrix(BaseModel):
         good_output = bad_output[np.logical_and(self._output_mask, output_plane_mask)]
 
 
-        if method == 'micado':
+        if solver is not None:
+            matrix, _ = self._solver_matrix(virtual=virtual, rf=rf, plane=plane)
+            if virtual:
+                external_output = np.zeros(len(good_output) + 1)
+                external_output[:-1] = good_output
+                external_output[-1] = virtual_target * self.virtual_weight
+            else:
+                external_output = good_output
+            good_input = self._solver_fit(solver, matrix, external_output)
+            if rf:
+                rf_input = good_input[-1]
+                good_input = good_input[:-1]
+        elif method == 'micado':
             bad_input = self.micado(good_output, int(parameter), plane=plane)
             if virtual:
                 logger.warning('virtual option is incompatible with the micado method and will be ignored.')
@@ -494,6 +506,20 @@ class ResponseMatrix(BaseModel):
                 input_plane_mask = np.array(self.input_planes) == plane
             bad_input[:self._n_inputs][np.logical_and(self._input_mask, input_plane_mask)] = good_input
 
+            bad_input[:self._n_inputs] = np.multiply(bad_input[:self._n_inputs], self.input_weights)
+            if rf:
+                bad_input[-1] = rf_input * self.rf_weight
+        if solver is not None:
+            final_input_length = self._n_inputs
+            if rf:
+                final_input_length += 1
+
+            bad_input = np.zeros(final_input_length, dtype=float)
+            if plane in ['H', 'V']:
+                input_plane_mask = np.array(self.input_planes) == plane
+            else:
+                input_plane_mask = np.ones_like(self._input_mask, dtype=bool)
+            bad_input[:self._n_inputs][np.logical_and(self._input_mask, input_plane_mask)] = good_input
             bad_input[:self._n_inputs] = np.multiply(bad_input[:self._n_inputs], self.input_weights)
             if rf:
                 bad_input[-1] = rf_input * self.rf_weight
@@ -535,6 +561,60 @@ class ResponseMatrix(BaseModel):
             residual -= best_trim * good_matrix[:, best_input]
 
         return bad_input
+
+
+    def _solver_matrix(self, virtual: bool = False, rf: bool = False, plane: Optional[PLANE_TYPE] = None) -> tuple[np.ndarray, np.ndarray]:
+        assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
+        if plane is None:
+            matrix = self.matrix[self._output_mask, :][:, self._input_mask]
+            tot_output_mask = self._output_mask
+            tot_input_mask = self._input_mask
+        else:
+            output_plane_mask = self.get_output_plane_mask(plane)
+            input_plane_mask = self.get_input_plane_mask(plane)
+            tot_output_mask = np.logical_and(self._output_mask, output_plane_mask)
+            tot_input_mask = np.logical_and(self._input_mask, input_plane_mask)
+            matrix = self.matrix[tot_output_mask, :][:, tot_input_mask]
+
+        if virtual or rf:
+            rows, cols = matrix.shape
+            if virtual:
+                rows += 1
+            if rf:
+                cols += 1
+            matrix_to_solve = np.zeros((rows, cols), dtype=float)
+            matrix_to_solve[:matrix.shape[0], :matrix.shape[1]] = matrix
+            if virtual:
+                matrix_to_solve[-1, :matrix.shape[1]] = self.virtual_weight
+            if rf:
+                rf_response = self.rf_response
+                if plane is not None:
+                    rf_response = rf_response[tot_output_mask]
+                matrix_to_solve[:matrix.shape[0], -1] = self.rf_weight * rf_response
+        else:
+            matrix_to_solve = matrix.copy()
+
+        rows, cols = matrix.shape
+        matrix_to_solve[:, :cols] = np.multiply(matrix_to_solve[:, :cols], self.input_weights[tot_input_mask])
+        matrix_to_solve[:rows, :] = np.multiply(matrix_to_solve[:rows, :], self.output_weights[tot_output_mask][:, np.newaxis])
+        return matrix_to_solve, tot_input_mask
+
+    @staticmethod
+    def _solver_fit(solver: Any, matrix: np.ndarray, output: np.ndarray) -> np.ndarray:
+        if not hasattr(solver, 'fit'):
+            raise TypeError('External solver must define a fit(X, y) method.')
+        solver.fit(matrix, output)
+        if not hasattr(solver, 'coef_'):
+            raise TypeError('External solver must expose fitted coefficients via `coef_`.')
+        good_input = np.asarray(solver.coef_, dtype=float)
+        if good_input.ndim != 1:
+            good_input = good_input.reshape(-1)
+        if good_input.shape[0] != matrix.shape[1]:
+            raise ValueError(
+                f'External solver returned {good_input.shape[0]} coefficients, expected {matrix.shape[1]}.'
+            )
+        return good_input
+
 
     @classmethod
     def from_json(cls, json_filename: str) -> "ResponseMatrix":

@@ -18,7 +18,7 @@ def _make_rm(n_out=6, n_in=4, seed=0, rf_response=None, rf_weight=None, randomiz
     input_names = kwargs.pop('input_names', [f'cor_{i}' for i in range(n_in)])
     output_names = kwargs.pop('output_names', [f'bpm_{i}' for i in range(n_out)])
     if rf_response is None and randomize_rf:
-        rf_response = rng.normal(size=n_outputs)
+        rf_response = rng.normal(size=n_out)
 
     return ResponseMatrix(
         matrix=matrix,

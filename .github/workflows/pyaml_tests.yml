@@ -23,6 +23,7 @@ jobs:
           repository: python-accelerator-middle-layer/pyaml
           path: pyaml
           ref: main
+          submodules: recursive
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5

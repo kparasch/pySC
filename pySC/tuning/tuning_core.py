@@ -14,6 +14,7 @@ from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 from ..apps import orbit_correction
 
 import numpy as np
+import warnings
 from pathlib import Path
 import logging
 from multiprocessing import Process, Queue
@@ -522,7 +523,222 @@ class Tuning(BaseModel, extra="forbid"):
                 SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-    def injection_efficiency(self, n_turns: int = 1, omp_num_threads: Optional[int] = None) -> float:
+    def tune_scan(self, dqx_range: np.ndarray, dqy_range: np.ndarray,
+                  n_turns: int = 50, target: float = 0.8,
+                  full_scan: bool = False,
+                  omp_num_threads: Optional[int] = None) -> tuple[float, float, np.ndarray, int]:
+        """Spiral grid scan of tune deltas for beam survival.
+
+        Scans tune knob setpoints in a spiral pattern starting from the
+        center of the grid, looking for settings that achieve the target
+        transmission.  Uses the registered tune knobs (see
+        ``create_tune_knobs()``) and ``injection_efficiency()`` for tracking.
+
+        Args:
+            dqx_range: 1-D array of horizontal tune deltas.
+            dqy_range: 1-D array of vertical tune deltas.
+            n_turns: Number of turns for tracking (default 50).
+            target: Target final-turn transmission fraction (default 0.8).
+            full_scan: If True, scan entire grid even after target is reached.
+            omp_num_threads: Optional thread count forwarded to tracking.
+
+        Returns:
+            (best_dqx, best_dqy, survival_map, error) where:
+            - best_dqx: Best horizontal tune delta.
+            - best_dqy: Best vertical tune delta.
+            - survival_map: 2-D array of final-turn transmissions.
+            - error: 0 = target reached, 1 = improved but not target,
+              2 = no transmission.
+        """
+        SC = self._parent
+
+        # Assert knobs are registered
+        assert self.tune.knob_qx in SC.magnet_settings.controls, \
+            f"Knob '{self.tune.knob_qx}' not registered — call create_tune_knobs() first"
+        assert self.tune.knob_qy in SC.magnet_settings.controls, \
+            f"Knob '{self.tune.knob_qy}' not registered — call create_tune_knobs() first"
+
+        # Save initial knob setpoints
+        initial_qx = SC.magnet_settings.get(self.tune.knob_qx)
+        initial_qy = SC.magnet_settings.get(self.tune.knob_qy)
+
+        n1, n2 = len(dqx_range), len(dqy_range)
+
+        # Allocate output
+        transmission_map = np.full((n1, n2), np.nan)
+        turns_map = np.full((n1, n2), np.nan)
+
+        # Generate spiral scan order (center-first)
+        n_max = max(n1, n2)
+        spiral_indices = self._spiral_order(n_max)
+
+        best_dqx = float(dqx_range[n1 // 2])
+        best_dqy = float(dqy_range[n2 // 2])
+        best_trans = 0.0
+        best_turns = 0
+        scan_order = []
+
+        for q1, q2 in spiral_indices:
+            if q1 >= n1 or q2 >= n2:
+                continue
+
+            # Set tune knobs (absolute, not cumulative)
+            SC.magnet_settings.set(self.tune.knob_qx, initial_qx + dqx_range[q1])
+            SC.magnet_settings.set(self.tune.knob_qy, initial_qy + dqy_range[q2])
+
+            survival = self.injection_efficiency(n_turns=n_turns, omp_num_threads=omp_num_threads)
+            final_trans = float(survival[-1, -1]) if survival.ndim > 1 else float(survival[-1])
+            #survival_map[q1, q2] = survival
+
+            # Find max turns with any survival
+            turn_survival = np.mean(survival, axis=0) if survival.ndim > 1 else survival
+            max_turns_achieved = np.sum(turn_survival > 0)
+
+            transmission_map[q1, q2] = final_trans
+            turns_map[q1, q2] = max_turns_achieved
+            scan_order.append((q1, q2))
+
+            if final_trans > best_trans or (final_trans == best_trans and max_turns_achieved > best_turns):
+                best_trans = final_trans
+                best_turns = max_turns_achieved
+                best_dqx = float(dqx_range[q1])
+                best_dqy = float(dqy_range[q2])
+
+            # Early termination
+            if not full_scan and final_trans >= target:
+                logger.info(f'tune_scan: target reached at dqx={dqx_range[q1]:.3f}, dqy={dqy_range[q2]:.3f}, '
+                           f'transmission={final_trans:.2%}')
+                return best_dqx, best_dqy, transmission_map, 0
+
+        # Apply best deltas at end
+        SC.magnet_settings.set(self.tune.knob_qx, initial_qx + best_dqx)
+        SC.magnet_settings.set(self.tune.knob_qy, initial_qy + best_dqy)
+
+        if best_trans == 0.0:
+            logger.info('tune_scan: no transmission at all')
+            return best_dqx, best_dqy, transmission_map, 2
+
+        if best_trans >= target:
+            logger.info(f'tune_scan: target reached (full scan), transmission={best_trans:.2%}')
+            return best_dqx, best_dqy, transmission_map, 0
+
+        logger.info(f'tune_scan: best transmission={best_trans:.2%} (target={target:.2%})')
+        return best_dqx, best_dqy, transmission_map, 1
+
+    @staticmethod
+    def _spiral_order(n: int) -> list[tuple[int, int]]:
+        """Generate spiral scan indices for an n x n grid, starting from center."""
+        x = (n - 1) // 2
+        y = (n - 1) // 2
+        result = [(x, y)]
+
+        # directions: right, down, left, up
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+
+        step_size = 1
+        while len(result) < n * n:
+            for d in range(4):
+                dx, dy = directions[d]
+                steps = step_size
+
+                for _ in range(steps):
+                    x += dx
+                    y += dy
+                    if 0 <= x < n and 0 <= y < n:
+                        result.append((x, y))
+                        if len(result) == n * n:
+                            return result
+
+                # increase step size after moving horizontally (every 2 directions)
+                if d % 2 == 1:
+                    step_size += 1
+
+        return result
+
+    def synch_energy_correction(self, freq_range: tuple[float, float] = (-1e3, 1e3),
+                                n_steps: int = 15, n_turns: int = 150,
+                                min_turns: int = 50) -> tuple[float, int]:
+        """Calculate beam-based RF frequency correction.
+
+        Ports SCsynchEnergyCorrection from MATLAB SC toolkit. Scans RF frequency,
+        measures mean TBT horizontal BPM shift, fits a line to slope vs frequency,
+        and returns the zero-crossing as the correction.
+
+        Args:
+            freq_range: (min, max) frequency offset range in Hz.
+            n_steps: Number of frequency steps to evaluate.
+            n_turns: Number of turns to track at each step.
+            min_turns: Minimum turns with beam survival to include a measurement.
+
+        Returns:
+            (delta_f, error) where:
+            - delta_f: Frequency correction to add to cavity frequency [Hz]
+            - error: 0=success, 1=no transmission, 2=NaN result
+        """
+        SC = self._parent
+        interface = pySCOrbitInterface(SC=SC)
+
+        f_test_vec = np.linspace(freq_range[0], freq_range[1], n_steps)
+        bpm_shift = np.full(n_steps, np.nan)
+
+        # Save original frequency
+        original_freq = interface.get_rf_main_frequency()
+
+        for i, df in enumerate(f_test_vec):
+            # Temporarily change RF frequency
+            interface.set_rf_main_frequency(original_freq + df)
+
+            # Get turn-by-turn BPM readings
+            x, y = SC.bpm_system.capture_injection(n_turns=n_turns)
+            # x has shape [n_bpm, n_turns]
+
+            if x.ndim < 2:
+                continue
+
+            # Compute mean TBT difference from first turn
+            # BB[i,j] = x reading at BPM i, turn j
+            BB = x  # [n_bpm, n_turns]
+            with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                tbt_de = np.nanmean(BB - BB[:, 0:1], axis=0)  # [n_turns]
+
+            # Fit line: slope of energy shift vs turn number
+            turns = np.arange(1, n_turns + 1, dtype=float)
+            valid = ~np.isnan(tbt_de)
+            if np.sum(valid) < min_turns:
+                logger.info(f'synch_energy_correction: frequency_shift={df:.2f} Hz, measurement invalid.')
+                continue
+
+            x_fit = turns[valid]
+            y_fit = tbt_de[valid]
+            # Least-squares slope: x \ y
+            bpm_shift[i] = np.dot(x_fit, y_fit) / np.dot(x_fit, x_fit)
+            logger.info(f'synch_energy_correction: frequency_shift={df:.2f} Hz, bpm_shift={1e6*bpm_shift[i]:.3f} um')
+
+        # Restore original frequency
+        interface.set_rf_main_frequency(original_freq)
+
+        # Fit line to slope vs frequency
+        valid = ~np.isnan(bpm_shift)
+        if np.sum(valid) == 0:
+            logger.info('synch_energy_correction: no transmission at any frequency')
+            return 0.0, 1
+
+        x_fit = f_test_vec[valid]
+        y_fit = bpm_shift[valid]
+        p = np.polyfit(x_fit, y_fit, 1)
+
+        # Zero crossing
+        delta_f = -p[1] / p[0]
+
+        if np.isnan(delta_f):
+            logger.info('synch_energy_correction: NaN correction')
+            return 0.0, 2
+
+        logger.info(f'synch_energy_correction: correction = {delta_f:.1f} Hz')
+        return delta_f, 0
+
+    def injection_efficiency(self, n_turns: int = 1, omp_num_threads: Optional[int] = None) -> np.ndarray[float]:
         SC = self._parent
 
         if omp_num_threads is not None:
@@ -537,7 +753,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return transmission
 
-    def correct_orbit_with_dispersion(self, alpha_sequence=None, dispersion_scale=1.0,
+    def correct_orbit_with_dispersion(self, alpha_sequence=None,
                                       n_reps=1, method='tikhonov', gain=1.0, virtual=False):
         SC = self._parent
 
@@ -548,7 +764,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         # 2. Add dispersion to response matrix
         dispersion = measure_RFFrequencyOrbitResponse(SC, use_design=True)
-        response_matrix.rf_response = dispersion * dispersion_scale
+        response_matrix.set_rf_response(dispersion)
 
         # 3. Default alpha sequence
         if alpha_sequence is None:

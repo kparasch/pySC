@@ -11,19 +11,23 @@ from pySC.apps.response_matrix import ResponseMatrix
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_rm(n_out=6, n_in=4, seed=0, **kwargs):
+def _make_rm(n_out=6, n_in=4, seed=0, rf_response=None, rf_weight=None, randomize_rf=False, **kwargs):
     """Build a ResponseMatrix with a random matrix and sensible defaults."""
     rng = np.random.default_rng(seed)
     matrix = rng.standard_normal((n_out, n_in))
     input_names = kwargs.pop('input_names', [f'cor_{i}' for i in range(n_in)])
     output_names = kwargs.pop('output_names', [f'bpm_{i}' for i in range(n_out)])
+    if rf_response is None and randomize_rf:
+        rf_response = rng.normal(size=n_outputs)
+
     return ResponseMatrix(
         matrix=matrix,
         input_names=input_names,
         output_names=output_names,
+        rf_response=rf_response,
+        rf_weight=rf_weight,
         **kwargs,
     )
-
 
 def _make_identity_rm(n=4, **kwargs):
     """Build a ResponseMatrix from an identity matrix (square, well-conditioned)."""
@@ -540,3 +544,62 @@ class TestExtraForbid:
                 output_names=[f'bpm_{i}' for i in range(4)],
                 nonexistent_field=42,
             )
+
+# ---------------------------------------------------------------------------
+# Test rf_response
+# ---------------------------------------------------------------------------
+
+class TestSetRfResponseRecomputesWeight:
+    """set_rf_response() recomputes rf_weight when it was auto-computed."""
+
+    def test_auto_weight_is_recomputed(self):
+        rm = _make_rm(randomize_rf=True)
+        assert rm._rf_weight_is_default is True
+        old_weight = rm.rf_weight
+
+        new_rf = np.random.default_rng(99).normal(size=rm.matrix.shape[0]) * 5
+        rm.set_rf_response(new_rf)
+
+        assert rm.rf_weight != old_weight
+        expected = rm.default_rf_weight()
+        assert rm.rf_weight == pytest.approx(expected)
+
+
+class TestSetRfResponsePreservesExplicitWeight:
+    """set_rf_response() does NOT overwrite an explicitly-set rf_weight."""
+
+    def test_explicit_weight_preserved(self):
+        explicit_weight = 5.0
+        rm = _make_rm(rf_weight=explicit_weight, randomize_rf=True)
+        assert rm._rf_weight_is_default is False
+        assert rm.rf_weight == explicit_weight
+
+        new_rf = np.random.default_rng(99).normal(size=rm.matrix.shape[0]) * 5
+        rm.set_rf_response(new_rf)
+
+        assert rm.rf_weight == explicit_weight
+
+
+class TestSolveCacheInvalidatedAfterSetRfResponse:
+    """solve() cache is invalidated after set_rf_response() so a stale
+    pseudoinverse is not reused."""
+
+    def test_cache_invalidated(self):
+        rm = _make_rm(randomize_rf=True)
+        output = np.random.default_rng(7).normal(size=rm.matrix.shape[0])
+
+        # First solve to populate the cache
+        result1 = rm.solve(output, method="tikhonov", parameter=1.0, rf=True)
+        assert rm._inverse_RM is not None
+
+        # Change rf_response -- this changes hash_rf_response, which
+        # solve() checks before reusing the cached pseudoinverse.
+        new_rf = np.random.default_rng(99).normal(size=rm.matrix.shape[0]) * 5
+        rm.set_rf_response(new_rf)
+
+        # Second solve should NOT reuse the stale pseudoinverse
+        result2 = rm.solve(output, method="tikhonov", parameter=1.0, rf=True)
+
+        # The results must differ because the rf_response (and therefore
+        # the pseudoinverse) changed.
+        assert not np.allclose(result1, result2)

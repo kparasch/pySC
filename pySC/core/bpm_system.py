@@ -130,14 +130,16 @@ class BPMSystem(BaseModel, extra='forbid'):
         '''
         if use_design:
             bunch = self._parent.injection.generate_bunch(use_design=True)
-            trajectory, transmission = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
+            trajectory, transmission = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True,
+                                                                       transmission_threshold=self.transmission_threshold)
             if return_transmission:
                 return trajectory[0], trajectory[1], transmission
             else:
                 return trajectory[0], trajectory[1]
 
         bunch = self._parent.injection.generate_bunch()
-        trajectory, transmission = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False)
+        trajectory, transmission = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False,
+                                                                   transmission_threshold=self.transmission_threshold)
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])
@@ -186,13 +188,15 @@ class BPMSystem(BaseModel, extra='forbid'):
             bunch = self._parent.injection.generate_orbit_centered_bunch(use_design=True)
             bunch[:, 1] += kick_px
             bunch[:, 3] += kick_py
-            trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True)
+            trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True,
+                                                            transmission_threshold=self.transmission_threshold)
             return trajectory[0], trajectory[1]
 
         bunch = self._parent.injection.generate_orbit_centered_bunch()
         bunch[:, 1] += kick_px
         bunch[:, 3] += kick_py
-        trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False)
+        trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False,
+                                                        transmission_threshold=self.transmission_threshold)
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])

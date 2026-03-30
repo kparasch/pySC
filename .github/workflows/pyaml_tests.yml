@@ -1,0 +1,40 @@
+name: pyAML tests
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone second repository
+        uses: actions/checkout@v4
+        with:
+          repository: python-accelerator-middle-layer/pyaml
+          path: pyaml
+          ref: main
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package with test dependencies
+        run: |
+          pip install "./pyaml[test]"
+          pip install ./pyaml/tests/dummy_cs/tango-pyaml
+          pip install ".[test]"
+
+      - name: Run tests
+        working-directory: pyaml
+        run: pytest -k "tuning"

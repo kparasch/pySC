@@ -133,6 +133,8 @@ class Tuning(BaseModel, extra="forbid"):
 
         initial_transmission, last_good_bpm_index = first_turn_transmission(SC)
         if initial_transmission < 1.:
+            last_hcor = None
+            last_vcor = None
             for corr in SC.tuning.HCORR:
                 hcor_name = corr.split('/')[0]
                 hcor_index = SC.magnet_settings.magnets[hcor_name].sim_index
@@ -143,6 +145,10 @@ class Tuning(BaseModel, extra="forbid"):
                 vcor_index = SC.magnet_settings.magnets[vcor_name].sim_index
                 if vcor_index < last_good_bpm_index:
                     last_vcor = corr
+
+            if last_hcor is None or last_vcor is None:
+                logger.warning("No upstream corrector found for wiggling.")
+                return
 
             for _ in range(max_steps):
                 SC.magnet_settings.set(last_hcor, SC.rng.uniform(-max_sp, max_sp))

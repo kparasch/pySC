@@ -15,10 +15,10 @@ def get_error(error_name: Optional[str], error_table: dict) -> float:
     return float(error_table[error_name])
 
 def scale_error_table(error_table: dict, scale: float = 1) -> dict:
+    scaled = {}
     for key in error_table.keys():
-        error = get_error(error_name=key, error_table=error_table)
-        error_table[key] = str(scale * error)
-    return error_table
+        scaled[key] = str(scale * get_error(error_name=key, error_table=error_table))
+    return scaled
 
 def get_indices_with_regex(SC: SimulatedCommissioning, category_name: str, category_conf: dict[str, Any]) -> list[int]:
     indices = SC.lattice.find_with_regex(category_conf['regex'])

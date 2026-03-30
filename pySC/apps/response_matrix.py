@@ -315,8 +315,8 @@ class ResponseMatrix(BaseModel):
         self.disable_outputs(self.output_names)
 
     def disable_all_outputs_but(self, outputs: list[str]):
-        self.disable_all_inputs()
-        self.enable_inputs(outputs)
+        self.disable_all_outputs()
+        self.enable_outputs(outputs)
 
     def enable_all_outputs(self):
         self.bad_outputs = []
@@ -516,6 +516,8 @@ class ResponseMatrix(BaseModel):
 
         for _ in range(n):
             best_chi2 = np.inf
+            best_input = None
+            best_trim = None
             for ii in all_inputs:
                 if ii in already_used_inputs or ii in self._bad_inputs:
                     continue
@@ -526,6 +528,8 @@ class ResponseMatrix(BaseModel):
                     best_chi2 = chi2
                     best_input = ii
                     best_trim = trim
+            if best_input is None:
+                break
             already_used_inputs.append(best_input)
             bad_input[best_input] = best_trim
             residual -= best_trim * good_matrix[:, best_input]

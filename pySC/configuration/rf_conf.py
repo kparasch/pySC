@@ -40,16 +40,16 @@ def configure_rf(SC: SimulatedCommissioning) -> None:
             cavity = RFCavity(sim_index=index, phase_delta=phase_delta, frequency_delta=frequency_delta)
             design_cavity = RFCavity(sim_index=index, phase_delta=phase_delta, frequency_delta=frequency_delta, to_design=True)
 
-            if 'voltage' in rf_conf:
-                sig = get_error(rf_conf['voltage'], error_table=error_table)
+            if 'voltage' in rf_category_conf:
+                sig = get_error(rf_category_conf['voltage'], error_table=error_table)
                 cavity.voltage_error = SC.rng.normal_trunc(0, sig)
 
-            if 'phase' in rf_conf:
-                sig = get_error(rf_conf['phase'], error_table=error_table)
+            if 'phase' in rf_category_conf:
+                sig = get_error(rf_category_conf['phase'], error_table=error_table)
                 cavity.phase_error = SC.rng.normal_trunc(0, sig)
 
-            if 'frequency' in rf_conf:
-                sig = get_error(rf_conf['frequncy'], error_table=error_table)
+            if 'frequency' in rf_category_conf:
+                sig = get_error(rf_category_conf['frequency'], error_table=error_table)
                 cavity.frequency_error = SC.rng.normal_trunc(0, sig)
 
             SC.rf_settings.cavities[name] = cavity

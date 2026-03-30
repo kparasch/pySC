@@ -31,10 +31,9 @@ jobs:
 
       - name: Install package with test dependencies
         run: |
-          pip install ./pyaml
+          pip install "./pyaml[test]"
           pip install ".[test]"
 
       - name: Run tests
         run: |
-          cd pyaml
-          pytest -k "tuning"
+          pytest pyaml -k "tuning"

@@ -35,5 +35,5 @@ jobs:
           pip install ".[test]"
 
       - name: Run tests
-        run: |
-          pytest pyaml -k "tuning"
+        working-directory: pyaml
+        run: pytest -k "tuning"

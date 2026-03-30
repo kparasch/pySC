@@ -23,7 +23,6 @@ jobs:
           repository: python-accelerator-middle-layer/pyaml
           path: pyaml
           ref: main
-          submodules: recursive
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -33,6 +32,7 @@ jobs:
       - name: Install package with test dependencies
         run: |
           pip install "./pyaml[test]"
+          pip install ./pyaml/tests/dummy_cs/tango-pyaml
           pip install ".[test]"
 
       - name: Run tests

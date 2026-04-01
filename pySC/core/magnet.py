@@ -1,5 +1,6 @@
 from __future__ import annotations
 from typing import Literal, Optional, Union, Any
+import math
 from pydantic import BaseModel, model_validator, PrivateAttr, PositiveInt, NonNegativeInt
 import logging
 from .control import Control, LinearConv
@@ -30,6 +31,9 @@ class Magnet(BaseModel, extra="forbid"):
     offset_B: Optional[list[float]] = None
     to_design: bool = False
     length: Optional[float] = None
+    is_shifted: bool = False
+    bending_length: Optional[float] = None
+    design_shift: float = 0.0
     _links: list[ControlMagnetLink] = PrivateAttr(default=[])
     _parent = PrivateAttr(default=None)
 
@@ -112,8 +116,44 @@ class Magnet(BaseModel, extra="forbid"):
                     f"Invalid component '{link.component}' for magnet '{self.name}'"
                 )
 
+        if self.is_shifted:
+            assert self.length is not None, f"ERROR: quadrupole length not specified for shifted magnet: {repr(self)}"
+            shift = self.design_shift
+            if not self.to_design:
+                dx, _ = self._parent._parent.support_system.get_total_offset(self.sim_index)
+                shift += dx
+            k1 = self.B[1]
+            bending_angle = 2*math.asin(shift*k1*self.length/2)
+            arc_length = bending_angle/(shift*k1)
+            element = self._parent._parent.lattice.design[self.sim_index] if self.to_design else self._parent._parent.lattice.ring[self.sim_index]
+            element.Length = arc_length
+            element.BendingAngle = bending_angle
+            element.EntranceAngle = element.ExitAngle = bending_angle/2
+            self.bending_length = arc_length
+
         for ii in range(self.max_order + 1):
             self._parent._parent.lattice.set_magnet_component(
                 self.sim_index, self.A[ii], 'A', ii, use_design=self.to_design)
             self._parent._parent.lattice.set_magnet_component(
                 self.sim_index, self.B[ii], 'B', ii, use_design=self.to_design)
+
+        if self.is_shifted:
+    
+            if self.to_design:
+                dx = dy = dz = 0.0
+                roll = yaw = pitch = 0.0
+            else:
+                dx, dy = self._parent._parent.support_system.get_total_offset(self.sim_index)
+                dz = self._parent._parent.support_system.data['L0'][self.sim_index].dz
+                roll, pitch, yaw = self._parent._parent.support_system.get_total_rotation(self.sim_index)
+
+            self._parent._parent.lattice.update_misalignment(
+                self.sim_index,
+                dx=dx,
+                dy=dy,
+                dz=dz,
+                roll=roll,
+                yaw=yaw,
+                pitch=pitch,
+                use_design=self.to_design
+            )

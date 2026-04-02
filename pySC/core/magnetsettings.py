@@ -97,6 +97,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
                                         is_shifted: bool = False,
                                         bending_length: Optional[float] = None,
                                         design_shift: float = 0.0,
+                                        design_k1: float = 0.0,
                                         to_design: bool = False) -> None:
         """
         Add a magnet with individually powered components.
@@ -118,7 +119,8 @@ class MagnetSettings(BaseModel, extra="forbid"):
                         length=magnet_length,
                         is_shifted=is_shifted,
                         bending_length=bending_length,
-                        design_shift=design_shift)
+                        design_shift=design_shift,
+                        design_k1=design_k1)
         magnet._parent = self  # Set the parent to the current settings instance
 
         # check non-zero components that are not controlled and put them in offset_A/B.

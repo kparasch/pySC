@@ -24,6 +24,7 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
     bending_length = SC.lattice.get_length(index)
     magnet_length = bending_length
     design_shift = 0.0
+    design_k1 = 0.0
     if is_shifted:
         element = SC.lattice.design[index]
         component_value = getattr(element, 'PolynomB')[1]
@@ -32,6 +33,7 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
         radius = bending_length/bending_angle
         magnet_length = 2*abs(radius)*abs(math.sin(bending_angle/2))
         design_shift = bending_angle/(component_value*bending_length)
+        design_k1 = component_value
 
     if 'components' in magnet_category_conf:
         components = []
@@ -49,6 +51,7 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
             is_shifted=is_shifted,
             bending_length=bending_length,
             design_shift=design_shift,
+            design_k1=design_k1,
             to_design=to_design
         )
 

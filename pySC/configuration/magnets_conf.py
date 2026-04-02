@@ -1,4 +1,5 @@
 from typing import Any
+import math
 from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.lattice import ATLattice
 from ..core.magnet import MAGNET_NAME_TYPE
@@ -18,6 +19,22 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
     components_to_invert = dict.get(magnet_category_conf, 'invert', []).copy() # defaults to empty list if not declared
     # we need to copy because we remove elements later to check for undeclared components to invert
 
+    is_shifted = magnet_category_conf.get('shifted', False)
+    bending_angle = SC.lattice.get_bending_angle(index)
+    bending_length = SC.lattice.get_length(index)
+    magnet_length = bending_length
+    design_shift = 0.0
+    design_k1 = 0.0
+    if is_shifted:
+        element = SC.lattice.design[index]
+        component_value = getattr(element, 'PolynomB')[1]
+        if not SC.lattice.is_dipole(index):
+            raise ValueError(f"magnets/{magnet_category_name}: shifted=true requires an sbend with non-zero quad component at index {index} ({magnet_name}).")
+        radius = bending_length/bending_angle
+        magnet_length = 2*abs(radius)*abs(math.sin(bending_angle/2))
+        design_shift = bending_angle/(component_value*bending_length)
+        design_k1 = component_value
+
     if 'components' in magnet_category_conf:
         components = []
         cal_errors = []
@@ -26,11 +43,17 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
             components.append(component)
             cal_errors.append(cal_error)
 
-        magnet_length = SC.lattice.get_length(index)
         magnet_settings.add_individually_powered_magnet(
-            sim_index=index, controlled_components=components,
-            magnet_name=magnet_name, magnet_length=magnet_length,
-            to_design=to_design)
+            sim_index=index, 
+            controlled_components=components,
+            magnet_name=magnet_name, 
+            magnet_length=magnet_length,
+            is_shifted=is_shifted,
+            bending_length=bending_length,
+            design_shift=design_shift,
+            design_k1=design_k1,
+            to_design=to_design
+        )
 
         for component, cal_error in zip(components, cal_errors):
             control_name = f'{magnet_name}/{component}'
@@ -59,7 +82,7 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
                 offset = 0
                 setpoint = SC.lattice.get_magnet_component(index, component_type=component_type, order=order)
                 if component[-1] == 'L':
-                    length = SC.lattice.get_length(index)
+                    length = magnet_length
                     setpoint = setpoint * length
 
             if component in components_to_invert:

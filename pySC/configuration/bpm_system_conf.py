@@ -2,7 +2,7 @@ import numpy as np
 import logging
 
 from ..core.simulated_commissioning import SimulatedCommissioning
-from ..core.bpm_system import BPM_FIELDS_TO_INITIALISE, BPM_FIELDS_TO_INITIALISE_ONES
+from ..core.bpm_system import BPM_FIELDS_TO_INITIALISE_ZEROS, BPM_FIELDS_TO_INITIALISE_ONES
 from .general import get_error, get_indices_and_names
 from .supports_conf import generate_element_misalignments
 
@@ -88,7 +88,7 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
     SC.bpm_system.noise_tbt_y = np.array(bpms_tbt_noise)
 
     nbpm = len(bpms_indices)
-    for field in BPM_FIELDS_TO_INITIALISE:
+    for field in BPM_FIELDS_TO_INITIALISE_ZEROS:
         setattr(SC.bpm_system, field, np.zeros(nbpm, dtype=float))
     for field in BPM_FIELDS_TO_INITIALISE_ONES:
         setattr(SC.bpm_system, field, np.ones(nbpm, dtype=float))

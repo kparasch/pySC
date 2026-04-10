@@ -12,9 +12,9 @@ BPM_NAME_TYPE = Union[str, int]
 def _rotation_matrix(a):
     return np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
 
-BPM_FIELDS_TO_INITIALISE = ['offsets_x', 'offsets_y', 'rolls',
-                            'bba_offsets_x', 'bba_offsets_y',
-                            'reference_x', 'reference_y']
+BPM_FIELDS_TO_INITIALISE_ZEROS = ['offsets_x', 'offsets_y', 'rolls',
+                                  'bba_offsets_x', 'bba_offsets_y',
+                                  'reference_x', 'reference_y']
 
 # These fields are initialized to ones (not zeros) — multiplicative corrections
 BPM_FIELDS_TO_INITIALISE_ONES = ['gain_corrections_x', 'gain_corrections_y']

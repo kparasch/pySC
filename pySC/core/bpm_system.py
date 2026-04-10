@@ -54,7 +54,18 @@ class BPMSystem(BaseModel, extra='forbid'):
     def initialize(self):
         if len(self.rolls) > 0:
             self.update_rot_matrices()
+        if len(self.indices):
+            self.initialize_empty_arrays()
         return self
+
+    def initialize_empty_arrays(self):
+        nbpm = len(self.indices)
+        for field in BPM_FIELDS_TO_INITIALISE_ZEROS:
+            if not len(getattr(self, field)): # array is empty
+                setattr(self, field, np.zeros(nbpm, dtype=float))
+        for field in BPM_FIELDS_TO_INITIALISE_ONES:
+            if not len(getattr(self, field)): # array is empty
+                setattr(self, field, np.ones(nbpm, dtype=float))
 
     def update_rot_matrices(self):
         self._rot_matrices = _rotation_matrix(self.rolls)

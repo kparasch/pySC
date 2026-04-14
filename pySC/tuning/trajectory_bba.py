@@ -2,28 +2,15 @@ from pydantic import BaseModel
 from typing import TYPE_CHECKING, Dict, Literal
 import numpy as np
 import logging
-from ..core.control import IndivControl
 from ..apps import measure_bba
 from ..apps.bba import BBAAnalysis
 from .pySC_interface import pySCInjectionInterface
+from .orbit_bba import get_mag_s_pos
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..core.simulated_commissioning import SimulatedCommissioning
-
-def get_mag_s_pos(SC: "SimulatedCommissioning", MAG: list[str]):
-    s_list = []
-    for control_name in MAG:
-        control = SC.magnet_settings.controls[control_name]
-        if type(control.info) is IndivControl:
-            magnet_name = control.info.magnet_name
-        else:
-            raise NotImplementedError(f"{control} is of type {type(control.info).__name__} which is not implemented.")
-        index = SC.magnet_settings.magnets[magnet_name].sim_index
-        s_pos = SC.lattice.twiss['s'][index]
-        s_list.append(s_pos)
-    return s_list
 
 class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
     config: Dict = dict()

@@ -390,6 +390,8 @@ class BBAAnalysis(BaseModel):
 
     n_downstream: Optional[int]
 
+    fit_order:int
+
     rejected_outliers: int
     rejected_slopes: int
     rejected_centers: int
@@ -425,13 +427,13 @@ class BBAAnalysis(BaseModel):
         assert sum(nanmask), 'BBA fit: all bpm readings are nan'
 
         if data.magnet_type in [MagnetType.norm_quad, MagnetType.skew_quad]:
-            order = 1
+            fit_order = 1
         elif data.magnet_type in [MagnetType.norm_sext]:
-            order = 2
+            fit_order = 2
         else:
             raise NotImplementedError(f"Unknown magnet type {data.magnet_type}.")
 
-        p, pcov = np.polyfit(bpm_position[nanmask], induced_orbit_shift[nanmask], order, cov=True)
+        p, pcov = np.polyfit(bpm_position[nanmask], induced_orbit_shift[nanmask], fit_order, cov=True)
 
 
         if data.magnet_type in [MagnetType.norm_quad, MagnetType.skew_quad]:
@@ -502,6 +504,7 @@ class BBAAnalysis(BaseModel):
                              centers_err=centers_err,
                              slopes_err=slopes_err,
                              intercepts_err=intercepts_err,
+                             fit_order=fit_order,
                              induced_orbit_shift=induced_orbit_shift,
                              bpm_position=bpm_position,
                              mask_accepted=mask_accepted,

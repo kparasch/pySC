@@ -1,5 +1,5 @@
-from pydantic import BaseModel, PrivateAttr, ConfigDict
-from typing import Optional, ClassVar
+from pydantic import BaseModel, PrivateAttr, ConfigDict, model_validator
+from typing import Optional, ClassVar, Literal
 import datetime
 import logging
 import numpy as np
@@ -9,7 +9,9 @@ from .codes import BBACode
 from ..utils.file_tools import dict_to_h5
 from .tools import get_average_orbit
 from .interface import AbstractInterface
-from ..core.types import NPARRAY
+from ..core.types import NPARRAY, MagnetType
+
+BBA_MagnetType = Literal[MagnetType.norm_quad, MagnetType.skew_quad, MagnetType.norm_sext]
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ class BBAData(BaseModel, extra="forbid"):
     n0: int  # Number of steps in the corrector strength
     shots_per_orbit: int
     bipolar: bool = True
-    skew_quad: bool = False
+    magnet_type: BBA_MagnetType = MagnetType.norm_quad
     bpm_number: int
 
     initial_k0l: Optional[float] = None
@@ -48,6 +50,14 @@ class BBAData(BaseModel, extra="forbid"):
     raw_bpm_y_up_err: list[list[float]] = []
     raw_bpm_x_down_err: list[list[float]] = []
     raw_bpm_y_down_err: list[list[float]] = []
+
+    @property
+    def skew_quad(self):
+        logger.warning("Deprecation: skew_quad should not be used, instead check if magnet_type is MagnetType.skew_quad.")
+        if self.magnet_type is MagnetType.skew_quad:
+            return True
+        else:
+            return False
 
     def save(self, folder_to_save: Optional[Path] = None) -> Path:
         if folder_to_save is None:
@@ -99,6 +109,7 @@ class BBA_Measurement(BaseModel, extra="forbid"):
     bpm_number: int
     shots_per_orbit: int = 2
     bipolar: bool = True
+    magnet_type: BBA_MagnetType = MagnetType.norm_quad
     quad_is_skew: bool = False
     plane: str = None
 
@@ -111,6 +122,17 @@ class BBA_Measurement(BaseModel, extra="forbid"):
 
     _interface: Optional[AbstractInterface] = PrivateAttr(default=None) # to be set at generation of measurement
 
+    @model_validator(mode='before')
+    def check_deprecations(cls, data):
+        if 'quad_is_skew' in data.keys():
+            logger.warning('DEPRECATION: `quad_is_skew` in BBA_Measurement has been deprecated. Please speicify `magnet_type`.')
+            if data['quad_is_skew']:
+                data['magnet_type'] = MagnetType.skew_quad
+            else:
+                data['magnet_type'] = MagnetType.norm_quad
+            del data['magnet_type']
+        return data
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         # Initialize BBAData instances for horizontal and vertical procedures
@@ -118,12 +140,12 @@ class BBA_Measurement(BaseModel, extra="forbid"):
             self.H_data = BBAData(plane='H', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
                                   corrector=self.h_corrector, dk0l=self.dk0l_x, dk1l=self.dk1l_x,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
-                                  skew_quad=self.quad_is_skew)
+                                  magnet_type=self.magnet_type)
         if self.v_corrector is not None:
             self.V_data = BBAData(plane='V', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
                                   corrector=self.v_corrector, dk0l=self.dk0l_y, dk1l=self.dk1l_y,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
-                                  skew_quad=self.quad_is_skew)
+                                  magnet_type=self.magnet_type)
 
 
     def print_init(self):
@@ -141,6 +163,7 @@ class BBA_Measurement(BaseModel, extra="forbid"):
         logger.debug(f"    Initial V. k0l = {self.initial_v_k0l*1e6:.1f} urad")
         logger.debug(f"    Initial k1l = {self.initial_k1l:.3f} 1/m")
         logger.debug(f"    Bipolar = {self.bipolar}")
+        logger.debug(f"    Magnet type = {self.magnet_type.value}")
         logger.debug("")
 
     def one_plane_loop(self, plane: str):
@@ -310,16 +333,20 @@ def prep_ios(data: BBAData, n_downstream: Optional[int] = None):
     for ii in range(data.n0):
         if data.plane == 'H':
             bpm_position[ii] = np.mean(all_x[:, ii, bpm_number - start])
-            if data.skew_quad:
+            if data.magnet_type in [MagnetType.skew_quad]:
                 induced_orbit_shift[ii] = np.polyfit(k1_arr, all_y[:,ii], 1)[0] * data.dk1l
-            else:
+            elif data.magnet_type in [MagnetType.norm_quad, MagnetType.norm_sext]:
                 induced_orbit_shift[ii] = np.polyfit(k1_arr, all_x[:,ii], 1)[0] * data.dk1l
+            else:
+                raise Exception(f"Unknown magnet type {data.magnet_type}.")
         else:
             bpm_position[ii] = np.mean(all_y[:, ii, bpm_number - start])
-            if data.skew_quad:
+            if data.magnet_type in [MagnetType.skew_quad, MagnetType.norm_sext]:
                 induced_orbit_shift[ii] = np.polyfit(k1_arr, all_x[:,ii], 1)[0] * data.dk1l
-            else:
+            elif data.magnet_type in [MagnetType.norm_quad]:
                 induced_orbit_shift[ii] = np.polyfit(k1_arr, all_y[:,ii], 1)[0] * data.dk1l
+            else:
+                raise Exception(f"Unknown magnet type {data.magnet_type}.")
     return bpm_position, induced_orbit_shift
 
 def reject_bpm_outlier(induced_orbit_shift: np.ndarray, bpm_outlier_sigma: float) -> np.ndarray[bool]:
@@ -346,10 +373,14 @@ class BBAAnalysis(BaseModel):
     offset: float
     offset_error: float
 
+    quadratics: NPARRAY
     slopes: NPARRAY
+    intercepts: NPARRAY
     centers: NPARRAY
 
+    quadratics_err: NPARRAY
     slopes_err: NPARRAY
+    intercepts_err: NPARRAY
     centers_err: NPARRAY
 
     induced_orbit_shift: NPARRAY
@@ -389,22 +420,67 @@ class BBAAnalysis(BaseModel):
 
         bpm_position, induced_orbit_shift = prep_ios(data=data, n_downstream=n_downstream)
 
-        p, pcov = np.polyfit(bpm_position, induced_orbit_shift, 1, cov=True)
-        slopes = p[0]
-        centers = - p[1] / p[0]
-        slopes_err = np.sqrt(pcov[0,0])
-        centers_err = np.sqrt(centers ** 2 * (pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1]))
+        nanmask = ~np.isnan(bpm_position)
 
-        mask_bpm_outlier = reject_bpm_outlier(induced_orbit_shift, bpm_outlier_sigma)
-        mask_slopes = reject_slopes(slopes, slope_cutoff)
-        mask_center = reject_center_outlier(centers, center_cutoff)
-        mask_accepted = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+        assert sum(nanmask), 'BBA fit: all bpm readings are nan'
 
-        # calculate offset as a weighted average of the centers, with weights equal to the absolute slope
-        cc = centers[mask_accepted]
-        ww = np.abs(slopes[mask_accepted])
-        cc_err = centers_err[mask_accepted]
-        ww_err = slopes_err[mask_accepted]
+        if data.magnet_type in [MagnetType.norm_quad, MagnetType.skew_quad]:
+            order = 1
+        elif data.magnet_type in [MagnetType.norm_sext]:
+            order = 2
+        else:
+            raise NotImplementedError(f"Unknown magnet type {data.magnet_type}.")
+
+        p, pcov = np.polyfit(bpm_position[nanmask], induced_orbit_shift[nanmask], order, cov=True)
+
+
+        if data.magnet_type in [MagnetType.norm_quad, MagnetType.skew_quad]:
+            quadratics = None
+            quadratics_err = None
+            slopes = p[0]
+            centers = - p[1] / p[0]
+            slopes_err = np.sqrt(pcov[0,0])
+            centers_err = np.sqrt(centers ** 2 * (pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1]))
+            intercepts = p[1]
+            intercepts_err = np.sqrt(pcov[1,1])
+
+            mask_bpm_outlier = reject_bpm_outlier(induced_orbit_shift, bpm_outlier_sigma)
+            mask_slopes = reject_slopes(slopes, slope_cutoff)
+            mask_center = reject_center_outlier(centers, center_cutoff)
+            mask_accepted = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+
+            # calculate offset as a weighted average of the centers, with weights equal to the absolute slope
+            cc = centers[mask_accepted]
+            ww = np.abs(slopes[mask_accepted])
+            cc_err = centers_err[mask_accepted]
+            ww_err = slopes_err[mask_accepted]
+        elif data.magnet_type in [MagnetType.norm_sext]:
+            # solve quadratic equation for minimum
+            # a x ** 2 + b * x + c = 0 => x = - b / 2a
+            # a -> quadratics
+            # b -> slopes
+            # c -> intercepts
+
+            quadratics = p[0]
+            centers = - 0.5 * (p[1] / p[0]) 
+            quadratics_err = np.sqrt(pcov[0,0])
+            centers_err = 0.5 * np.sqrt(centers ** 2 * (pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1]))
+
+            slopes = p[1]
+            slopes_err = np.sqrt(pcov[1,1])
+            intercepts = p[2]
+            intercepts_err = np.sqrt(pcov[2,2])
+
+            mask_bpm_outlier = reject_bpm_outlier(induced_orbit_shift, bpm_outlier_sigma)
+            mask_slopes = reject_slopes(quadratics, slope_cutoff)
+            mask_center = reject_center_outlier(centers, center_cutoff)
+            mask_accepted = np.logical_and(np.logical_and(mask_bpm_outlier, mask_slopes), mask_center)
+
+            # calculate offset as a weighted average of the centers, with weights equal to the absolute quadratic term
+            cc = centers[mask_accepted]
+            ww = np.abs(quadratics[mask_accepted])
+            cc_err = centers_err[mask_accepted]
+            ww_err = quadratics_err[mask_accepted]
 
         CS = np.sum(ww * cc)
         S = np.sum(ww) 
@@ -412,16 +488,20 @@ class BBAAnalysis(BaseModel):
         VCS = np.sum(cc**2 * ww_err**2 + ww**2 * cc_err**2) # variance of CS
         VO = ( VCS / CS**2 + VS / S**2) # (variance of offset) / offset**2
 
-        offset = CS / S # offset = CS / S, average of centers with abs(slopes) as weights
+        offset = CS / S # offset = CS / S, average of centers with abs(slopes) or abs(quadratics) as weights
         offset_error = offset * np.sqrt(VO)
 
         result = BBAAnalysis(
                              offset=offset,
                              offset_error=offset_error,
-                             slopes=slopes,
+                             quadratics=quadratics,
                              centers=centers,
-                             slopes_err=slopes_err,
+                             slopes=slopes,
+                             intercepts=intercepts,
+                             quadratics_err=quadratics_err,
                              centers_err=centers_err,
+                             slopes_err=slopes_err,
+                             intercepts_err=intercepts_err,
                              induced_orbit_shift=induced_orbit_shift,
                              bpm_position=bpm_position,
                              mask_accepted=mask_accepted,

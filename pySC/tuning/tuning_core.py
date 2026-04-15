@@ -272,12 +272,17 @@ class Tuning(BaseModel, extra="forbid"):
     def generate_trajectory_bba_config(self, max_dx_at_bpm: float = 1e-3, 
                                        max_modulation: float = 0.2e-3,
                                        n_downstream_bpms: int = 50, 
-                                       max_ncorr_index: int = 10) -> None:
+                                       max_ncorr_index: int = 10,
+                                       max_modulation_sextupole: Optional[float] = None,
+                                       max_dx_at_bpm_sextupole: Optional[float] = None) -> None:
         config = Trajectory_BBA_Configuration.generate_config(SC=self._parent,
                                                               max_dx_at_bpm=max_dx_at_bpm,
                                                               max_modulation=max_modulation,
                                                               n_downstream_bpms=n_downstream_bpms,
-                                                              max_ncorr_index=max_ncorr_index)
+                                                              max_ncorr_index=max_ncorr_index,
+                                                              max_dx_at_bpm_sextupole=max_dx_at_bpm_sextupole,
+                                                              max_modulation_sextupole=max_modulation_sextupole,
+                                                              )
         self.trajectory_bba_config = config
         return
 

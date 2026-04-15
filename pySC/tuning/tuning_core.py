@@ -238,11 +238,24 @@ class Tuning(BaseModel, extra="forbid"):
 
         return np.dot(xy, response) / np.dot(response, response)
 
-    def set_multipole_scale(self, scale: float = 1):
-        logger.info(f'Setting "multipoles" to {scale*100:.0f}%')
-        for control_name in self.multipoles:
-            setpoint = self._parent.design_magnet_settings.get(control_name)
-            self._parent.magnet_settings.set(control_name, scale*setpoint)
+    def set_multipole_scale(self, scale: float = 1, group: Optional[str] = None):
+        SC = self._parent
+        if group is None:
+            multipoles = self.multipoles
+            logger.info(f'Setting "multipoles" to {scale*100:.0f}%')
+        else:
+            assert group in SC.control_arrays, f"{group} not found in control_arrays."
+            multipoles = []
+            for multipole in self.multipoles:
+                if multipole in SC.control_arrays[group]:
+                    multipoles.append(multipole)
+            if len(multipoles) == 0:
+                logger.warning(f'No common multipoles were found between tuning.multipoles and control_arrays["{group}"]')
+            logger.info(f'Setting "{group} multipoles" to {scale*100:.0f}%')
+
+        for control_name in multipoles:
+            setpoint = SC.design_magnet_settings.get(control_name)
+            SC.magnet_settings.set(control_name, scale*setpoint)
 
     def reset_to_design(self):
         for control_name in self._parent.magnet_settings.controls.keys():

@@ -42,8 +42,10 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         if ignore_sextupoles:
             bba_magnets = []
             for control in all_bba_magnets:
-                info = SC.magnet_settings.controls[control].info 
-                if not ( info.component == "B" and info.order == 3 ):
+                info = SC.magnet_settings.controls[control].info
+                assert type(info) is IndivControl, f'BBA magnet of unsupported type: {type(info)}'
+                magnet_type = info.magnet_type
+                if magnet_type is MagnetType.norm_sext:
                     bba_magnets.append(control)
         else:
             bba_magnets = all_bba_magnets

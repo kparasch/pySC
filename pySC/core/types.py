@@ -1,5 +1,6 @@
-from pydantic import BeforeValidator, PlainSerializer, BaseModel
-from typing import Annotated, Union, Optional
+from enum import StrEnum
+from pydantic import BeforeValidator, PlainSerializer, BaseModel, PositiveInt
+from typing import Annotated, Union, Optional, Literal, Self
 import numpy as np
 from pathlib import Path
 
@@ -25,3 +26,31 @@ class BaseModelWithSave(BaseModel, extra="forbid"):
             else:
                 raise Exception(f'Unknown file extension: {suffix}.')
         return
+
+class MagnetType(StrEnum):
+    norm_dip = "normal_dipole"
+    skew_dip = "skew_dipole"
+    norm_quad = "normal_quadrupole"
+    skew_quad = "skew_quadrupole"
+    norm_sext = "normal_sextupole"
+    norm_octu = "normal_octupole"
+    undefined = "undefined"
+
+    @classmethod
+    def from_component_order(cls, component: Literal["A", "B"], order: PositiveInt) -> Self:
+        if component == "B":
+            if order == 1:
+                return MagnetType.norm_dip
+            elif order == 2:
+                return MagnetType.norm_quad
+            elif order == 3:
+                return MagnetType.norm_sext
+            elif order == 4:
+                return MagnetType.norm_octu
+        elif component == "A":
+            if order == 1:
+                return MagnetType.skew_dip
+            if order == 2:
+                return MagnetType.skew_quad
+
+        return MagnetType.undefined

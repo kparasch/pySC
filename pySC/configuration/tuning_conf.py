@@ -63,7 +63,7 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
 
         control_1_conf = tune_conf['controls_1']
         assert 'component' in control_1_conf, 'component is missing from controls_1 in tune configuration.'
-        if 'regex' not in control_1_conf or 'mapping' not in control_1_conf:
+        if not('regex' in control_1_conf or 'mapping' in control_1_conf):
             raise Exception(f'regex or mapping should be defined for tune/controls_1')
         component = control_1_conf['component']
         _, names = get_indices_and_names(SC, 'tune/controls_1', control_1_conf)
@@ -74,7 +74,7 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
 
         control_2_conf = tune_conf['controls_2']
         assert 'component' in control_2_conf, 'component is missing from controls_2 in tune configuration.'
-        if 'regex' not in control_2_conf or 'mapping' not in control_2_conf:
+        if not('regex' in control_2_conf or 'mapping' in control_2_conf):
             raise Exception(f'regex or mapping should be defined for tune/controls_2')
         component = control_2_conf['component']
         _, names = get_indices_and_names(SC, 'tune/controls_2', control_2_conf)

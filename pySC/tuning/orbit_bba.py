@@ -7,6 +7,7 @@ from ..core.control import IndivControl
 from .pySC_interface import pySCOrbitInterface
 from ..apps import measure_bba
 from ..apps.bba import BBAAnalysis
+from ..core.types import MagnetType
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +31,33 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
     config: Dict = dict()
 
     @classmethod
-    def generate_config(cls, SC: "SimulatedCommissioning", max_dx_at_bpm = 1e-3,
-                        max_modulation=20e-6):
+    def generate_config(cls, SC: "SimulatedCommissioning",
+                        max_dx_at_bpm=1e-3,
+                        max_modulation=20e-6,
+                        max_dx_at_bpm_sextupole=None,
+                        max_modulation_sextupole=None,
+                        ignore_sextupoles: bool = False):
+
+        if max_modulation_sextupole is None:
+            max_modulation_sextupole = max_modulation
+        if max_dx_at_bpm_sextupole is None:
+            max_dx_at_bpm_sextupole = max_dx_at_bpm
 
         config = {}
         RM_name = 'orbit'
         SC.tuning.fetch_response_matrix(RM_name, orbit=True)
         RM = SC.tuning.response_matrix[RM_name]
 
-        bba_magnets = SC.tuning.bba_magnets
+        all_bba_magnets = SC.tuning.bba_magnets
+        if ignore_sextupoles:
+            bba_magnets = []
+            for control in all_bba_magnets:
+                info = SC.magnet_settings.controls[control].info 
+                if not ( info.component == "B" and info.order == 3 ):
+                    bba_magnets.append(control)
+        else:
+            bba_magnets = all_bba_magnets
+
         bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
 
         mask_H = np.array(RM.input_planes) == 'H'
@@ -64,9 +83,17 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
             bba_magnet_is_integrated = bba_magnet_info.is_integrated
             bba_magnet_index = SC.magnet_settings.magnets[bba_magnet_info.magnet_name].sim_index
             if bba_magnet_info.component == 'B':
-                quad_is_skew = False
+                if bba_magnet_info.order == 2:
+                    magnet_type = MagnetType.norm_quad
+                elif bba_magnet_info.order == 3:
+                    magnet_type = MagnetType.norm_sext
+                else:
+                    raise NotImplementedError("BBA configuration for {bba_magnet_info.component}{bba_magnet_info.order} magnets not implemented.")
             else: # it is a skew quadrupole component
-                quad_is_skew = True
+                if bba_magnet_info.order == 2:
+                    magnet_type = MagnetType.skew_quad
+                else:
+                    raise NotImplementedError("BBA configuration for {bba_magnet_info.component}{bba_magnet_info.order} magnets not implemented.")
 
             max_H_response = -1
             the_HCORR_number = -1
@@ -77,11 +104,15 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
                 the_HCORR_number = int(imax)
             hcorr_delta = max_dx_at_bpm/max_H_response
 
-            if not quad_is_skew:
+            if magnet_type is MagnetType.norm_quad:
                 quad_response = np.sqrt(betx_at_bpms * betx[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qx)))
-            else: # it is a skew quadrupole component
+                quad_dkl_h = (max_modulation / float(np.max(np.abs(quad_response)))) / max_dx_at_bpm
+            elif magnet_type is MagnetType.skew_quad:
                 quad_response = np.sqrt(bety_at_bpms * bety[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qy)))
-            quad_dkl_h = (max_modulation / float(np.max(np.abs(quad_response)))) / max_dx_at_bpm
+                quad_dkl_h = (max_modulation / float(np.max(np.abs(quad_response)))) / max_dx_at_bpm
+            elif magnet_type is MagnetType.norm_sext:
+                sext_response = np.sqrt(betx_at_bpms * betx[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qx)))
+                quad_dkl_h = 2 * (max_modulation_sextupole / float(np.max(np.abs(sext_response)))) / max_dx_at_bpm_sextupole**2
 
             max_V_response = -1
             the_VCORR_number = -1
@@ -92,11 +123,17 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
                 the_VCORR_number = int(imax)
             vcorr_delta = max_dx_at_bpm/max_V_response
 
-            if not quad_is_skew:
+            if magnet_type is MagnetType.norm_quad:
                 quad_response = np.sqrt(bety_at_bpms * bety[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qy)))
-            else: # it is a skew quadrupole component
+                quad_dkl_v = (max_modulation / float(np.max(np.abs(quad_response)))) / max_dx_at_bpm
+            elif magnet_type is MagnetType.skew_quad:
                 quad_response = np.sqrt(betx_at_bpms * betx[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qx)))
-            quad_dkl_v = (max_modulation / float(np.max(np.abs(quad_response)))) / max_dx_at_bpm
+                quad_dkl_v = (max_modulation / float(np.max(np.abs(quad_response)))) / max_dx_at_bpm
+            elif magnet_type is MagnetType.norm_sext:
+                # sext_response = np.sqrt(betx_at_bpms * betx[bba_magnet_index]) / (2 * np.abs(np.sin(np.pi*qx)))
+                # quad_dkl_v = 2 * (max_modulation_sextupole / float(np.max(np.abs(sext_response)))) / max_dx_at_bpm_sextupole**2
+                # dk for sextupole bba is actually the same whether horizontal or vertical alignment.
+                quad_dkl_v = quad_dkl_h
 
             if not bba_magnet_is_integrated:
                 bba_magnet_length = SC.magnet_settings.magnets[bba_magnet_info.magnet_name].length
@@ -118,7 +155,7 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
                                 'QUAD_dk_H': quad_dk_h,
                                 'VCORR_delta': vcorr_delta,
                                 'QUAD_dk_V': quad_dk_v,
-                                'QUAD_is_skew': quad_is_skew,
+                                'magnet_type': magnet_type.value,
                                }
 
         return Orbit_BBA_Configuration(config=config)
@@ -152,7 +189,7 @@ def orbit_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: int = 7
         offset = analysis_result.offset
         offset_error = analysis_result.offset_error
     except Exception as exc:
-        print(exc)
+        logger.warning(f"Exception | {type(exc).__name__}: {exc}")
         logger.warning(f'Failed to compute trajectory BBA for BPM {bpm_name}')
         offset, offset_error = 0, np.nan
 

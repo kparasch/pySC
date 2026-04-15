@@ -1,38 +1,36 @@
 from pydantic import BaseModel
-from typing import TYPE_CHECKING, Dict, Literal
+from typing import TYPE_CHECKING, Dict, Literal, Optional
 import numpy as np
 import logging
-from ..core.control import IndivControl
 from ..apps import measure_bba
 from ..apps.bba import BBAAnalysis
+from ..core.control import IndivControl
+from ..core.types import MagnetType
 from .pySC_interface import pySCInjectionInterface
+from .orbit_bba import get_mag_s_pos
 
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..core.simulated_commissioning import SimulatedCommissioning
 
-def get_mag_s_pos(SC: "SimulatedCommissioning", MAG: list[str]):
-    s_list = []
-    for control_name in MAG:
-        control = SC.magnet_settings.controls[control_name]
-        if type(control.info) is IndivControl:
-            magnet_name = control.info.magnet_name
-        else:
-            raise NotImplementedError(f"{control} is of type {type(control.info).__name__} which is not implemented.")
-        index = SC.magnet_settings.magnets[magnet_name].sim_index
-        s_pos = SC.lattice.twiss['s'][index]
-        s_list.append(s_pos)
-    return s_list
-
 class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
     config: Dict = dict()
 
     @classmethod
-    def generate_config(cls, SC: "SimulatedCommissioning", max_dx_at_bpm = 1e-3,
-                        max_modulation=200e-6, n_shots=1, max_ncorr_index=10,
-                        n_downstream_bpms=50):
- #                       max_modulation=600e-6, max_dx_at_bpm=1.5e-3
+    def generate_config(cls, SC: "SimulatedCommissioning",
+                        max_dx_at_bpm: float = 1e-3,
+                        max_modulation: float = 200e-6,
+                        max_ncorr_index: int = 10,
+                        n_downstream_bpms: int = 50,
+                        max_dx_at_bpm_sextupole: Optional[float] = None,
+                        max_modulation_sextupole: Optional[float] = None,
+                        ignore_sextupoles: bool = False):
+
+        if max_modulation_sextupole is None:
+            max_modulation_sextupole = max_modulation
+        if max_dx_at_bpm_sextupole is None:
+            max_dx_at_bpm_sextupole = max_dx_at_bpm
 
         config = {}
         n_turns = 1
@@ -40,7 +38,18 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         SC.tuning.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         RM = SC.tuning.response_matrix[RM_name]
 
-        bba_magnets = SC.tuning.bba_magnets
+        all_bba_magnets = SC.tuning.bba_magnets
+        if ignore_sextupoles:
+            bba_magnets = []
+            for control in all_bba_magnets:
+                info = SC.magnet_settings.controls[control].info
+                assert type(info) is IndivControl, f'BBA magnet of unsupported type: {type(info)}'
+                magnet_type = info.magnet_type
+                if magnet_type is MagnetType.norm_sext:
+                    bba_magnets.append(control)
+        else:
+            bba_magnets = all_bba_magnets
+
         bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
 
         #d1, d2 = RM.RM.shape
@@ -49,12 +58,34 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
         HRM = RM.matrix[:nbpm, :nh]
         VRM = RM.matrix[nbpm:, nh:]
 
+        betx = SC.lattice.twiss['betx']
+        bety = SC.lattice.twiss['bety']
+        mux = SC.lattice.twiss['mux']
+        muy = SC.lattice.twiss['muy']
+
         for bpm_number in range(len(SC.bpm_system.indices)):
             bpm_index = SC.bpm_system.indices[bpm_number]
             bpm_s = SC.lattice.twiss['s'][bpm_index]
 
             bba_magnet_number = np.argmin(np.abs(bba_magnets_s - bpm_s))
             the_bba_magnet = bba_magnets[bba_magnet_number]
+
+            bba_magnet_info = SC.magnet_settings.controls[the_bba_magnet].info
+            assert type(bba_magnet_info) is IndivControl, f'BBA magnet of unsupported type: {type(bba_magnet_info)}'
+            bba_magnet_is_integrated = bba_magnet_info.is_integrated
+            bba_magnet_index = SC.magnet_settings.magnets[bba_magnet_info.magnet_name].sim_index
+            if bba_magnet_info.component == 'B':
+                if bba_magnet_info.order == 2:
+                    magnet_type = MagnetType.norm_quad
+                elif bba_magnet_info.order == 3:
+                    magnet_type = MagnetType.norm_sext
+                else:
+                    raise NotImplementedError("BBA configuration for {bba_magnet_info.component}{bba_magnet_info.order} magnets not implemented.")
+            else: # it is a skew quadrupole component
+                if bba_magnet_info.order == 2:
+                    magnet_type = MagnetType.skew_quad
+                else:
+                    raise NotImplementedError("BBA configuration for {bba_magnet_info.component}{bba_magnet_info.order} magnets not implemented.")
 
             HCORR_s = np.array(get_mag_s_pos(SC, SC.tuning.HCORR))
             HCORR_numbers = list(np.where(HCORR_s < bpm_s)[0])
@@ -77,21 +108,49 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
                 logger.warning(f'WARNING: zero H response for BPM {SC.bpm_system.names[bpm_number]}!')
                 hcorr_delta = 0
             else:
-                hcorr_delta = max_dx_at_bpm/max_H_response
+                if magnet_type in [MagnetType.norm_quad, MagnetType.skew_quad]:
+                    hcorr_delta = max_dx_at_bpm/max_H_response
+                elif magnet_type is MagnetType.norm_sext:
+                    hcorr_delta = max_dx_at_bpm_sextupole/max_H_response
 
-            if the_bba_magnet.split('/')[-1][0] == 'B':
-                temp_RM = HRM[bpm_number:bpm_number+n_downstream_bpms, the_HCORR_number]
-            else: # it is a skew quadrupole component
-                ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
-                temp_RM = VRM[bpm_number:bpm_number+n_downstream_bpms, the_HCORR_number]
+            downstream_bpm_indices = SC.bpm_system.indices[bpm_number:bpm_number+n_downstream_bpms]
 
-            max_response = float(np.max(np.abs(temp_RM)))
+            target_betx = betx[downstream_bpm_indices]
+            target_bety = bety[downstream_bpm_indices]
+            target_mux = mux[downstream_bpm_indices]
+            target_muy = muy[downstream_bpm_indices]
+
+            source_betx = betx[bba_magnet_index]
+            source_bety = bety[bba_magnet_index]
+            source_mux = mux[bba_magnet_index]
+            source_muy = muy[bba_magnet_index]
+
+            # make response zero in bpms upstream of bba magnet by setting equal phase advances
+            target_mux[target_mux < source_mux] = source_mux 
+            target_muy[target_muy < source_muy] = source_muy 
+
+            # sign depends on several things but we take absolute value later, so we ignore it here
+            bba_magnet_response_x = np.sqrt(target_betx * source_betx) * np.sin(2*np.pi*(target_mux - source_mux))
+            bba_magnet_response_y = np.sqrt(target_bety * source_bety) * np.sin(2*np.pi*(target_muy - source_muy))
+
+            if magnet_type is MagnetType.norm_quad: 
+                max_response = float(np.max(np.abs(bba_magnet_response_x)))
+            elif magnet_type is MagnetType.skew_quad:
+                max_response = float(np.max(np.abs(bba_magnet_response_y)))
+            elif magnet_type is MagnetType.norm_sext:
+                max_response = float(np.max(np.abs(bba_magnet_response_x)))
+
             if max_response < 1e-10:
                 logger.warning(f'WARNING: very small response for BPM {SC.bpm_system.names[bpm_number]} from magnet {the_bba_magnet} and HCORR {SC.tuning.HCORR[the_HCORR_number]}')
-                quad_dk_h = 0
+                quad_dkl_h = 0
                 hcorr_delta = 0
             else:
-                quad_dk_h = (max_modulation/max_response) / max_dx_at_bpm
+                if magnet_type in [MagnetType.norm_quad, MagnetType.skew_quad]:
+                    quad_dkl_h = (max_modulation/max_response) / max_dx_at_bpm
+                elif magnet_type is MagnetType.norm_sext:
+                    quad_dkl_h = 2*(max_modulation_sextupole/max_response) / max_dx_at_bpm_sextupole**2
+
+
 
             max_V_response = -1
             the_VCORR_number = -1
@@ -104,22 +163,35 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
                 logger.warning(f'WARNING: zero V response for BPM {SC.bpm_system.names[bpm_number]}!')
                 vcorr_delta = 0
             else:
-                vcorr_delta = max_dx_at_bpm/max_V_response
+                if magnet_type in [MagnetType.norm_quad, MagnetType.skew_quad]:
+                    vcorr_delta = max_dx_at_bpm/max_V_response
+                elif magnet_type is MagnetType.norm_sext:
+                    vcorr_delta = max_dx_at_bpm_sextupole/max_V_response
 
-            if the_bba_magnet.split('/')[-1][0] == 'B':
-                temp_RM = VRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]
-                quad_is_skew = False
-            else: # it is a skew quadrupole component
-                ## TODO: this is wrong if hcorr and vcorr are not the same magnets!!
-                temp_RM = HRM[bpm_number:bpm_number+n_downstream_bpms, the_VCORR_number]
-                quad_is_skew = True
-            max_response = float(np.max(np.abs(temp_RM)))
+            if magnet_type is MagnetType.norm_quad: 
+                max_response = float(np.max(np.abs(bba_magnet_response_y)))
+            elif magnet_type is MagnetType.skew_quad:
+                max_response = float(np.max(np.abs(bba_magnet_response_x)))
+            elif magnet_type is MagnetType.norm_sext:
+                max_response = float(np.max(np.abs(bba_magnet_response_x)))
+
             if max_response < 1e-10:
                 logger.warning(f'WARNING: very small response for BPM {SC.bpm_system.names[bpm_number]} from magnet {the_bba_magnet} and HCORR {SC.tuning.VCORR[the_VCORR_number]}')
-                quad_dk_v = 0
+                quad_dkl_v = 0
                 vcorr_delta = 0
             else:
-                quad_dk_v = (max_modulation/max_response) / max_dx_at_bpm
+                if magnet_type in [MagnetType.norm_quad, MagnetType.skew_quad]:
+                    quad_dkl_v = (max_modulation/max_response) / max_dx_at_bpm
+                elif magnet_type is MagnetType.norm_sext:
+                    quad_dkl_v = 2*(max_modulation_sextupole/max_response) / max_dx_at_bpm_sextupole**2
+
+            if not bba_magnet_is_integrated:
+                bba_magnet_length = SC.magnet_settings.magnets[bba_magnet_info.magnet_name].length
+                quad_dk_h = quad_dkl_h / bba_magnet_length
+                quad_dk_v = quad_dkl_v / bba_magnet_length
+            else:
+                quad_dk_h = quad_dkl_h
+                quad_dk_v = quad_dkl_v
 
             bpm_name = SC.bpm_system.names[bpm_number]
             config[bpm_name] = {'index': bpm_index,
@@ -133,7 +205,7 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
                                 'QUAD_dk_H': quad_dk_h,
                                 'VCORR_delta': vcorr_delta,
                                 'QUAD_dk_V': quad_dk_v,
-                                'QUAD_is_skew': quad_is_skew,
+                                'magnet_type': magnet_type.value,
                                }
 
         return Trajectory_BBA_Configuration(config=config)
@@ -167,7 +239,7 @@ def trajectory_bba(SC: "SimulatedCommissioning", bpm_name: str, n_corr_steps: in
         offset = analysis_result.offset
         offset_error = analysis_result.offset_error
     except Exception as exc:
-        print(exc)
+        logger.warning(f"Exception | {type(exc).__name__}: {exc}")
         logger.warning(f'Failed to compute trajectory BBA for BPM {bpm_name}')
         offset, offset_error = 0, np.nan
 

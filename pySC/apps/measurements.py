@@ -73,9 +73,15 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
         assert folder_to_save.exists(), f'Path {folder_to_save.resolve()} does not exist.'
         assert folder_to_save.is_dir(), f'Path {folder_to_save.resolve()} is not a directory.'
 
-    keys = config.keys()
-    for word in ['QUAD', 'HCORR', 'HCORR_delta', 'QUAD_dk_H', 'VCORR', 'VCORR_delta', 'QUAD_dk_V', 'QUAD_is_skew', 'number']:
-        assert word in keys, f'{word} is not in configuration.'
+    if 'QUAD_is_skew' in config:
+        logger.warning('DEPRECATION: QUAD_is_skew in BBA config should no longer be used!')
+        if config['QUAD_is_skew']:
+            config['magnet_type'] = "skew_quadrupole"
+        else:
+            config['magnet_type'] = "normal_quadrupole"
+
+    for word in ['QUAD', 'HCORR', 'HCORR_delta', 'QUAD_dk_H', 'VCORR', 'VCORR_delta', 'QUAD_dk_V', 'magnet_type', 'number']:
+        assert word in config, f'{word} is not in configuration.'
 
     measurement = BBA_Measurement(bpm=bpm_name,
                                   quadrupole=config['QUAD'],
@@ -85,7 +91,7 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
                                   dk1l_x=config['QUAD_dk_H'],
                                   dk0l_y=config['VCORR_delta'],
                                   dk1l_y=config['QUAD_dk_V'],
-                                  quad_is_skew=config['QUAD_is_skew'],
+                                  magnet_type=config['magnet_type'],
                                   n0=n_corr_steps,
                                   bpm_number=config['number'],
                                   shots_per_orbit=shots_per_orbit,

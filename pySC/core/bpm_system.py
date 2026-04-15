@@ -12,9 +12,9 @@ BPM_NAME_TYPE = Union[str, int]
 def _rotation_matrix(a):
     return np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
 
-BPM_FIELDS_TO_INITIALISE = ['offsets_x', 'offsets_y', 'rolls',
-                            'bba_offsets_x', 'bba_offsets_y',
-                            'reference_x', 'reference_y']
+BPM_FIELDS_TO_INITIALISE_ZEROS = ['offsets_x', 'offsets_y', 'rolls',
+                                  'bba_offsets_x', 'bba_offsets_y',
+                                  'reference_x', 'reference_y']
 
 # These fields are initialized to ones (not zeros) — multiplicative corrections
 BPM_FIELDS_TO_INITIALISE_ONES = ['gain_corrections_x', 'gain_corrections_y']
@@ -54,7 +54,18 @@ class BPMSystem(BaseModel, extra='forbid'):
     def initialize(self):
         if len(self.rolls) > 0:
             self.update_rot_matrices()
+        if len(self.indices):
+            self.initialize_empty_arrays()
         return self
+
+    def initialize_empty_arrays(self):
+        nbpm = len(self.indices)
+        for field in BPM_FIELDS_TO_INITIALISE_ZEROS:
+            if not len(getattr(self, field)): # array is empty
+                setattr(self, field, np.zeros(nbpm, dtype=float))
+        for field in BPM_FIELDS_TO_INITIALISE_ONES:
+            if not len(getattr(self, field)): # array is empty
+                setattr(self, field, np.ones(nbpm, dtype=float))
 
     def update_rot_matrices(self):
         self._rot_matrices = _rotation_matrix(self.rolls)

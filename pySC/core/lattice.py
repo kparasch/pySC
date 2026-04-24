@@ -244,14 +244,15 @@ class ATLattice(Lattice):
                  'dpx': elemdata.dispersion[:, 1],
                  'dy' : elemdata.dispersion[:, 2],
                  'dpy': elemdata.dispersion[:, 3],
-                 'wx_chrom': elemdata.w[:, 0],
+                 'wx_chrom': elemdata.W[:, 0],
                  'bx_chrom': elemdata.dbeta[:, 0]/elemdata.beta[:, 0],
                  'ax_chrom': elemdata.dalpha[:, 0] - (elemdata.alpha[:, 0] / elemdata.beta[:, 0]) * elemdata.dbeta[:, 0],
-                 'wy_chrom': elemdata.w[:, 1],
+                 'wy_chrom': elemdata.W[:, 1],
                  'by_chrom': elemdata.dbeta[:, 1]/elemdata.beta[:, 1],
                  'ay_chrom': elemdata.dalpha[:, 1] - (elemdata.alpha[:, 1] / elemdata.beta[:, 1]) * elemdata.dbeta[:, 1],
                  'dmux': elemdata.dmu[:, 0] / twopi,
                  'dmuy': elemdata.dmu[:, 1] / twopi,
+                 'ddx': elemdata.ddispersion[:, 0],
                 }
         return twiss
 

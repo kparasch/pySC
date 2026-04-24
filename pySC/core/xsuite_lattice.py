@@ -252,6 +252,7 @@ class XSuiteLattice(Lattice):
                  'ay_chrom': tw.ay_chrom,
                  'dmux': tw.dmux,
                  'dmuy': tw.dmuy,
+                 'ddx': tw.ddx,
                 }
         return twiss 
 

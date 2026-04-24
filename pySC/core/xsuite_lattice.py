@@ -244,6 +244,14 @@ class XSuiteLattice(Lattice):
                  'dpx': tw.dpx,
                  'dy' : tw.dy,
                  'dpy': tw.dpy,
+                 'wx_chrom': tw.wx_chrom,
+                 'bx_chrom': tw.bx_chrom,
+                 'ax_chrom': tw.ax_chrom,
+                 'wy_chrom': tw.wy_chrom,
+                 'by_chrom': tw.by_chrom,
+                 'ay_chrom': tw.ay_chrom,
+                 'dmux': tw.dmux,
+                 'dmuy': tw.dmuy,
                 }
         return twiss 
 

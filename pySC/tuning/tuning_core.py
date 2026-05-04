@@ -156,7 +156,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False, virtual=False):
+    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False, virtual=False, plane=None):
         RM_name = f'trajectory{n_turns}'
         self.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         response_matrix = self.response_matrix[RM_name]
@@ -167,7 +167,8 @@ class Tuning(BaseModel, extra="forbid"):
 
         for _ in range(n_reps):
             _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
-                                     method=method, parameter=parameter, gain=gain, virtual=virtual, apply=True)
+                                 method=method, parameter=parameter, gain=gain, virtual=virtual, apply=True,
+                                 plane=plane)
 
         trajectory_x, trajectory_y = SC.bpm_system.capture_injection(n_turns=n_turns)
         trajectory_x = trajectory_x.flatten('F')
@@ -180,7 +181,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, virtual=False):
+    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, virtual=False, plane=None):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         response_matrix = self.response_matrix[RM_name]
@@ -191,7 +192,8 @@ class Tuning(BaseModel, extra="forbid"):
 
         for _ in range(n_reps):
             _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
-                                     method=method, parameter=parameter, virtual=virtual, gain=gain, apply=True)
+                                 method=method, parameter=parameter, virtual=virtual, gain=gain, apply=True,
+                                 plane=plane)
 
         orbit_x, orbit_y = SC.bpm_system.capture_orbit()
         rms_x = np.nanstd(orbit_x) * 1e6

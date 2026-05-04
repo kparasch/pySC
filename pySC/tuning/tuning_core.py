@@ -163,7 +163,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1,correct_to_first_turn=False, virtual=False, solver: Optional[Any] = None):
+    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1,correct_to_first_turn=False, virtual=False, solver: Optional[Any] = None, plane=None):
         RM_name = f'trajectory{n_turns}'
         self.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         response_matrix = self.response_matrix[RM_name]
@@ -181,7 +181,8 @@ class Tuning(BaseModel, extra="forbid"):
                                  gain=gain,
                                  virtual=virtual, 
                                  solver=solver, 
-                                 apply=True)
+                                 apply=True,
+                                 plane=plane)
 
         trajectory_x, trajectory_y = SC.bpm_system.capture_injection(n_turns=n_turns)
         trajectory_x = trajectory_x.flatten('F')
@@ -194,7 +195,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, virtual=False, solver: Optional[Any] = None):
+    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, virtual=False, solver: Optional[Any] = None, plane=None):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         response_matrix = self.response_matrix[RM_name]
@@ -211,7 +212,8 @@ class Tuning(BaseModel, extra="forbid"):
                                  virtual=virtual,
                                  gain=gain,
                                  solver=solver,
-                                 apply=True)
+                                 apply=True,
+                                 plane=plane)
 
         orbit_x, orbit_y = SC.bpm_system.capture_orbit()
         rms_x = np.nanstd(orbit_x) * 1e6

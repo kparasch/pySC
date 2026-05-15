@@ -304,13 +304,18 @@ class Tuning(BaseModel, extra="forbid"):
         self.trajectory_bba_config = config
         return
 
-    def generate_orbit_bba_config(self, max_dx_at_bpm: float = 0.3e-3,
+    def generate_orbit_bba_config(self,
+                                  max_dx_at_bpm: float = 0.3e-3,
                                   max_modulation: float = 20e-6,
+                                  max_dx_at_bpm_sextupole: Optional[float] = None,
+                                  max_modulation_sextupole: Optional[float] = None,
                                   ignore_sextupoles: bool = False,
                                  ) -> None:
         config = Orbit_BBA_Configuration.generate_config(SC=self._parent,
                                                          max_dx_at_bpm=max_dx_at_bpm,
                                                          max_modulation=max_modulation,
+                                                         max_dx_at_bpm_sextupole=max_dx_at_bpm_sextupole,
+                                                         max_modulation_sextupole=max_modulation_sextupole,
                                                          ignore_sextupoles=ignore_sextupoles,
                                                         )
         self.orbit_bba_config = config

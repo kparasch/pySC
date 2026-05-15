@@ -184,6 +184,7 @@ def Rot2D(mu):
 
 def linear_normal_form(M):
     w0, v0 = np.linalg.eig(M[:4,:4])
+    v0 = v0.astype(complex, copy=False)
 
     a0 = np.real(v0)
     b0 = np.imag(v0)

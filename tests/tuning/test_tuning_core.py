@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 from unittest.mock import MagicMock, patch
 
+from pySC.apps.response_matrix import ResponseMatrix
 from pySC.tuning.tuning_core import Tuning
 
 # ---------------------------------------------------------------------------
@@ -40,6 +41,95 @@ def test_bad_outputs_from_bad_bpms_indices(sc_tuning):
         1 + n_bpms + n_turns * n_bpms,  # V, turn 1
     ]
     assert result == expected
+
+
+def _make_plane_response_matrix():
+    """Create a small H/V response matrix for tuning pass-through tests."""
+    return ResponseMatrix(
+        matrix=np.eye(4),
+        input_names=["hcor1", "hcor2", "vcor1", "vcor2"],
+        output_names=["bpm1", "bpm2", "bpm1", "bpm2"],
+        input_planes=["H", "H", "V", "V"],
+        output_planes=["H", "H", "V", "V"],
+    )
+
+
+def _make_mock_tuning():
+    """Create a Tuning instance with only the SC state correction needs."""
+    tuning = Tuning(HCORR=["hcor1", "hcor2"], VCORR=["vcor1", "vcor2"])
+    SC = MagicMock()
+    SC.bpm_system.indices = [0, 1]
+    SC.bpm_system.capture_orbit.return_value = (np.zeros(2), np.zeros(2))
+    SC.bpm_system.capture_injection.return_value = (np.zeros((2, 1)), np.zeros((2, 1)))
+    tuning._parent = SC
+    return tuning
+
+
+def test_correct_orbit_passes_plane_to_orbit_correction():
+    """correct_orbit forwards the requested plane to orbit_correction."""
+    tuning = _make_mock_tuning()
+    tuning.response_matrix["orbit"] = _make_plane_response_matrix()
+    interface = MagicMock()
+    solver = MagicMock()
+
+    with (
+        patch("pySC.tuning.tuning_core.pySCOrbitInterface", return_value=interface),
+        patch("pySC.tuning.tuning_core.orbit_correction", return_value={}) as mock_correction,
+    ):
+        tuning.correct_orbit(
+            n_reps=1,
+            method="svd_cutoff",
+            parameter=0,
+            gain=0.7,
+            virtual=True,
+            solver=solver,
+            plane="H",
+        )
+
+    _, kwargs = mock_correction.call_args
+    assert kwargs["interface"] is interface
+    assert kwargs["response_matrix"] is tuning.response_matrix["orbit"]
+    assert kwargs["method"] == "svd_cutoff"
+    assert kwargs["parameter"] == 0
+    assert kwargs["gain"] == 0.7
+    assert kwargs["virtual"] is True
+    assert kwargs["solver"] is solver
+    assert kwargs["apply"] is True
+    assert kwargs["plane"] == "H"
+
+
+def test_correct_injection_passes_plane_to_orbit_correction():
+    """correct_injection forwards the requested plane to orbit_correction."""
+    tuning = _make_mock_tuning()
+    tuning.response_matrix["trajectory1"] = _make_plane_response_matrix()
+    interface = MagicMock()
+    solver = MagicMock()
+
+    with (
+        patch("pySC.tuning.tuning_core.pySCInjectionInterface", return_value=interface),
+        patch("pySC.tuning.tuning_core.orbit_correction", return_value={}) as mock_correction,
+    ):
+        tuning.correct_injection(
+            n_turns=1,
+            n_reps=1,
+            method="tikhonov",
+            parameter=3,
+            gain=0.4,
+            virtual=True,
+            solver=solver,
+            plane="V",
+        )
+
+    _, kwargs = mock_correction.call_args
+    assert kwargs["interface"] is interface
+    assert kwargs["response_matrix"] is tuning.response_matrix["trajectory1"]
+    assert kwargs["method"] == "tikhonov"
+    assert kwargs["parameter"] == 3
+    assert kwargs["gain"] == 0.4
+    assert kwargs["virtual"] is True
+    assert kwargs["solver"] is solver
+    assert kwargs["apply"] is True
+    assert kwargs["plane"] == "V"
 
 
 # ---------------------------------------------------------------------------

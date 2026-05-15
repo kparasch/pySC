@@ -442,7 +442,7 @@ class BBAAnalysis(BaseModel):
             slopes = p[0]
             centers = - p[1] / p[0]
             slopes_err = np.sqrt(pcov[0,0])
-            centers_err = np.sqrt(centers ** 2 * (pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1]))
+            centers_err = np.abs(centers) * np.sqrt(pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1])
             intercepts = p[1]
             intercepts_err = np.sqrt(pcov[1,1])
 
@@ -466,7 +466,7 @@ class BBAAnalysis(BaseModel):
             quadratics = p[0]
             centers = - 0.5 * (p[1] / p[0]) 
             quadratics_err = np.sqrt(pcov[0,0])
-            centers_err = 0.5 * np.sqrt(centers ** 2 * (pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1]))
+            centers_err = np.abs(centers) * np.sqrt(pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1])
 
             slopes = p[1]
             slopes_err = np.sqrt(pcov[1,1])

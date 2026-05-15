@@ -157,8 +157,8 @@ def fjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0,
     avmuy = np.zeros_like(twiss['mux'])
     avmux[:-1] = 0.5*(twiss['mux'][:-1] + twiss['mux'][1:])
     avmuy[:-1] = 0.5*(twiss['muy'][:-1] + twiss['muy'][1:])
-    avmux[-1] = 0.5*(twiss['mux'][-1] + twiss['mux'][0])
-    avmuy[-1] = 0.5*(twiss['muy'][-1] + twiss['muy'][0])
+    avmux[-1] = 0.5*(twiss['mux'][-1] + twiss['mux'][0] + qx)
+    avmuy[-1] = 0.5*(twiss['muy'][-1] + twiss['muy'][0] + qy)
 
     mux = avmux[mask]
     muy = avmuy[mask]

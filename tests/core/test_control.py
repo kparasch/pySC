@@ -2,6 +2,7 @@
 import pytest
 
 from pySC.core.control import Control, IndivControl, KnobControl, KnobData, LinearConv
+from pySC.core.types import MagnetType
 
 
 # ---------- LinearConv ----------
@@ -51,6 +52,11 @@ def test_indiv_control_creation():
     assert ic.component == "B"
     assert ic.order == 2
     assert ic.is_integrated is True
+
+
+def test_indiv_control_magnet_type():
+    ic = IndivControl(magnet_name="SF1", component="B", order=3, is_integrated=False)
+    assert ic.magnet_type is MagnetType.norm_sext
 
 
 # ---------- KnobControl ----------

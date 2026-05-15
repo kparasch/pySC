@@ -6,7 +6,7 @@ import pytest
 import yaml
 from pydantic import ConfigDict
 
-from pySC.core.types import NPARRAY, BaseModelWithSave
+from pySC.core.types import NPARRAY, BaseModelWithSave, MagnetType
 
 
 class ArrayModel(BaseModelWithSave):
@@ -91,3 +91,24 @@ def test_save_as_unknown_suffix_raises(tmp_path):
     path = tmp_path / "test.xyz"
     with pytest.raises(Exception, match="Unknown file extension"):
         m.save_as(path)
+
+
+# ---------- MagnetType ----------
+
+@pytest.mark.parametrize(
+    ("component", "order", "expected"),
+    [
+        ("B", 1, MagnetType.norm_dip),
+        ("A", 1, MagnetType.skew_dip),
+        ("B", 2, MagnetType.norm_quad),
+        ("A", 2, MagnetType.skew_quad),
+        ("B", 3, MagnetType.norm_sext),
+        ("B", 4, MagnetType.norm_octu),
+    ],
+)
+def test_magnet_type_from_component_order(component, order, expected):
+    assert MagnetType.from_component_order(component=component, order=order) is expected
+
+
+def test_magnet_type_from_component_order_unknown():
+    assert MagnetType.from_component_order(component="A", order=3) is MagnetType.undefined

@@ -14,6 +14,7 @@ from pySC.apps.bba import (
     reject_center_outlier,
 )
 from pySC.apps.codes import BBACode
+from pySC.core.types import MagnetType
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +78,56 @@ def _make_bba_data(n0=7, n_bpms=10, bpm_number=3, plane='H', bipolar=True,
         data.raw_bpm_y_up_err.append(list(np.zeros(n_bpms)))
         data.raw_bpm_x_down_err.append(list(np.zeros(n_bpms)))
         data.raw_bpm_y_down_err.append(list(np.zeros(n_bpms)))
+
+    return data
+
+
+def _make_sextupole_bba_data(n0=9, n_bpms=10, bpm_number=3, plane='H',
+                             dk0l=1e-4, dk1l=0.05, offset=0.0):
+    """Build synthetic normal-sextupole BBA data with a known quadratic center."""
+    data = BBAData(
+        quadrupole='S1', bpm='BPM3', corrector='CH1', plane=plane,
+        dk0l=dk0l, dk1l=dk1l, n0=n0, shots_per_orbit=1, bipolar=True,
+        magnet_type=MagnetType.norm_sext, bpm_number=bpm_number,
+    )
+
+    positions = np.linspace(-dk0l, dk0l, n0) + offset
+    rng = np.random.default_rng(456)
+    response = np.abs(1.0 + 0.3 * rng.standard_normal(n_bpms))
+    other_plane_response = np.abs(0.7 + 0.2 * rng.standard_normal(n_bpms))
+
+    for position in positions:
+        x_center = np.zeros(n_bpms)
+        y_center = np.zeros(n_bpms)
+        if plane == 'H':
+            x_center[bpm_number] = position
+            ios = response * (position - offset) ** 2
+            x_up = x_center + ios
+            x_down = x_center - ios
+            y_up = y_center.copy()
+            y_down = y_center.copy()
+        else:
+            y_center[bpm_number] = position
+            ios = response * (position - offset) ** 2
+            x_up = x_center + ios
+            x_down = x_center - ios
+            y_up = y_center + other_plane_response * position
+            y_down = y_center - other_plane_response * position
+
+        data.raw_bpm_x_center.append(list(x_center))
+        data.raw_bpm_y_center.append(list(y_center))
+        data.raw_bpm_x_up.append(list(x_up))
+        data.raw_bpm_y_up.append(list(y_up))
+        data.raw_bpm_x_down.append(list(x_down))
+        data.raw_bpm_y_down.append(list(y_down))
+
+        zeros = list(np.zeros(n_bpms))
+        data.raw_bpm_x_center_err.append(zeros)
+        data.raw_bpm_y_center_err.append(zeros)
+        data.raw_bpm_x_up_err.append(zeros)
+        data.raw_bpm_y_up_err.append(zeros)
+        data.raw_bpm_x_down_err.append(zeros)
+        data.raw_bpm_y_down_err.append(zeros)
 
     return data
 
@@ -208,6 +259,29 @@ class TestBBAAnalysis:
         assert np.isfinite(result.offset_error)
         assert result.offset_error >= 0
 
+    def test_bba_analysis_error_is_nonnegative_for_negative_offset(self):
+        """Error propagation reports a nonnegative uncertainty."""
+        data = _make_bba_data(n0=9, n_bpms=10, bpm_number=3,
+                              offset=-0.001, bipolar=True)
+
+        result = BBAAnalysis.analyze(data)
+        assert result.offset < 0
+        assert np.isfinite(result.offset_error)
+        assert result.offset_error >= 0
+
+    @pytest.mark.parametrize("plane", ["H", "V"])
+    def test_bba_analysis_normal_sextupole_known_offset(self, plane):
+        """Normal sextupole analysis fits a quadratic and recovers its center."""
+        offset = 0.002 if plane == "H" else -0.0015
+        data = _make_sextupole_bba_data(plane=plane, offset=offset)
+
+        result = BBAAnalysis.analyze(data)
+
+        assert result.fit_order == 2
+        np.testing.assert_allclose(result.offset, offset, atol=1e-9)
+        assert np.isfinite(result.offset_error)
+        assert result.offset_error >= 0
+
     @pytest.mark.regression
     def test_bba_analysis_total_rejections_stored(self):
         """BBAAnalysis.analyze() stores total_rejections correctly.
@@ -332,3 +406,23 @@ class TestBBAMeasurement:
         assert BBACode.HYSTERESIS_DONE not in codes
         assert BBACode.HORIZONTAL in codes
         assert codes[-1] == BBACode.DONE
+
+    def test_quad_is_skew_deprecated_argument_sets_magnet_type(self):
+        """Deprecated quad_is_skew input remains backward compatible."""
+        meas = BBA_Measurement(
+            bpm='BPM3',
+            quadrupole='Q1',
+            h_corrector='CH1',
+            v_corrector=None,
+            dk0l_x=1e-4,
+            dk1l_x=0.05,
+            dk0l_y=1e-4,
+            dk1l_y=0.05,
+            n0=3,
+            bpm_number=3,
+            shots_per_orbit=1,
+            quad_is_skew=True,
+        )
+
+        assert meas.magnet_type is MagnetType.skew_quad
+        assert meas.H_data.magnet_type is MagnetType.skew_quad

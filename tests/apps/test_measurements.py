@@ -122,6 +122,31 @@ class TestMeasureBBA:
         with pytest.raises(AssertionError):
             list(measure_bba(iface, 'BPM0', bad_config, skip_save=True))
 
+    def test_accepts_magnet_type_config(self, mock_interface):
+        """New BBA config format uses magnet_type instead of QUAD_is_skew."""
+        iface = mock_interface(n_bpms=5)
+        config = _bba_config()
+        del config['QUAD_is_skew']
+        config['magnet_type'] = 'normal_sextupole'
+
+        results = list(measure_bba(iface, 'BPM0', config, skip_save=True))
+
+        _, measurement = results[-1]
+        assert measurement.magnet_type == 'normal_sextupole'
+        assert measurement.H_data.magnet_type == 'normal_sextupole'
+
+    def test_deprecated_quad_is_skew_config_sets_magnet_type(self, mock_interface):
+        """Old QUAD_is_skew config remains backward compatible."""
+        iface = mock_interface(n_bpms=5)
+        config = _bba_config()
+        config['QUAD_is_skew'] = True
+
+        results = list(measure_bba(iface, 'BPM0', config, skip_save=True))
+
+        _, measurement = results[-1]
+        assert measurement.magnet_type == 'skew_quadrupole'
+        assert measurement.H_data.magnet_type == 'skew_quadrupole'
+
 
 # ---------------------------------------------------------------------------
 # measure_ORM tests

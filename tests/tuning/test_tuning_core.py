@@ -209,6 +209,70 @@ def test_set_multipole_scale_warns_and_skips_empty_overlap(caplog):
     SC.magnet_settings.set.assert_not_called()
 
 
+def test_generate_trajectory_bba_config_forwards_sextupole_options():
+    """Tuning wrapper forwards trajectory sextupole BBA options."""
+    tuning = Tuning()
+    SC = MagicMock()
+    tuning._parent = SC
+    config = MagicMock()
+
+    with patch(
+        "pySC.tuning.tuning_core.Trajectory_BBA_Configuration.generate_config",
+        return_value=config,
+    ) as generate_config:
+        tuning.generate_trajectory_bba_config(
+            max_dx_at_bpm=1e-3,
+            max_modulation=2e-4,
+            n_downstream_bpms=7,
+            max_ncorr_index=3,
+            max_dx_at_bpm_sextupole=2e-3,
+            max_modulation_sextupole=1e-4,
+            ignore_sextupoles=True,
+        )
+
+    generate_config.assert_called_once_with(
+        SC=SC,
+        max_dx_at_bpm=1e-3,
+        max_modulation=2e-4,
+        n_downstream_bpms=7,
+        max_ncorr_index=3,
+        max_dx_at_bpm_sextupole=2e-3,
+        max_modulation_sextupole=1e-4,
+        ignore_sextupoles=True,
+    )
+    assert tuning.trajectory_bba_config is config
+
+
+def test_generate_orbit_bba_config_forwards_sextupole_options():
+    """Tuning wrapper forwards orbit sextupole BBA options."""
+    tuning = Tuning()
+    SC = MagicMock()
+    tuning._parent = SC
+    config = MagicMock()
+
+    with patch(
+        "pySC.tuning.tuning_core.Orbit_BBA_Configuration.generate_config",
+        return_value=config,
+    ) as generate_config:
+        tuning.generate_orbit_bba_config(
+            max_dx_at_bpm=3e-4,
+            max_modulation=2e-5,
+            max_dx_at_bpm_sextupole=1e-3,
+            max_modulation_sextupole=1e-5,
+            ignore_sextupoles=True,
+        )
+
+    generate_config.assert_called_once_with(
+        SC=SC,
+        max_dx_at_bpm=3e-4,
+        max_modulation=2e-5,
+        max_dx_at_bpm_sextupole=1e-3,
+        max_modulation_sextupole=1e-5,
+        ignore_sextupoles=True,
+    )
+    assert tuning.orbit_bba_config is config
+
+
 # ---------------------------------------------------------------------------
 # Integration tests (require configured SC)
 # ---------------------------------------------------------------------------

@@ -67,8 +67,25 @@ def test_get_twiss_keys(hmba_lattice_file):
     twiss = lat.get_twiss(use_design=True)
     expected_keys = {'qx', 'qy', 'qs', 'dqx', 'dqy', 's', 'x', 'px', 'y', 'py',
                      'delta', 'tau', 'betx', 'bety', 'alfx', 'alfy', 'mux', 'muy',
-                     'dx', 'dpx', 'dy', 'dpy'}
+                     'dx', 'dpx', 'dy', 'dpy', 'wx_chrom', 'bx_chrom', 'ax_chrom',
+                     'wy_chrom', 'by_chrom', 'ay_chrom', 'dmux', 'dmuy', 'ddx'}
     assert expected_keys.issubset(twiss.keys())
+
+
+def test_get_twiss_chromatic_arrays_match_refpoints(hmba_lattice_file):
+    """Chromatic Twiss arrays have one value per returned refpoint."""
+    lat = ATLattice(lattice_file=hmba_lattice_file)
+    twiss = lat.get_twiss(use_design=True)
+    n_refpts = len(twiss['s'])
+
+    for key in [
+        'wx_chrom', 'bx_chrom', 'ax_chrom',
+        'wy_chrom', 'by_chrom', 'ay_chrom',
+        'dmux', 'dmuy', 'ddx',
+    ]:
+        assert key in twiss
+        assert len(twiss[key]) == n_refpts
+        assert np.all(np.isfinite(twiss[key]))
 
 
 # ---------------------------------------------------------------------------

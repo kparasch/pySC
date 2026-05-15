@@ -41,8 +41,8 @@ def feeddown(AB: np.ndarray[complex], r0: complex, n: int):
     maxN = len(AB)
     value = 0j
     for k in range(n, maxN):
-        value += AB[k] * binomial_coeff(k, n) * (r0 ** (k - n))
-    return value 
+        value += AB[k] * binomial_coeff(k, n) * ((-r0) ** (k - n))
+    return value
 
 def omega(x):
     if x%2:
@@ -51,6 +51,9 @@ def omega(x):
         return 1
 
 def get_integrated_strengths_with_feeddown(SC: "SimulatedCommissioning", use_design: bool = False):
+    '''
+    returned integrated strengths are in MAD-X/Xsuite/PALS convention
+    '''
     twiss = SC.lattice.get_twiss(use_design=use_design)
     if use_design:
         magnet_settings = SC.design_magnet_settings
@@ -65,8 +68,9 @@ def get_integrated_strengths_with_feeddown(SC: "SimulatedCommissioning", use_des
 
     for magnet in magnet_settings.magnets.values():
         ii = magnet.sim_index
-        x_co = twiss['x'][ii]
-        y_co = twiss['y'][ii]
+        # average closed_orbit
+        x_co = 0.5*(twiss['x'][ii] + twiss['x'][(ii+1)%N])
+        y_co = 0.5*(twiss['y'][ii] + twiss['y'][(ii+1)%N])
         if not use_design:
             dx, dy = SC.support_system.get_total_offset(ii)
             roll, _, _ = SC.support_system.get_total_rotation(ii)
@@ -82,7 +86,10 @@ def get_integrated_strengths_with_feeddown(SC: "SimulatedCommissioning", use_des
             integrated_strengths['norm'][temp_max_order] = np.zeros(N)
             integrated_strengths['skew'][temp_max_order] = np.zeros(N)
 
-        AB = (np.array(magnet.B) + 1.j*np.array(magnet.A)) * np.exp(1.j*roll) * magnet.length
+        AB = (np.array(magnet.B) + 1.j*np.array(magnet.A)) * np.exp(-1.j*roll) * magnet.length #* FACTORIAL[:len(magnet.B)]
+        # AB needs to be in AT convention here, gets converted to PALS convention later.
+        # TODO: in future we should use PALS only conventions
+        # should integrated_strengths be complex array maybe?
         for jj in range(magnet.max_order + 1):
             AB_with_feeddown = feeddown(AB, r0, jj)
             integrated_strengths['norm'][jj][ii] = AB_with_feeddown.real * FACTORIAL[jj]
@@ -118,7 +125,14 @@ def hjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0,
 
     K = integrated_strengths['norm'][n-1]
     J = integrated_strengths['skew'][n-1]
-    h = - (K * omega(l+m) + 1j * J * omega(l+m+1))/(FACTORIAL[j] * FACTORIAL[k] * FACTORIAL[l] * FACTORIAL[m] * 2**(n)) * (1.j)**(l+m) * twiss['betx']**((j+k)/2) * twiss['bety']**((l+m)/2)
+
+    avbetx = np.zeros_like(twiss['betx'])
+    avbety = np.zeros_like(twiss['betx'])
+    avbetx[:-1] = 0.5*(twiss['betx'][:-1] + twiss['betx'][1:])
+    avbety[:-1] = 0.5*(twiss['bety'][:-1] + twiss['bety'][1:])
+    avbetx[-1] = 0.5*(twiss['betx'][-1] + twiss['betx'][0])
+    avbety[-1] = 0.5*(twiss['bety'][-1] + twiss['bety'][0])
+    h = - (K * omega(l+m) + 1j * J * omega(l+m+1))/(FACTORIAL[j] * FACTORIAL[k] * FACTORIAL[l] * FACTORIAL[m] * 2**(n)) * (1.j)**(l+m) * avbetx**((j+k)/2) * avbety**((l+m)/2)
     return h
 
 
@@ -137,13 +151,22 @@ def fjklm(SC: Optional["SimulatedCommissioning"] = None, j: int = 0, k: int = 0,
     h = hjklm(SC=SC, j=j, k=k, l=l, m=m, use_design=use_design, integrated_strengths=integrated_strengths, twiss=twiss)
     mask = h != 0
     hm = h[mask]
-    mux = twiss['mux'][mask]
-    muy = twiss['muy'][mask]
+
+
+    avmux = np.zeros_like(twiss['mux'])
+    avmuy = np.zeros_like(twiss['mux'])
+    avmux[:-1] = 0.5*(twiss['mux'][:-1] + twiss['mux'][1:])
+    avmuy[:-1] = 0.5*(twiss['muy'][:-1] + twiss['muy'][1:])
+    avmux[-1] = 0.5*(twiss['mux'][-1] + twiss['mux'][0] + qx)
+    avmuy[-1] = 0.5*(twiss['muy'][-1] + twiss['muy'][0] + qy)
+
+    mux = avmux[mask]
+    muy = avmuy[mask]
     ii = 0
     f = np.zeros_like(twiss['s'], dtype=complex)
     for ii in range(len(twiss['s'])):
-        dphix = 2. * np.pi * (twiss['mux'][ii] - mux)
-        dphiy = 2. * np.pi * (twiss['muy'][ii] - muy)
+        dphix = 2. * np.pi * (avmux[ii] - mux)
+        dphiy = 2. * np.pi * (avmuy[ii] - muy)
         # Wrap negative phase advances around the ring
         dphix = np.where(dphix < 0, dphix + 2. * np.pi * qx, dphix)
         dphiy = np.where(dphiy < 0, dphiy + 2. * np.pi * qy, dphiy)

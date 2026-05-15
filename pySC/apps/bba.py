@@ -491,7 +491,7 @@ class BBAAnalysis(BaseModel):
         VO = ( VCS / CS**2 + VS / S**2) # (variance of offset) / offset**2
 
         offset = CS / S # offset = CS / S, average of centers with abs(slopes) or abs(quadratics) as weights
-        offset_error = offset * np.sqrt(VO)
+        offset_error = np.abs(offset) * np.sqrt(VO)
 
         result = BBAAnalysis(
                              offset=offset,

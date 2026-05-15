@@ -59,6 +59,7 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
         else:
             bba_magnets = all_bba_magnets
 
+        assert len(bba_magnets) > 0, "No BBA magnets available after applying ignore_sextupoles filter."
         bba_magnets_s = get_mag_s_pos(SC, bba_magnets)
 
         mask_H = np.array(RM.input_planes) == 'H'

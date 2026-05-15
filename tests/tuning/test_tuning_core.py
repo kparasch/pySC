@@ -1,7 +1,7 @@
 """Tests for pySC.tuning.tuning_core: Tuning class helpers and integration."""
 import numpy as np
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 from pySC.apps.response_matrix import ResponseMatrix
 from pySC.tuning.tuning_core import Tuning
@@ -130,6 +130,83 @@ def test_correct_injection_passes_plane_to_orbit_correction():
     assert kwargs["solver"] is solver
     assert kwargs["apply"] is True
     assert kwargs["plane"] == "V"
+
+
+def _make_multipole_tuning():
+    """Create a Tuning instance with mocked magnet/design settings."""
+    tuning = Tuning(multipoles=["sf1/B3", "sf2/B3", "sd1/B3"])
+    SC = MagicMock()
+    SC.control_arrays = {
+        "focusing": ["sf1/B3", "sf2/B3", "qf1/B2"],
+        "quadrupoles": ["qf1/B2", "qd1/B2"],
+    }
+    design_setpoints = {
+        "sf1/B3": 1.0,
+        "sf2/B3": 2.0,
+        "sd1/B3": -3.0,
+    }
+    SC.design_magnet_settings.get.side_effect = design_setpoints.__getitem__
+    tuning._parent = SC
+    return tuning, SC
+
+
+def test_set_multipole_scale_scales_all_configured_multipoles():
+    """Without a group, all tuning multipoles are scaled to design."""
+    tuning, SC = _make_multipole_tuning()
+
+    tuning.set_multipole_scale(scale=0.5)
+
+    SC.design_magnet_settings.get.assert_has_calls([
+        call("sf1/B3"),
+        call("sf2/B3"),
+        call("sd1/B3"),
+    ])
+    SC.magnet_settings.set.assert_has_calls([
+        call("sf1/B3", 0.5),
+        call("sf2/B3", 1.0),
+        call("sd1/B3", -1.5),
+    ])
+
+
+def test_set_multipole_scale_filters_by_control_array_group():
+    """With a group, only controls present in both lists are scaled."""
+    tuning, SC = _make_multipole_tuning()
+
+    tuning.set_multipole_scale(scale=2.0, group="focusing")
+
+    SC.design_magnet_settings.get.assert_has_calls([
+        call("sf1/B3"),
+        call("sf2/B3"),
+    ])
+    SC.magnet_settings.set.assert_has_calls([
+        call("sf1/B3", 2.0),
+        call("sf2/B3", 4.0),
+    ])
+    assert SC.design_magnet_settings.get.call_count == 2
+    assert SC.magnet_settings.set.call_count == 2
+
+
+def test_set_multipole_scale_rejects_unknown_group():
+    """A group name must exist in SC.control_arrays."""
+    tuning, SC = _make_multipole_tuning()
+
+    with pytest.raises(AssertionError, match="sextupoles not found in control_arrays"):
+        tuning.set_multipole_scale(group="sextupoles")
+
+    SC.design_magnet_settings.get.assert_not_called()
+    SC.magnet_settings.set.assert_not_called()
+
+
+def test_set_multipole_scale_warns_and_skips_empty_overlap(caplog):
+    """A valid group with no tuning multipoles logs a warning and changes nothing."""
+    tuning, SC = _make_multipole_tuning()
+
+    with caplog.at_level("WARNING", logger="pySC.tuning.tuning_core"):
+        tuning.set_multipole_scale(group="quadrupoles")
+
+    assert 'No common multipoles were found between tuning.multipoles and control_arrays["quadrupoles"]' in caplog.text
+    SC.design_magnet_settings.get.assert_not_called()
+    SC.magnet_settings.set.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

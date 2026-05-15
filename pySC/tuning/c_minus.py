@@ -49,7 +49,7 @@ class CMinus(BaseModel, extra="forbid"):
         matrix[1] = delta_c_minus.imag
 
         c_minus_response_matrix = ResponseMatrix(matrix=matrix,
-                                                 outputs_plane=['SQ'] * len(self.controls)
+                                                 output_planes=['SQ'] * len(self.controls)
                                                 )
         inverse_matrix = c_minus_response_matrix.build_pseudoinverse().matrix
         c_minus_real_knob = inverse_matrix[:, 0]

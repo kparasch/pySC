@@ -1,6 +1,6 @@
 import logging
 import numpy as np
-from typing import Optional, Generator, Union, Literal
+from typing import Optional, Generator, Union, Literal, Any
 from pathlib import Path
 
 from ..apps.response_matrix import ResponseMatrix
@@ -15,7 +15,7 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
                      parameter: Union[int,float] = 0, reference: Optional[np.ndarray] = None,
                      gain: float = 1, virtual: bool = False, plane: Optional[Literal['H', 'V']] = None,
                      rf: bool  = False, apply: bool = False, virtual_target: float = 0,
-                     gain_rf: float = 1, zerosum: Optional[bool] = None):
+                     gain_rf: float = 1, zerosum: Optional[bool] = None, solver: Optional[Any] = None):
 
     if zerosum is not None:
         logger.warning('`zerosum` argument in ResponseMatrix.solve is deprecated. Please use `virtual` instead.')
@@ -34,7 +34,16 @@ def orbit_correction(interface: AbstractInterface, response_matrix: ResponseMatr
         assert len(reference) == len(orbit), "Reference orbit has wrong length"
         orbit -= reference
 
-    trim_list = -response_matrix.solve(orbit, method=method, parameter=parameter, virtual=virtual, plane=plane, rf=rf, virtual_target=virtual_target)
+    trim_list = -response_matrix.solve(
+        orbit,
+        method=method,
+        parameter=parameter,
+        virtual=virtual,
+        plane=plane,
+        rf=rf,
+        virtual_target=virtual_target,
+        solver=solver
+    )
 
     trims = {corr: trim for corr, trim in zip(correctors, trim_list, strict=False) if trim != 0}
     # if rf is selected, trim_list will be larger than correctors by one element. The last element is the rf frequency.
@@ -64,9 +73,15 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
         assert folder_to_save.exists(), f'Path {folder_to_save.resolve()} does not exist.'
         assert folder_to_save.is_dir(), f'Path {folder_to_save.resolve()} is not a directory.'
 
-    keys = config.keys()
-    for word in ['QUAD', 'HCORR', 'HCORR_delta', 'QUAD_dk_H', 'VCORR', 'VCORR_delta', 'QUAD_dk_V', 'QUAD_is_skew', 'number']:
-        assert word in keys, f'{word} is not in configuration.'
+    if 'QUAD_is_skew' in config:
+        logger.warning('DEPRECATION: QUAD_is_skew in BBA config should no longer be used!')
+        if config['QUAD_is_skew']:
+            config['magnet_type'] = "skew_quadrupole"
+        else:
+            config['magnet_type'] = "normal_quadrupole"
+
+    for word in ['QUAD', 'HCORR', 'HCORR_delta', 'QUAD_dk_H', 'VCORR', 'VCORR_delta', 'QUAD_dk_V', 'magnet_type', 'number']:
+        assert word in config, f'{word} is not in configuration.'
 
     measurement = BBA_Measurement(bpm=bpm_name,
                                   quadrupole=config['QUAD'],
@@ -76,7 +91,7 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
                                   dk1l_x=config['QUAD_dk_H'],
                                   dk0l_y=config['VCORR_delta'],
                                   dk1l_y=config['QUAD_dk_V'],
-                                  quad_is_skew=config['QUAD_is_skew'],
+                                  magnet_type=config['magnet_type'],
                                   n0=n_corr_steps,
                                   bpm_number=config['number'],
                                   shots_per_orbit=shots_per_orbit,

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, PrivateAttr
-from typing import Optional, Union, TYPE_CHECKING
+from typing import Optional, Union, Any, TYPE_CHECKING
 from ..apps.response_matrix import ResponseMatrix
 from .response_measurements import measure_TrajectoryResponseMatrix, measure_OrbitResponseMatrix, measure_RFFrequencyOrbitResponse
 from .trajectory_bba import Trajectory_BBA_Configuration, trajectory_bba, get_mag_s_pos
@@ -14,6 +14,7 @@ from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 from ..apps import orbit_correction
 
 import numpy as np
+import warnings
 from pathlib import Path
 import logging
 from multiprocessing import Process, Queue
@@ -132,6 +133,8 @@ class Tuning(BaseModel, extra="forbid"):
 
         initial_transmission, last_good_bpm_index = first_turn_transmission(SC)
         if initial_transmission < 1.:
+            last_hcor = None
+            last_vcor = None
             for corr in SC.tuning.HCORR:
                 hcor_name = corr.split('/')[0]
                 hcor_index = SC.magnet_settings.magnets[hcor_name].sim_index
@@ -142,6 +145,10 @@ class Tuning(BaseModel, extra="forbid"):
                 vcor_index = SC.magnet_settings.magnets[vcor_name].sim_index
                 if vcor_index < last_good_bpm_index:
                     last_vcor = corr
+
+            if last_hcor is None or last_vcor is None:
+                logger.warning("No upstream corrector found for wiggling.")
+                return
 
             for _ in range(max_steps):
                 SC.magnet_settings.set(last_hcor, SC.rng.uniform(-max_sp, max_sp))
@@ -156,7 +163,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1, correct_to_first_turn=False, virtual=False, plane=None):
+    def correct_injection(self, n_turns=1, n_reps=1, method='tikhonov', parameter=100, gain=1,correct_to_first_turn=False, virtual=False, solver: Optional[Any] = None, plane=None):
         RM_name = f'trajectory{n_turns}'
         self.fetch_response_matrix(RM_name, orbit=False, n_turns=n_turns)
         response_matrix = self.response_matrix[RM_name]
@@ -166,8 +173,15 @@ class Tuning(BaseModel, extra="forbid"):
         interface = pySCInjectionInterface(SC=SC, n_turns=n_turns)
 
         for _ in range(n_reps):
-            _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
-                                 method=method, parameter=parameter, gain=gain, virtual=virtual, apply=True,
+            _ = orbit_correction(interface=interface, 
+                                 response_matrix=response_matrix, 
+                                 reference=None, 
+                                 method=method, 
+                                 parameter=parameter, 
+                                 gain=gain,
+                                 virtual=virtual, 
+                                 solver=solver, 
+                                 apply=True,
                                  plane=plane)
 
         trajectory_x, trajectory_y = SC.bpm_system.capture_injection(n_turns=n_turns)
@@ -181,7 +195,7 @@ class Tuning(BaseModel, extra="forbid"):
 
         return
 
-    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, virtual=False, plane=None):
+    def correct_orbit(self, n_reps=1, method='tikhonov', parameter=100, gain=1, virtual=False, solver: Optional[Any] = None, plane=None):
         RM_name = 'orbit'
         self.fetch_response_matrix(RM_name, orbit=True)
         response_matrix = self.response_matrix[RM_name]
@@ -191,8 +205,14 @@ class Tuning(BaseModel, extra="forbid"):
         interface = pySCOrbitInterface(SC=SC)
 
         for _ in range(n_reps):
-            _ = orbit_correction(interface=interface, response_matrix=response_matrix, reference=None,
-                                 method=method, parameter=parameter, virtual=virtual, gain=gain, apply=True,
+            _ = orbit_correction(interface=interface,
+                                 response_matrix=response_matrix,
+                                 reference=None,
+                                 method=method, parameter=parameter,
+                                 virtual=virtual,
+                                 gain=gain,
+                                 solver=solver,
+                                 apply=True,
                                  plane=plane)
 
         orbit_x, orbit_y = SC.bpm_system.capture_orbit()
@@ -264,23 +284,40 @@ class Tuning(BaseModel, extra="forbid"):
             setpoint = self._parent.design_magnet_settings.get(control_name)
             self._parent.magnet_settings.set(control_name, setpoint)
 
-    def generate_trajectory_bba_config(self, max_dx_at_bpm: float = 1e-3, 
+    def generate_trajectory_bba_config(self, max_dx_at_bpm: float = 1e-3,
                                        max_modulation: float = 0.2e-3,
-                                       n_downstream_bpms: int = 50, 
-                                       max_ncorr_index: int = 10) -> None:
+                                       n_downstream_bpms: int = 50,
+                                       max_ncorr_index: int = 10,
+                                       max_modulation_sextupole: Optional[float] = None,
+                                       max_dx_at_bpm_sextupole: Optional[float] = None,
+                                       ignore_sextupoles: bool = False,
+                                      ) -> None:
         config = Trajectory_BBA_Configuration.generate_config(SC=self._parent,
                                                               max_dx_at_bpm=max_dx_at_bpm,
                                                               max_modulation=max_modulation,
                                                               n_downstream_bpms=n_downstream_bpms,
-                                                              max_ncorr_index=max_ncorr_index)
+                                                              max_ncorr_index=max_ncorr_index,
+                                                              max_dx_at_bpm_sextupole=max_dx_at_bpm_sextupole,
+                                                              max_modulation_sextupole=max_modulation_sextupole,
+                                                              ignore_sextupoles=ignore_sextupoles,
+                                                              )
         self.trajectory_bba_config = config
         return
 
-    def generate_orbit_bba_config(self, max_dx_at_bpm: float = 0.3e-3, 
-                                       max_modulation: float = 20e-6) -> None:
+    def generate_orbit_bba_config(self,
+                                  max_dx_at_bpm: float = 0.3e-3,
+                                  max_modulation: float = 20e-6,
+                                  max_dx_at_bpm_sextupole: Optional[float] = None,
+                                  max_modulation_sextupole: Optional[float] = None,
+                                  ignore_sextupoles: bool = False,
+                                 ) -> None:
         config = Orbit_BBA_Configuration.generate_config(SC=self._parent,
                                                          max_dx_at_bpm=max_dx_at_bpm,
-                                                         max_modulation=max_modulation)
+                                                         max_modulation=max_modulation,
+                                                         max_dx_at_bpm_sextupole=max_dx_at_bpm_sextupole,
+                                                         max_modulation_sextupole=max_modulation_sextupole,
+                                                         ignore_sextupoles=ignore_sextupoles,
+                                                        )
         self.orbit_bba_config = config
         return
 
@@ -531,7 +568,222 @@ class Tuning(BaseModel, extra="forbid"):
                 SC.bpm_system.bba_offsets_y[bpm_number] = offsets_y[ii]
         return offsets_x, offsets_y
 
-    def injection_efficiency(self, n_turns: int = 1, omp_num_threads: Optional[int] = None) -> float:
+    def tune_scan(self, dqx_range: np.ndarray, dqy_range: np.ndarray,
+                  n_turns: int = 50, target: float = 0.8,
+                  full_scan: bool = False,
+                  omp_num_threads: Optional[int] = None) -> tuple[float, float, np.ndarray, int]:
+        """Spiral grid scan of tune deltas for beam survival.
+
+        Scans tune knob setpoints in a spiral pattern starting from the
+        center of the grid, looking for settings that achieve the target
+        transmission.  Uses the registered tune knobs (see
+        ``create_tune_knobs()``) and ``injection_efficiency()`` for tracking.
+
+        Args:
+            dqx_range: 1-D array of horizontal tune deltas.
+            dqy_range: 1-D array of vertical tune deltas.
+            n_turns: Number of turns for tracking (default 50).
+            target: Target final-turn transmission fraction (default 0.8).
+            full_scan: If True, scan entire grid even after target is reached.
+            omp_num_threads: Optional thread count forwarded to tracking.
+
+        Returns:
+            (best_dqx, best_dqy, survival_map, error) where:
+            - best_dqx: Best horizontal tune delta.
+            - best_dqy: Best vertical tune delta.
+            - survival_map: 2-D array of final-turn transmissions.
+            - error: 0 = target reached, 1 = improved but not target,
+              2 = no transmission.
+        """
+        SC = self._parent
+
+        # Assert knobs are registered
+        assert self.tune.knob_qx in SC.magnet_settings.controls, \
+            f"Knob '{self.tune.knob_qx}' not registered — call create_tune_knobs() first"
+        assert self.tune.knob_qy in SC.magnet_settings.controls, \
+            f"Knob '{self.tune.knob_qy}' not registered — call create_tune_knobs() first"
+
+        # Save initial knob setpoints
+        initial_qx = SC.magnet_settings.get(self.tune.knob_qx)
+        initial_qy = SC.magnet_settings.get(self.tune.knob_qy)
+
+        n1, n2 = len(dqx_range), len(dqy_range)
+
+        # Allocate output
+        transmission_map = np.full((n1, n2), np.nan)
+        turns_map = np.full((n1, n2), np.nan)
+
+        # Generate spiral scan order (center-first)
+        n_max = max(n1, n2)
+        spiral_indices = self._spiral_order(n_max)
+
+        best_dqx = float(dqx_range[n1 // 2])
+        best_dqy = float(dqy_range[n2 // 2])
+        best_trans = 0.0
+        best_turns = 0
+        scan_order = []
+
+        for q1, q2 in spiral_indices:
+            if q1 >= n1 or q2 >= n2:
+                continue
+
+            # Set tune knobs (absolute, not cumulative)
+            SC.magnet_settings.set(self.tune.knob_qx, initial_qx + dqx_range[q1])
+            SC.magnet_settings.set(self.tune.knob_qy, initial_qy + dqy_range[q2])
+
+            survival = self.injection_efficiency(n_turns=n_turns, omp_num_threads=omp_num_threads)
+            final_trans = float(survival[-1, -1]) if survival.ndim > 1 else float(survival[-1])
+            #survival_map[q1, q2] = survival
+
+            # Find max turns with any survival
+            turn_survival = np.mean(survival, axis=0) if survival.ndim > 1 else survival
+            max_turns_achieved = np.sum(turn_survival > 0)
+
+            transmission_map[q1, q2] = final_trans
+            turns_map[q1, q2] = max_turns_achieved
+            scan_order.append((q1, q2))
+
+            if final_trans > best_trans or (final_trans == best_trans and max_turns_achieved > best_turns):
+                best_trans = final_trans
+                best_turns = max_turns_achieved
+                best_dqx = float(dqx_range[q1])
+                best_dqy = float(dqy_range[q2])
+
+            # Early termination
+            if not full_scan and final_trans >= target:
+                logger.info(f'tune_scan: target reached at dqx={dqx_range[q1]:.3f}, dqy={dqy_range[q2]:.3f}, '
+                           f'transmission={final_trans:.2%}')
+                return best_dqx, best_dqy, transmission_map, 0
+
+        # Apply best deltas at end
+        SC.magnet_settings.set(self.tune.knob_qx, initial_qx + best_dqx)
+        SC.magnet_settings.set(self.tune.knob_qy, initial_qy + best_dqy)
+
+        if best_trans == 0.0:
+            logger.info('tune_scan: no transmission at all')
+            return best_dqx, best_dqy, transmission_map, 2
+
+        if best_trans >= target:
+            logger.info(f'tune_scan: target reached (full scan), transmission={best_trans:.2%}')
+            return best_dqx, best_dqy, transmission_map, 0
+
+        logger.info(f'tune_scan: best transmission={best_trans:.2%} (target={target:.2%})')
+        return best_dqx, best_dqy, transmission_map, 1
+
+    @staticmethod
+    def _spiral_order(n: int) -> list[tuple[int, int]]:
+        """Generate spiral scan indices for an n x n grid, starting from center."""
+        x = (n - 1) // 2
+        y = (n - 1) // 2
+        result = [(x, y)]
+
+        # directions: right, down, left, up
+        directions = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+
+        step_size = 1
+        while len(result) < n * n:
+            for d in range(4):
+                dx, dy = directions[d]
+                steps = step_size
+
+                for _ in range(steps):
+                    x += dx
+                    y += dy
+                    if 0 <= x < n and 0 <= y < n:
+                        result.append((x, y))
+                        if len(result) == n * n:
+                            return result
+
+                # increase step size after moving horizontally (every 2 directions)
+                if d % 2 == 1:
+                    step_size += 1
+
+        return result
+
+    def synch_energy_correction(self, freq_range: tuple[float, float] = (-1e3, 1e3),
+                                n_steps: int = 15, n_turns: int = 150,
+                                min_turns: int = 50) -> tuple[float, int]:
+        """Calculate beam-based RF frequency correction.
+
+        Ports SCsynchEnergyCorrection from MATLAB SC toolkit. Scans RF frequency,
+        measures mean TBT horizontal BPM shift, fits a line to slope vs frequency,
+        and returns the zero-crossing as the correction.
+
+        Args:
+            freq_range: (min, max) frequency offset range in Hz.
+            n_steps: Number of frequency steps to evaluate.
+            n_turns: Number of turns to track at each step.
+            min_turns: Minimum turns with beam survival to include a measurement.
+
+        Returns:
+            (delta_f, error) where:
+            - delta_f: Frequency correction to add to cavity frequency [Hz]
+            - error: 0=success, 1=no transmission, 2=NaN result
+        """
+        SC = self._parent
+        interface = pySCOrbitInterface(SC=SC)
+
+        f_test_vec = np.linspace(freq_range[0], freq_range[1], n_steps)
+        bpm_shift = np.full(n_steps, np.nan)
+
+        # Save original frequency
+        original_freq = interface.get_rf_main_frequency()
+
+        for i, df in enumerate(f_test_vec):
+            # Temporarily change RF frequency
+            interface.set_rf_main_frequency(original_freq + df)
+
+            # Get turn-by-turn BPM readings
+            x, y = SC.bpm_system.capture_injection(n_turns=n_turns)
+            # x has shape [n_bpm, n_turns]
+
+            if x.ndim < 2:
+                continue
+
+            # Compute mean TBT difference from first turn
+            # BB[i,j] = x reading at BPM i, turn j
+            BB = x  # [n_bpm, n_turns]
+            with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+                warnings.simplefilter("ignore", category=RuntimeWarning)
+                tbt_de = np.nanmean(BB - BB[:, 0:1], axis=0)  # [n_turns]
+
+            # Fit line: slope of energy shift vs turn number
+            turns = np.arange(1, n_turns + 1, dtype=float)
+            valid = ~np.isnan(tbt_de)
+            if np.sum(valid) < min_turns:
+                logger.info(f'synch_energy_correction: frequency_shift={df:.2f} Hz, measurement invalid.')
+                continue
+
+            x_fit = turns[valid]
+            y_fit = tbt_de[valid]
+            # Least-squares slope: x \ y
+            bpm_shift[i] = np.dot(x_fit, y_fit) / np.dot(x_fit, x_fit)
+            logger.info(f'synch_energy_correction: frequency_shift={df:.2f} Hz, bpm_shift={1e6*bpm_shift[i]:.3f} um')
+
+        # Restore original frequency
+        interface.set_rf_main_frequency(original_freq)
+
+        # Fit line to slope vs frequency
+        valid = ~np.isnan(bpm_shift)
+        if np.sum(valid) == 0:
+            logger.info('synch_energy_correction: no transmission at any frequency')
+            return 0.0, 1
+
+        x_fit = f_test_vec[valid]
+        y_fit = bpm_shift[valid]
+        p = np.polyfit(x_fit, y_fit, 1)
+
+        # Zero crossing
+        delta_f = -p[1] / p[0]
+
+        if np.isnan(delta_f):
+            logger.info('synch_energy_correction: NaN correction')
+            return 0.0, 2
+
+        logger.info(f'synch_energy_correction: correction = {delta_f:.1f} Hz')
+        return delta_f, 0
+
+    def injection_efficiency(self, n_turns: int = 1, omp_num_threads: Optional[int] = None) -> np.ndarray[float]:
         SC = self._parent
 
         if omp_num_threads is not None:
@@ -545,3 +797,50 @@ class Tuning(BaseModel, extra="forbid"):
             SC.lattice.omp_num_threads = previous_threads
 
         return transmission
+    def correct_orbit_with_dispersion(self, alpha_sequence=None,
+                                      n_reps=1, method='tikhonov', gain=1.0, virtual=False):
+        SC = self._parent
+
+        # 1. Fetch and configure response matrix
+        self.fetch_response_matrix('orbit')
+        response_matrix = self.response_matrix['orbit']
+        response_matrix.bad_outputs = self.bad_outputs_from_bad_bpms(self.bad_bpms)
+
+        # 2. Add dispersion to response matrix
+        dispersion = measure_RFFrequencyOrbitResponse(SC, use_design=True)
+        response_matrix.set_rf_response(dispersion)
+
+        # 3. Default alpha sequence
+        if alpha_sequence is None:
+            alpha_sequence = [30, 15, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]
+
+        # 4. Create interface
+        interface = pySCOrbitInterface(SC=SC)
+
+        # 5. Progressive correction
+        orbit_x, orbit_y = SC.bpm_system.capture_orbit()
+        best_rms = np.sqrt(np.nanmean(orbit_x**2) + np.nanmean(orbit_y**2))
+        logger.info(f'Orbit+dispersion correction: initial RMS = {best_rms*1e6:.1f} um')
+
+        for alpha in alpha_sequence:
+            saved = SC.magnet_settings.get_many(self.CORR)
+            saved_rf = interface.get_rf_main_frequency()
+
+            for _ in range(n_reps):
+                orbit_correction(interface=interface, response_matrix=response_matrix,
+                                 rf=True, method=method, parameter=alpha, gain=gain,
+                                 virtual=virtual, apply=True)
+
+            orbit_x, orbit_y = SC.bpm_system.capture_orbit()
+            new_rms = np.sqrt(np.nanmean(orbit_x**2) + np.nanmean(orbit_y**2))
+
+            if new_rms < best_rms:
+                best_rms = new_rms
+                logger.info(f'  alpha={alpha}: RMS improved to {new_rms*1e6:.1f} um')
+            else:
+                SC.magnet_settings.set_many(saved)
+                interface.set_rf_main_frequency(saved_rf)
+                logger.info(f'  alpha={alpha}: RMS worsened ({new_rms*1e6:.1f} um), reverting')
+                break
+
+        logger.info(f'Orbit+dispersion correction: final RMS = {best_rms*1e6:.1f} um')

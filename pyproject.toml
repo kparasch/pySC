@@ -61,6 +61,14 @@ doc = [
     "sphinx-rtd-theme"
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "slow: tests that involve AT tracking (deselect with '-m \"not slow\"')",
+    "regression: regression tests for known bugs",
+]
+addopts = "--tb=short -q"
+
 [project.urls]
 Homepage = "https://github.com/kparasch/pySC"
 Repository = "https://github.com/kparasch/pySC.git"

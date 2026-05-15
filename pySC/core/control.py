@@ -2,7 +2,7 @@ from __future__ import annotations
 from pydantic import BaseModel, PrivateAttr, PositiveInt
 from typing import Optional, Literal, Union, TYPE_CHECKING
 import logging
-from .types import BaseModelWithSave
+from .types import BaseModelWithSave, MagnetType
 
 if TYPE_CHECKING:
     from .magnet import ControlMagnetLink
@@ -21,6 +21,10 @@ class IndivControl(BaseModel, extra="forbid"):
     component: Literal["A", "B"]
     order: PositiveInt
     is_integrated: bool
+
+    @property
+    def magnet_type(self) -> MagnetType:
+        return MagnetType.from_component_order(component=self.component, order=self.order)
 
 class KnobControl(BaseModel, extra="forbid"):
     control_names: list[str]

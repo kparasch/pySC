@@ -86,6 +86,8 @@ class InjectionSettings(BaseModel, extra="forbid"):
         invW[4,4] = 1
         invW[5,5] = 1
 
+        return invW
+
     def generate_orbit_centered_bunch(self, use_design=False) -> np.ndarray:
         # When array will be transposed to go to AT, it will be F_CONTIGUOUS :)
         bunch = np.zeros([self.n_particles, 6])
@@ -127,7 +129,7 @@ class InjectionSettings(BaseModel, extra="forbid"):
 
             sbety = self.bety**0.5
             bunch[:, 2] = sbety * bunch_norm[:, 2]
-            bunch[:, 3] = -self.alfx / sbety * bunch_norm[:, 2] + ( 1. / sbety ) * bunch_norm[: , 3]
+            bunch[:, 3] = -self.alfy / sbety * bunch_norm[:, 2] + ( 1. / sbety ) * bunch_norm[: , 3]
 
             bunch[:, 4] = bunch_norm[:, 4]
             bunch[:, 5] = bunch_norm[:, 5]

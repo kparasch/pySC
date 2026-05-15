@@ -25,7 +25,7 @@ def configure_supports(SC: SimulatedCommissioning):
     for level_conf in supports_conf:
         level = level_conf['level']
 
-        if 'name' in level_conf['name']:
+        if 'name' in level_conf:
             level_name = level_conf['name'] 
             category_name = level_name
         else:

@@ -51,6 +51,9 @@ def configure_injection(SC: "SimulatedCommissioning") -> None:
         if var in injection_conf:
             setattr(SC.injection, var, float(injection_conf[var]))
 
+    if 'n_particles' in injection_conf:
+        SC.injection.n_particles = int(injection_conf['n_particles'])
+
     for var in ['x_error_syst', 'px_error_syst', 'y_error_syst', 'py_error_syst', 'tau_error_syst', 'delta_error_syst',
                 'x_error_stat', 'px_error_stat', 'y_error_stat', 'py_error_stat', 'tau_error_stat', 'delta_error_stat']:
         if var in injection_conf:

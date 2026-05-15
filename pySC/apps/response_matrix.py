@@ -1,5 +1,5 @@
 from pydantic import BaseModel, PrivateAttr, model_validator, ConfigDict
-from typing import Optional, Literal
+from typing import Optional, Literal, Any
 from ..core.types import NPARRAY
 import numpy as np
 import logging
@@ -67,8 +67,9 @@ class ResponseMatrix(BaseModel):
     _inverse_RM: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
     _inverse_RM_H: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
     _inverse_RM_V: Optional[InverseResponseMatrix] = PrivateAttr(default=None)
+    _rf_weight_is_default: bool = PrivateAttr(default=True)
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     @property
     def RM(self):
@@ -122,6 +123,8 @@ class ResponseMatrix(BaseModel):
                                'Misinterpretation of the output plane is guaranteed!')
             self.output_planes = ['H'] * Nh + ['V'] * (self._n_outputs - Nh)
 
+        user_provided_rf_weight = self.rf_weight is not None
+        self._rf_weight_is_default = not user_provided_rf_weight
         if self.rf_response is None:
             self.rf_response = np.zeros(self._n_outputs)
         else:
@@ -130,7 +133,7 @@ class ResponseMatrix(BaseModel):
                 logger.warning('RF response will be removed.')
                 self.rf_response = np.zeros(self._n_outputs)
             else: # self.rf_response is not None and is valid
-                if self.rf_weight is None:
+                if not user_provided_rf_weight:
                     default_rf_weight = self.default_rf_weight()
                     logger.info(f'Setting the rf_weight by default to {default_rf_weight}.')
                     self.rf_weight = default_rf_weight
@@ -202,6 +205,9 @@ class ResponseMatrix(BaseModel):
             n_plane = sum(output_plane_mask)
             assert len_rf == n_plane, f"Incorrect rf_response length for plane {plane}: {len_rf} (instead of {n_plane})."
             self.rf_response[output_plane_mask] = np.array(rf_response)
+        if self._rf_weight_is_default:
+            self.rf_weight = self.default_rf_weight()
+            logger.info(f'Setting the rf_weight by default to {self.rf_weight}, after rf_response was changed.')
         return
 
     def get_matrix_in_plane(self, plane: Optional[PLANE_TYPE] = None) -> np.array:
@@ -309,8 +315,8 @@ class ResponseMatrix(BaseModel):
         self.disable_outputs(self.output_names)
 
     def disable_all_outputs_but(self, outputs: list[str]):
-        self.disable_all_inputs()
-        self.enable_inputs(outputs)
+        self.disable_all_outputs()
+        self.enable_outputs(outputs)
 
     def enable_all_outputs(self):
         self.bad_outputs = []
@@ -318,47 +324,7 @@ class ResponseMatrix(BaseModel):
     def build_pseudoinverse(self, method='svd_cutoff', parameter: float = 0., virtual: bool = False,
                             rf: bool = False, plane: Optional[PLANE_TYPE] = None):
         logger.info(f'(Re-)Building pseudoinverse RM with {method=}, {parameter=}, {plane=}, {virtual=}, {rf=}.')
-        assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
-        if plane is None:
-            matrix = self.matrix[self._output_mask, :][:, self._input_mask]
-            tot_output_mask = self._output_mask
-            tot_input_mask = self._input_mask
-        elif plane in ['H', 'V']:
-            output_plane_mask = self.get_output_plane_mask(plane)
-            input_plane_mask = self.get_input_plane_mask(plane)
-            tot_output_mask = np.logical_and(self._output_mask, output_plane_mask)
-            tot_input_mask = np.logical_and(self._input_mask, input_plane_mask)
-            matrix = self.matrix[tot_output_mask, :][:, tot_input_mask]
-
-        # at this point, matrix has bad outputs/inputs (bpms/correctors) removed.
-        # also has only plane-specific outputs/inputs if requested.
-
-        # add extra column/row for the rf response or to enforce that the sum of all outputs is zero.
-        if virtual or rf:
-            rows, cols = matrix.shape
-            if virtual:
-                rows += 1
-            if rf:
-                cols += 1
-            matrix_to_invert = np.zeros((rows, cols), dtype=float)
-            matrix_to_invert[:matrix.shape[0], :matrix.shape[1]] = matrix
-            if virtual:
-                matrix_to_invert[-1, :matrix.shape[1]] = self.virtual_weight
-            if rf:
-                rf_response = self.rf_response
-                if plane is not None:
-                    rf_response = rf_response[tot_output_mask] # tot_output_mask will have been defined earlier always.
-
-                matrix_to_invert[:matrix.shape[0], -1] = self.rf_weight * rf_response
-        else:
-            matrix_to_invert = matrix
-
-        # matrix_to_invert is extended by one row and/or column if rf and/or virtual was enabled.
-
-        # handle weights
-        rows, cols = matrix.shape
-        matrix_to_invert[:, :cols] = np.multiply(matrix_to_invert[:, :cols], self.input_weights[tot_input_mask])
-        matrix_to_invert[:rows, :] = np.multiply(matrix_to_invert[:rows, :], self.output_weights[tot_output_mask][:, np.newaxis])
+        matrix_to_invert = self._build_matrix(virtual=virtual, rf=rf, plane=plane)
 
         U, s_mat, Vh = np.linalg.svd(matrix_to_invert, full_matrices=False)
         if method == 'svd_cutoff':
@@ -387,10 +353,14 @@ class ResponseMatrix(BaseModel):
 
     def solve(self, output: np.array, method: str = 'svd_cutoff', parameter: float = 0., virtual: bool = False,
               zerosum: Optional[bool] = None, rf: bool = False, plane: Optional[Literal['H', 'V']] = None,
-              virtual_target: float = 0) -> np.ndarray:
+              virtual_target: float = 0, solver: Optional[Any] = None) -> np.ndarray:
         if zerosum is not None:
             logger.warning('`zerosum` argument in ResponseMatrix.solve is deprecated. Please use `virtual` instead.')
             virtual = zerosum
+        if solver is not None and method != 'solver':
+            logger.warning(f'solver was provided but method != "solver" ({method=}).')
+        if method == 'solver' and solver is None:
+            raise Exception('method == "solver" but no solver was provided.')
 
         assert len(self.bad_outputs) != self.matrix.shape[0], 'All outputs are disabled!'
         assert len(self.bad_inputs) != self.matrix.shape[1], 'All inputs are disabled!'
@@ -411,7 +381,7 @@ class ResponseMatrix(BaseModel):
             expected_shape = (expected_shape[0] + 1, expected_shape[1])
 
 
-        if method != 'micado':
+        if method not in ('micado', 'solver'):
             if plane is None:
                 active_inverse_RM = self._inverse_RM
             elif plane == 'H':
@@ -452,6 +422,13 @@ class ResponseMatrix(BaseModel):
         bad_output[np.isnan(bad_output)] = 0
         good_output = bad_output[np.logical_and(self._output_mask, output_plane_mask)]
 
+        if virtual:
+            virtual_good_output = np.zeros(len(good_output) + 1)
+            virtual_good_output[:-1] = good_output
+            virtual_good_output[-1] = virtual_target * self.virtual_weight
+            good_output_to_solve = virtual_good_output
+        else:
+            good_output_to_solve = good_output
 
         if method == 'micado':
             bad_input = self.micado(good_output, int(parameter), plane=plane)
@@ -459,38 +436,36 @@ class ResponseMatrix(BaseModel):
                 logger.warning('virtual option is incompatible with the micado method and will be ignored.')
             if rf:
                 logger.warning('Rf option is incompatible with the micado method and will be ignored.')
+            return bad_input
+
+        if method == 'solver':
+            matrix_to_solve = self._build_matrix(virtual=virtual, rf=rf, plane=plane)
+            good_input = self._solver_fit(solver, matrix_to_solve, good_output_to_solve)
         else:
             if active_inverse_RM.shape != expected_shape:
                 raise Exception('Error: shapes of Response matrix, excluding bad inputs and outputs do not match: \n' 
                  + f'inverse RM shape = {active_inverse_RM.shape},\n'
                  + f'expected inputs = {expected_shape[0]},\n'
                  + f'expected outputs = {expected_shape[1]},')
+            good_input = active_inverse_RM.dot(good_output_to_solve)
 
-            if virtual:
-                virtual_good_output = np.zeros(len(good_output) + 1)
-                virtual_good_output[:-1] = good_output
-                virtual_good_output[-1] = virtual_target * self.virtual_weight
-                good_input = active_inverse_RM.dot(virtual_good_output)
-            else:
-                good_input = active_inverse_RM.dot(good_output)
+        if rf: # split rf from the other inputs
+            rf_input = good_input[-1]
+            good_input = good_input[:-1]
 
-            if rf: # split rf from the other inputs
-                rf_input = good_input[-1]
-                good_input = good_input[:-1]
+        final_input_length = self._n_inputs
+        if rf:
+            final_input_length += 1
 
-            final_input_length = self._n_inputs
-            if rf:
-                final_input_length += 1
+        bad_input = np.zeros(final_input_length, dtype=float)
+        input_plane_mask = np.ones_like(self._input_mask, dtype=bool)
+        if plane in ['H', 'V']:
+            input_plane_mask = np.array(self.input_planes) == plane
+        bad_input[:self._n_inputs][np.logical_and(self._input_mask, input_plane_mask)] = good_input
 
-            bad_input = np.zeros(final_input_length, dtype=float)
-            input_plane_mask = np.ones_like(self._input_mask, dtype=bool)
-            if plane in ['H', 'V']:
-                input_plane_mask = np.array(self.input_planes) == plane
-            bad_input[:self._n_inputs][np.logical_and(self._input_mask, input_plane_mask)] = good_input
-
-            bad_input[:self._n_inputs] = np.multiply(bad_input[:self._n_inputs], self.input_weights)
-            if rf:
-                bad_input[-1] = rf_input * self.rf_weight
+        bad_input[:self._n_inputs] = np.multiply(bad_input[:self._n_inputs], self.input_weights)
+        if rf:
+            bad_input[-1] = rf_input * self.rf_weight
         return bad_input
 
     def micado(self, good_output: np.array, n: int, plane: Optional[PLANE_TYPE] = None) -> np.ndarray:
@@ -510,6 +485,8 @@ class ResponseMatrix(BaseModel):
 
         for _ in range(n):
             best_chi2 = np.inf
+            best_input = None
+            best_trim = None
             for ii in all_inputs:
                 if ii in already_used_inputs or ii in self._bad_inputs:
                     continue
@@ -520,11 +497,66 @@ class ResponseMatrix(BaseModel):
                     best_chi2 = chi2
                     best_input = ii
                     best_trim = trim
+            if best_input is None:
+                break
             already_used_inputs.append(best_input)
             bad_input[best_input] = best_trim
             residual -= best_trim * good_matrix[:, best_input]
 
         return bad_input
+
+    def _build_matrix(self, virtual: bool = False, rf: bool = False, plane: Optional[PLANE_TYPE] = None) -> np.ndarray:
+        assert plane is None or plane in ['H', 'V'], f'Unknown plane: {plane}.'
+        if plane is None:
+            matrix = self.matrix[self._output_mask, :][:, self._input_mask]
+            tot_output_mask = self._output_mask
+            tot_input_mask = self._input_mask
+        else:
+            output_plane_mask = self.get_output_plane_mask(plane)
+            input_plane_mask = self.get_input_plane_mask(plane)
+            tot_output_mask = np.logical_and(self._output_mask, output_plane_mask)
+            tot_input_mask = np.logical_and(self._input_mask, input_plane_mask)
+            matrix = self.matrix[tot_output_mask, :][:, tot_input_mask]
+
+        if virtual or rf:
+            rows, cols = matrix.shape
+            if virtual:
+                rows += 1
+            if rf:
+                cols += 1
+            matrix_to_solve = np.zeros((rows, cols), dtype=float)
+            matrix_to_solve[:matrix.shape[0], :matrix.shape[1]] = matrix
+            if virtual:
+                matrix_to_solve[-1, :matrix.shape[1]] = self.virtual_weight
+            if rf:
+                rf_response = self.rf_response
+                if plane is not None:
+                    rf_response = rf_response[tot_output_mask]
+                matrix_to_solve[:matrix.shape[0], -1] = self.rf_weight * rf_response
+        else:
+            matrix_to_solve = matrix.copy()
+
+        rows, cols = matrix.shape
+        matrix_to_solve[:, :cols] = np.multiply(matrix_to_solve[:, :cols], self.input_weights[tot_input_mask])
+        matrix_to_solve[:rows, :] = np.multiply(matrix_to_solve[:rows, :], self.output_weights[tot_output_mask][:, np.newaxis])
+        return matrix_to_solve
+
+    @staticmethod
+    def _solver_fit(solver: Any, matrix: np.ndarray, output: np.ndarray) -> np.ndarray:
+        if not hasattr(solver, 'fit'):
+            raise TypeError('External solver must define a fit(X, y) method.')
+        solver.fit(matrix, output)
+        if not hasattr(solver, 'coef_'):
+            raise TypeError('External solver must expose fitted coefficients via `coef_`.')
+        good_input = np.asarray(solver.coef_, dtype=float)
+        if good_input.ndim != 1:
+            good_input = good_input.reshape(-1)
+        if good_input.shape[0] != matrix.shape[1]:
+            raise ValueError(
+                f'External solver returned {good_input.shape[0]} coefficients, expected {matrix.shape[1]}.'
+            )
+        return good_input
+
 
     @classmethod
     def from_json(cls, json_filename: str) -> "ResponseMatrix":

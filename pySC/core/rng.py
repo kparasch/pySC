@@ -3,7 +3,7 @@ from typing import Union, Optional
 from numpy.random import default_rng
 import numpy as np
 
-class RNG(BaseModel):
+class RNG(BaseModel, extra="forbid"):
     seed: int
     rng_state: Optional[dict[str, Union[str, int, dict[str, int]]]] = None
     default_truncation: Optional[float] = None

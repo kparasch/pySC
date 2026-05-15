@@ -41,6 +41,74 @@ def test_generate_trajectory_bba_config(sc_with_traj_rm):
         assert 'VCORR' in entry
 
 
+def _sextupole_b3_controls(sc):
+    """Return normal sextupole controls registered on the test SC."""
+    return [
+        name for name, control in sc.magnet_settings.controls.items()
+        if control.info.component == "B" and control.info.order == 3
+    ]
+
+
+def test_generate_trajectory_bba_config_supports_sextupole_magnets(sc_with_traj_rm):
+    """Trajectory BBA config labels normal sextupole BBA magnets."""
+    sc = sc_with_traj_rm
+    original_bba_magnets = sc.tuning.bba_magnets
+    try:
+        sc.tuning.bba_magnets = _sextupole_b3_controls(sc)
+
+        config = Trajectory_BBA_Configuration.generate_config(
+            SC=sc,
+            max_dx_at_bpm=1e-3,
+            max_modulation=0.2e-3,
+            max_dx_at_bpm_sextupole=2e-3,
+            max_modulation_sextupole=0.1e-3,
+            n_downstream_bpms=3,
+            max_ncorr_index=10,
+        )
+    finally:
+        sc.tuning.bba_magnets = original_bba_magnets
+
+    assert len(config.config) == len(sc.bpm_system.names)
+    assert {entry["magnet_type"] for entry in config.config.values()} == {"normal_sextupole"}
+
+
+def test_generate_trajectory_bba_config_ignore_sextupoles(sc_with_traj_rm):
+    """ignore_sextupoles removes normal sextupole BBA magnets from config selection."""
+    sc = sc_with_traj_rm
+    original_bba_magnets = sc.tuning.bba_magnets
+    try:
+        sc.tuning.bba_magnets = _sextupole_b3_controls(sc) + original_bba_magnets
+
+        config = Trajectory_BBA_Configuration.generate_config(
+            SC=sc,
+            ignore_sextupoles=True,
+            n_downstream_bpms=3,
+            max_ncorr_index=10,
+        )
+    finally:
+        sc.tuning.bba_magnets = original_bba_magnets
+
+    assert "normal_sextupole" not in {entry["magnet_type"] for entry in config.config.values()}
+
+
+def test_generate_trajectory_bba_config_raises_when_filter_leaves_no_magnets(sc_with_traj_rm):
+    """ignore_sextupoles fails clearly when only sextupole BBA magnets exist."""
+    sc = sc_with_traj_rm
+    original_bba_magnets = sc.tuning.bba_magnets
+    try:
+        sc.tuning.bba_magnets = _sextupole_b3_controls(sc)
+
+        with pytest.raises(AssertionError, match="No BBA magnets available"):
+            Trajectory_BBA_Configuration.generate_config(
+                SC=sc,
+                ignore_sextupoles=True,
+                n_downstream_bpms=3,
+                max_ncorr_index=10,
+            )
+    finally:
+        sc.tuning.bba_magnets = original_bba_magnets
+
+
 @pytest.mark.xfail(reason="HMBA single-cell ring lacks sufficient BPMs downstream for trajectory BBA")
 def test_trajectory_bba_single_bpm(sc_with_traj_rm):
     """trajectory_bba runs without error on a single BPM."""

@@ -1,10 +1,12 @@
 """Tests for pySC.utils.rdt: Resonance Driving Terms and related functions."""
 import numpy as np
 import pytest
+from types import SimpleNamespace
 
 from pySC.utils.rdt import (
     binomial_coeff,
     feeddown,
+    get_integrated_strengths_with_feeddown,
     omega,
     FACTORIAL,
     S4,
@@ -58,16 +60,16 @@ class TestFeeddown:
             assert result == pytest.approx(AB[n], abs=1e-14)
 
     def test_feeddown_with_offset(self):
-        """feeddown with non-zero r0 includes higher-order contributions."""
+        """feeddown with non-zero r0 uses the pySC RDT sign convention."""
         # For a pure quadrupole: AB = [0, K] (K at index 1)
         K = 1.0 + 0.0j
         AB = np.array([0.0 + 0.0j, K])
         r0 = 0.001 + 0.0j  # 1 mm horizontal offset
 
-        # feeddown(AB, r0, n=0) = AB[0]*C(0,0)*r0^0 + AB[1]*C(1,0)*r0^1
-        #                        = 0 + K * 1 * r0
+        # feeddown(AB, r0, n=0) = AB[0]*C(0,0)*(-r0)^0 + AB[1]*C(1,0)*(-r0)^1
+        #                        = 0 - K * r0
         result = feeddown(AB, r0, n=0)
-        expected = K * r0
+        expected = -K * r0
         assert result == pytest.approx(expected, abs=1e-14)
 
         # feeddown(AB, r0, n=1) = AB[1]*C(1,1)*r0^0 = K
@@ -81,15 +83,46 @@ class TestFeeddown:
         AB = np.array([0.0j, 0.0j, S])
         r0 = 0.002 + 0.001j
 
-        # Feed-down to n=1: S * C(2,1) * r0^1 = S * 2 * r0
+        # Feed-down to n=1: S * C(2,1) * (-r0)^1 = -S * 2 * r0
         result = feeddown(AB, r0, n=1)
-        expected = S * 2 * r0
+        expected = -S * 2 * r0
         assert result == pytest.approx(expected, abs=1e-14)
 
-        # Feed-down to n=0: S * C(2,0) * r0^2 = S * r0^2
+        # Feed-down to n=0: S * C(2,0) * (-r0)^2 = S * r0^2
         result = feeddown(AB, r0, n=0)
         expected = S * r0**2
         assert result == pytest.approx(expected, abs=1e-14)
+
+
+class TestIntegratedStrengthsWithFeeddown:
+    def test_uses_average_closed_orbit_for_feeddown(self):
+        """Feeddown uses the average closed orbit across the magnet element."""
+        magnet = SimpleNamespace(
+            sim_index=1,
+            max_order=1,
+            B=[0.0, 2.0],
+            A=[0.0, 0.0],
+            length=0.5,
+        )
+        twiss = {
+            's': np.array([0.0, 1.0, 2.0]),
+            'x': np.array([0.0, 0.002, 0.004]),
+            'y': np.zeros(3),
+        }
+        sc = SimpleNamespace(
+            lattice=SimpleNamespace(get_twiss=lambda use_design=False: twiss),
+            magnet_settings=SimpleNamespace(magnets={'q1': magnet}),
+            support_system=SimpleNamespace(
+                get_total_offset=lambda index: (0.0, 0.0),
+                get_total_rotation=lambda index: (0.0, 0.0, 0.0),
+            ),
+        )
+
+        strengths = get_integrated_strengths_with_feeddown(sc, use_design=False)
+
+        # x_co = 0.5 * (0.002 + 0.004) = 0.003, r0 = -x_co.
+        # feeddown uses (-r0), so B1 feeddown is K1 * L * x_co.
+        assert strengths['norm'][0][1] == pytest.approx(2.0 * 0.5 * 0.003)
 
 
 class TestRot2D:
@@ -229,6 +262,17 @@ def _make_synthetic_strengths(n_elements=20, sext_indices=None, sext_k2l=50.0):
     return strengths
 
 
+def _average_refpoint_values(values, q=None):
+    """Average neighboring refpoint values, unwrapping the periodic endpoint if needed."""
+    averaged = np.zeros_like(values)
+    averaged[:-1] = 0.5 * (values[:-1] + values[1:])
+    if q is None:
+        averaged[-1] = 0.5 * (values[-1] + values[0])
+    else:
+        averaged[-1] = 0.5 * (values[-1] + values[0] + q)
+    return averaged
+
+
 class TestHjklm:
     """Tests for hjklm using synthetic twiss and integrated strengths."""
 
@@ -339,11 +383,12 @@ class TestFjklm:
         """Compare fjklm against the analytic RDT for a single thin sextupole.
 
         For a single sextupole at index s with integrated strength K2L,
-        the driving term h21000 at that element is:
-          h_s = -K2L / (8 * 1) * betx_s^(3/2)
+        the driving term h21000 at that element is evaluated with element-center
+        averaged optics:
+          h_s = -K2L / (8 * 1) * avbetx_s^(3/2)
         and the RDT at observation point i (unnormalized) is:
           f_i = h_s * exp(i * (j-k) * dphi_x)
-        where dphi_x is the (wrapped) phase advance from s to i.
+        where dphi_x is the wrapped phase advance between averaged phases.
 
         Regression: the original fjklm used np.abs on phase differences,
         which destroyed the sign needed for correct wrapping.
@@ -361,18 +406,45 @@ class TestFjklm:
         f = fjklm(j=2, k=1, l=0, m=0, integrated_strengths=strengths,
                   twiss=twiss, normalized=False)
 
-        # Analytic: h21000 at sextupole location
+        # Analytic: h21000 at sextupole location using averaged element-center optics
         # h = -K2L / (2! * 1! * 0! * 0! * 2^3) * betx^(3/2)
         #   = -K2L / (2 * 1 * 1 * 1 * 8) * betx^(3/2)
         #   = -K2L / 16 * betx^(3/2)
-        betx_s = twiss['betx'][sext_idx]
-        h_analytic = -K2L / 16 * betx_s**(3./2)
+        avbetx = _average_refpoint_values(twiss['betx'])
+        avmux = _average_refpoint_values(twiss['mux'], q=qx)
+        h_analytic = -K2L / 16 * avbetx[sext_idx]**(3./2)
 
         for ii in range(N + 1):
-            dphi = 2 * np.pi * (twiss['mux'][ii] - twiss['mux'][sext_idx])
+            dphi = 2 * np.pi * (avmux[ii] - avmux[sext_idx])
             if dphi < 0:
                 dphi += 2 * np.pi * qx
             # j-k = 1 for h21000
+            f_analytic = h_analytic * np.exp(1j * dphi)
+            np.testing.assert_allclose(f[ii], f_analytic, atol=1e-10,
+                                       err_msg=f"Mismatch at element {ii}")
+
+    def test_fjklm_averages_periodic_endpoint_phase(self):
+        """The final refpoint phase average is unwrapped by one tune."""
+        N = 20
+        qx = 0.31
+        qy = 0.22
+        sext_idx = N
+        K2L = 50.0
+
+        twiss = _make_synthetic_twiss(n_elements=N, qx=qx, qy=qy)
+        strengths = _make_synthetic_strengths(n_elements=N, sext_indices=[sext_idx], sext_k2l=K2L)
+
+        f = fjklm(j=2, k=1, l=0, m=0, integrated_strengths=strengths,
+                  twiss=twiss, normalized=False)
+
+        avbetx = _average_refpoint_values(twiss['betx'])
+        avmux = _average_refpoint_values(twiss['mux'], q=qx)
+        h_analytic = -K2L / 16 * avbetx[sext_idx]**(3./2)
+
+        for ii in range(N + 1):
+            dphi = 2 * np.pi * (avmux[ii] - avmux[sext_idx])
+            if dphi < 0:
+                dphi += 2 * np.pi * qx
             f_analytic = h_analytic * np.exp(1j * dphi)
             np.testing.assert_allclose(f[ii], f_analytic, atol=1e-10,
                                        err_msg=f"Mismatch at element {ii}")

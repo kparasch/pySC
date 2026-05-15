@@ -70,6 +70,56 @@ def test_gain_corrections_default_ones(sc):
 
 
 # ---------------------------------------------------------------------------
+# backwards-compatible field initialisation
+# ---------------------------------------------------------------------------
+
+def test_bpm_system_initializes_missing_empty_arrays():
+    """Older payloads with BPM indices get missing BPM arrays initialized."""
+    bpm = BPMSystem(
+        indices=[10, 20, 30],
+        names=['BPM1', 'BPM2', 'BPM3'],
+        calibration_errors_x=[0.0, 0.0, 0.0],
+        calibration_errors_y=[0.0, 0.0, 0.0],
+        noise_co_x=[0.0, 0.0, 0.0],
+        noise_co_y=[0.0, 0.0, 0.0],
+        noise_tbt_x=[0.0, 0.0, 0.0],
+        noise_tbt_y=[0.0, 0.0, 0.0],
+    )
+
+    for field in ['offsets_x', 'offsets_y', 'rolls', 'bba_offsets_x', 'bba_offsets_y',
+                  'reference_x', 'reference_y']:
+        np.testing.assert_array_equal(getattr(bpm, field), np.zeros(3), err_msg=field)
+
+    np.testing.assert_array_equal(bpm.gain_corrections_x, np.ones(3))
+    np.testing.assert_array_equal(bpm.gain_corrections_y, np.ones(3))
+
+
+def test_bpm_system_initialize_empty_arrays_preserves_existing_values():
+    """initialize_empty_arrays fills only empty fields and preserves supplied arrays."""
+    bpm = BPMSystem(
+        indices=[10, 20],
+        offsets_x=[1.0, 2.0],
+        gain_corrections_x=[3.0, 4.0],
+    )
+
+    bpm.initialize_empty_arrays()
+
+    np.testing.assert_array_equal(bpm.offsets_x, np.array([1.0, 2.0]))
+    np.testing.assert_array_equal(bpm.gain_corrections_x, np.array([3.0, 4.0]))
+    np.testing.assert_array_equal(bpm.offsets_y, np.zeros(2))
+    np.testing.assert_array_equal(bpm.gain_corrections_y, np.ones(2))
+
+
+def test_bpm_system_validation_updates_rot_matrices_when_rolls_provided():
+    """Validation still builds rotation matrices when rolls are present."""
+    bpm = BPMSystem(indices=[10, 20], rolls=[0.0, 0.1])
+
+    assert bpm._rot_matrices is not None
+    assert bpm._rot_matrices.shape == (2, 2, 2)
+    np.testing.assert_array_almost_equal(bpm._rot_matrices[:, :, 0], np.eye(2))
+
+
+# ---------------------------------------------------------------------------
 # einsum rotation contraction
 # ---------------------------------------------------------------------------
 

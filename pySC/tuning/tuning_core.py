@@ -284,12 +284,14 @@ class Tuning(BaseModel, extra="forbid"):
             setpoint = self._parent.design_magnet_settings.get(control_name)
             self._parent.magnet_settings.set(control_name, setpoint)
 
-    def generate_trajectory_bba_config(self, max_dx_at_bpm: float = 1e-3, 
+    def generate_trajectory_bba_config(self, max_dx_at_bpm: float = 1e-3,
                                        max_modulation: float = 0.2e-3,
-                                       n_downstream_bpms: int = 50, 
+                                       n_downstream_bpms: int = 50,
                                        max_ncorr_index: int = 10,
                                        max_modulation_sextupole: Optional[float] = None,
-                                       max_dx_at_bpm_sextupole: Optional[float] = None) -> None:
+                                       max_dx_at_bpm_sextupole: Optional[float] = None,
+                                       ignore_sextupoles: bool = False,
+                                      ) -> None:
         config = Trajectory_BBA_Configuration.generate_config(SC=self._parent,
                                                               max_dx_at_bpm=max_dx_at_bpm,
                                                               max_modulation=max_modulation,
@@ -297,15 +299,20 @@ class Tuning(BaseModel, extra="forbid"):
                                                               max_ncorr_index=max_ncorr_index,
                                                               max_dx_at_bpm_sextupole=max_dx_at_bpm_sextupole,
                                                               max_modulation_sextupole=max_modulation_sextupole,
+                                                              ignore_sextupoles=ignore_sextupoles,
                                                               )
         self.trajectory_bba_config = config
         return
 
-    def generate_orbit_bba_config(self, max_dx_at_bpm: float = 0.3e-3, 
-                                       max_modulation: float = 20e-6) -> None:
+    def generate_orbit_bba_config(self, max_dx_at_bpm: float = 0.3e-3,
+                                  max_modulation: float = 20e-6,
+                                  ignore_sextupoles: bool = False,
+                                 ) -> None:
         config = Orbit_BBA_Configuration.generate_config(SC=self._parent,
                                                          max_dx_at_bpm=max_dx_at_bpm,
-                                                         max_modulation=max_modulation)
+                                                         max_modulation=max_modulation,
+                                                         ignore_sextupoles=ignore_sextupoles,
+                                                        )
         self.orbit_bba_config = config
         return
 

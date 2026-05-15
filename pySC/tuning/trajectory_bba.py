@@ -132,7 +132,7 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
             bba_magnet_response_x = np.sqrt(target_betx * source_betx) * np.sin(2*np.pi*(target_mux - source_mux))
             bba_magnet_response_y = np.sqrt(target_bety * source_bety) * np.sin(2*np.pi*(target_muy - source_muy))
 
-            if magnet_type is MagnetType.norm_quad: 
+            if magnet_type is MagnetType.norm_quad:
                 max_response = float(np.max(np.abs(bba_magnet_response_x)))
             elif magnet_type is MagnetType.skew_quad:
                 max_response = float(np.max(np.abs(bba_magnet_response_y)))
@@ -167,7 +167,7 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
                 elif magnet_type is MagnetType.norm_sext:
                     vcorr_delta = max_dx_at_bpm_sextupole/max_V_response
 
-            if magnet_type is MagnetType.norm_quad: 
+            if magnet_type is MagnetType.norm_quad:
                 max_response = float(np.max(np.abs(bba_magnet_response_y)))
             elif magnet_type is MagnetType.skew_quad:
                 max_response = float(np.max(np.abs(bba_magnet_response_x)))

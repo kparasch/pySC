@@ -130,7 +130,7 @@ class BBA_Measurement(BaseModel, extra="forbid"):
                 data['magnet_type'] = MagnetType.skew_quad
             else:
                 data['magnet_type'] = MagnetType.norm_quad
-            del data['magnet_type']
+            del data['quad_is_skew']
         return data
 
     def __init__(self, **kwargs):

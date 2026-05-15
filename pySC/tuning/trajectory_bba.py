@@ -125,8 +125,8 @@ class Trajectory_BBA_Configuration(BaseModel, extra="forbid"):
             source_muy = muy[bba_magnet_index]
 
             # make response zero in bpms upstream of bba magnet by setting equal phase advances
-            target_mux[target_mux < source_mux] = source_mux 
-            target_muy[target_muy < source_muy] = source_muy 
+            target_mux[target_mux < source_mux] = source_mux
+            target_muy[target_muy < source_muy] = source_muy
 
             # sign depends on several things but we take absolute value later, so we ignore it here
             bba_magnet_response_x = np.sqrt(target_betx * source_betx) * np.sin(2*np.pi*(target_mux - source_mux))

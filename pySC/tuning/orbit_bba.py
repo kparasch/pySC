@@ -52,7 +52,7 @@ class Orbit_BBA_Configuration(BaseModel, extra="forbid"):
         if ignore_sextupoles:
             bba_magnets = []
             for control in all_bba_magnets:
-                info = SC.magnet_settings.controls[control].info 
+                info = SC.magnet_settings.controls[control].info
                 assert type(info) is IndivControl, f'BBA magnet of unsupported type: {type(info)}'
                 if info.magnet_type is not MagnetType.norm_sext:
                     bba_magnets.append(control)

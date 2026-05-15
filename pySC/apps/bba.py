@@ -464,7 +464,7 @@ class BBAAnalysis(BaseModel):
             # c -> intercepts
 
             quadratics = p[0]
-            centers = - 0.5 * (p[1] / p[0]) 
+            centers = - 0.5 * (p[1] / p[0])
             quadratics_err = np.sqrt(pcov[0,0])
             centers_err = np.abs(centers) * np.sqrt(pcov[0,0] / p[0]**2 + pcov[1,1] / p[1] ** 2 - 2 * pcov[0, 1] / p[0] / p[1])
 

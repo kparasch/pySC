@@ -1,13 +1,13 @@
+error_table:
+  magnet_calibration: 0
+  bpm_calibration: 0
+  orbit_noise: 0
+  tbt_noise: 0
+
 lattice:
   lattice_file: ../tests/machine_data/hmba32.mat
   simulator: at
   use: RING
-
-error_table:
-  magnet_calibration: "0"
-  bpm_calibration: "0"
-  orbit_noise: "0"
-  tbt_noise: "0"
 
 magnets:
   quadrupoles:
@@ -18,6 +18,7 @@ magnets:
     regex: ^S[DF]
     components:
       - B3: magnet_calibration
+      - A2: magnet_calibration
       - B1: magnet_calibration
       - A1: magnet_calibration
   correctors:

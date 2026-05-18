@@ -53,8 +53,19 @@ tuning:
   VCORR:
     - sextupoles: A1
     - correctors: A1
+  model_RM_folder: ./model_RM
   multipoles:
     - sextupoles: B3
     - octupoles: B4
   bba_magnets:
     - quadrupoles: B2
+  tune:
+    controls_1:
+      regex: ^QD2
+      component: B2
+    controls_2:
+      regex: ^QF1
+      component: B2
+  c_minus:
+    controls:
+      - sextupoles: A2

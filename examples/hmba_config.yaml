@@ -3,6 +3,8 @@ error_table:
   bpm_calibration: 0
   orbit_noise: 0
   tbt_noise: 0
+  rf_frequency: 0
+  rf_phase: 0
 
 lattice:
   lattice_file: ../tests/machine_data/hmba32.mat
@@ -41,6 +43,8 @@ bpms:
 rf:
   main:
     regex: ^RFC$
+    frequency: rf_frequency
+    phase: rf_phase
 
 tuning:
   HCORR:

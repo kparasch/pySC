@@ -56,9 +56,8 @@ test = [
     "pytest-cov>=3.0",
 ]
 doc = [
-    "sphinx",
-    "travis-sphinx",
-    "sphinx-rtd-theme"
+    "sphinx>=7",
+    "sphinx-rtd-theme>=2",
 ]
 
 [tool.pytest.ini_options]
@@ -72,3 +71,4 @@ addopts = "--tb=short -q"
 [project.urls]
 Homepage = "https://github.com/kparasch/pySC"
 Repository = "https://github.com/kparasch/pySC.git"
+Documentation = "https://accelerator-commissioning.readthedocs.io/"

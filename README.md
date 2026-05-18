@@ -1,6 +1,10 @@
 # pySC
 
+[![Documentation Status](https://readthedocs.org/projects/accelerator-commissioning/badge/?version=latest)](https://accelerator-commissioning.readthedocs.io/en/latest/?badge=latest)
+
 Python Simulated Commissioning toolkit for synchrotrons.
+
+Documentation: https://accelerator-commissioning.readthedocs.io/
 
 ## Installing
 

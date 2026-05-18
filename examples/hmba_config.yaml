@@ -1,0 +1,71 @@
+error_table:
+  magnet_calibration: 0
+  bpm_calibration: 0
+  orbit_noise: 0
+  tbt_noise: 0
+  rf_frequency: 0
+  rf_phase: 0
+
+lattice:
+  lattice_file: ../tests/machine_data/hmba32.mat
+  simulator: at
+  use: RING
+
+magnets:
+  quadrupoles:
+    regex: ^Q
+    components:
+      - B2: magnet_calibration
+  sextupoles:
+    regex: ^S[DF]
+    components:
+      - B3: magnet_calibration
+      - A2: magnet_calibration
+      - B1: magnet_calibration
+      - A1: magnet_calibration
+  correctors:
+    regex: ^SH
+    components:
+      - B1: magnet_calibration
+      - A1: magnet_calibration
+  octupoles:
+    regex: ^O
+    components:
+      - B4: magnet_calibration
+
+bpms:
+  bpms:
+    regex: ^BPM
+    calibration_error: bpm_calibration
+    orbit_noise: orbit_noise
+    tbt_noise: tbt_noise
+
+rf:
+  main:
+    regex: ^RFC$
+    frequency: rf_frequency
+    phase: rf_phase
+
+tuning:
+  HCORR:
+    - sextupoles: B1
+    - correctors: B1
+  VCORR:
+    - sextupoles: A1
+    - correctors: A1
+  model_RM_folder: ./model_RM
+  multipoles:
+    - sextupoles: B3
+    - octupoles: B4
+  bba_magnets:
+    - quadrupoles: B2
+  tune:
+    controls_1:
+      regex: ^QD2
+      component: B2
+    controls_2:
+      regex: ^QF1
+      component: B2
+  c_minus:
+    controls:
+      - sextupoles: A2

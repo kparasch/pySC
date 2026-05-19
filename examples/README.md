@@ -1,7 +1,8 @@
 # Examples
 
 ```bash
-python examples/01_hmba_response_matrices.py
+cd examples
+python 01_hmba_response_matrices.py
 ```
 
-Generated files are written to `examples/output/`.
+Generated files are written to `examples/model_RM/`.

@@ -73,6 +73,7 @@ doc/_build/
 docs/build/
 docs/source/generated/
 examples/output/
+examples/model_RM/
 
 # PyBuilder
 target/

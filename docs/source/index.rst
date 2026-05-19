@@ -9,9 +9,7 @@ pySC is a Python simulated commissioning toolkit for synchrotrons.
 
    installation
    user_guide/index
-   usage
    api
-   readthedocs
 
 Indices and tables
 ==================

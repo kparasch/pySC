@@ -1,7 +1,9 @@
 # Examples
 
 ```bash
-python examples/01_hmba_response_matrices.py
+cd examples
+python 01_hmba_response_matrices.py
+python 05_save_and_reload_sc.py
 ```
 
-Generated files are written to `examples/output/`.
+Generated files are written to `examples/model_RM/` and `examples/output/`.

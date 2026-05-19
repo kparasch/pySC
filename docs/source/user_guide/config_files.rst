@@ -10,8 +10,8 @@ controls.
 
 Build the file in this order.
 
-1. Define the error table
--------------------------
+1. Define shared tables
+-----------------------
 
 ``error_table``
    Defines the named error values used by magnets, BPMs, and RF systems. This
@@ -33,26 +33,34 @@ These names are later reused by entries such as ``B2: magnet_calibration`` or
 ``orbit_noise: orbit_noise``. Keeping the values in one table makes it easy to
 scale or replace the error model without rewriting the hardware sections.
 
-Supported error-table options are user-defined. The keys are names chosen by
-the configuration author, and the values are numeric error amplitudes. Any
-hardware section can then reference those keys.
+The ``error_table`` does not have predefined option names. It can contain any
+combination of ``key: value`` pairs. The keys are chosen by the configuration
+author, and the values are numeric error amplitudes. Hardware sections then
+reference those keys.
 
-Common entries are:
+``parameters``
+   Defines named non-random parameters used by the configuration. Unlike
+   ``error_table``, this table is for deterministic values such as control
+   limits.
 
-``magnet_calibration``
-   Calibration error used by magnet controls.
+For example:
 
-``bpm_calibration``
-   BPM calibration error.
+.. code-block:: yaml
 
-``orbit_noise`` and ``tbt_noise``
-   Closed-orbit and turn-by-turn BPM noise.
+   parameters:
+     quad_limit: 100
 
-``rf_frequency`` and ``rf_phase``
-   RF frequency and phase errors.
+The ``parameters`` table is currently used by magnet ``limits`` entries:
 
-``girder_offsets`` and ``girder_rolls``
-   Support alignment errors for girder-like support structures.
+.. code-block:: yaml
+
+   magnets:
+     quadrupoles:
+       regex: ^Q
+       components:
+         - B2: magnet_calibration
+       limits:
+         - B2: quad_limit
 
 2. Select the lattice
 ---------------------
@@ -344,6 +352,11 @@ When ``from_design`` is true, pySC initializes the injection coordinates and
 Twiss parameters from the design lattice at the start of the ring. Individual
 values can still be overridden explicitly.
 
+Injection errors are configured differently from the other commissioning
+errors. Magnet, BPM, RF, and support errors reference values from
+``error_table``; injection errors must be written directly in the ``injection``
+section with fields such as ``x_error_syst`` or ``x_error_stat``.
+
 .. code-block:: yaml
 
    injection:
@@ -353,6 +366,8 @@ values can still be overridden explicitly.
      bunch_length: 3e-3
      energy_spread: 1e-3
      n_particles: 1000
+     x_error_syst: 1e-4
+     px_error_stat: 2e-5
 
 Supported injection options are:
 

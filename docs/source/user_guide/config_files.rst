@@ -33,6 +33,27 @@ These names are later reused by entries such as ``B2: magnet_calibration`` or
 ``orbit_noise: orbit_noise``. Keeping the values in one table makes it easy to
 scale or replace the error model without rewriting the hardware sections.
 
+Supported error-table options are user-defined. The keys are names chosen by
+the configuration author, and the values are numeric error amplitudes. Any
+hardware section can then reference those keys.
+
+Common entries are:
+
+``magnet_calibration``
+   Calibration error used by magnet controls.
+
+``bpm_calibration``
+   BPM calibration error.
+
+``orbit_noise`` and ``tbt_noise``
+   Closed-orbit and turn-by-turn BPM noise.
+
+``rf_frequency`` and ``rf_phase``
+   RF frequency and phase errors.
+
+``girder_offsets`` and ``girder_rolls``
+   Support alignment errors for girder-like support structures.
+
 2. Select the lattice
 ---------------------
 
@@ -65,6 +86,26 @@ and points to an Xsuite line JSON file:
      lattice_file: my_machine_line.json
      simulator: xsuite
 
+Supported lattice options are:
+
+``lattice_file``
+   Path to the lattice input file.
+
+``simulator``
+   Lattice backend. Supported values are ``at`` and ``xsuite``.
+
+``use``
+   AT-only option selecting the variable to load from a MATLAB lattice file.
+   Defaults to ``RING`` when omitted.
+
+``naming``
+   AT-only option selecting the element attribute used as the pySC element name.
+   Omit it when names are not unique.
+
+``no_6d``
+   Boolean flag controlling whether pySC disables 6D tracking when loading the
+   lattice. The default is ``false``.
+
 3. Declare magnet controls
 --------------------------
 
@@ -94,6 +135,27 @@ Each component points to an entry in ``error_table``.
 Use separate groups when the same physical element type has different roles in
 commissioning. For example, sextupoles can provide sextupole strength controls
 and embedded corrector controls.
+
+Supported magnet-family options are:
+
+``regex`` or ``mapping``
+   Selects lattice elements for the family. ``regex`` matches lattice element
+   names; ``mapping`` points to an explicit name-to-index mapping file.
+
+``components``
+   List of controlled multipole components. Each component maps to an
+   ``error_table`` entry or ``null``.
+
+``invert``
+   List of declared components whose sign should be inverted.
+
+``limits``
+   Optional control limits. Each listed component references a value from the
+   top-level ``parameters`` table.
+
+``dx``, ``dy``, ``dz``, ``roll``, ``yaw``, ``pitch``
+   Optional element misalignment entries. Each value must reference an
+   ``error_table`` entry.
 
 Components without an ``L`` suffix are interpreted as non-integrated strengths.
 Append ``L`` to use integrated strengths instead:
@@ -256,7 +318,72 @@ the RF error model is visible in the YAML file:
 The referenced ``rf_frequency`` and ``rf_phase`` entries are defined in
 ``error_table``. Set them to zero for an ideal RF model.
 
-7. Define tuning families
+Supported RF-system options are:
+
+``regex`` or ``mapping``
+   Selects RF cavities. ``regex`` matches lattice element names; ``mapping``
+   points to an explicit name-to-index mapping file.
+
+``voltage``
+   Error-table entry for cavity voltage errors.
+
+``phase``
+   Error-table entry for cavity phase errors.
+
+``frequency``
+   Error-table entry for cavity frequency errors.
+
+7. Define injection settings
+----------------------------
+
+``injection``
+   Defines the injected beam coordinates, beam parameters, and injection jitter
+   used by tracking-based workflows.
+
+When ``from_design`` is true, pySC initializes the injection coordinates and
+Twiss parameters from the design lattice at the start of the ring. Individual
+values can still be overridden explicitly.
+
+.. code-block:: yaml
+
+   injection:
+     from_design: true
+     emit_x: 1e-9
+     emit_y: 1e-11
+     bunch_length: 3e-3
+     energy_spread: 1e-3
+     n_particles: 1000
+
+Supported injection options are:
+
+``from_design``
+   Boolean flag. When true, initialize coordinates and Twiss parameters from
+   the design lattice. Defaults to true.
+
+``x``, ``px``, ``y``, ``py``, ``tau``, ``delta``
+   Explicit injected beam coordinates.
+
+``betx``, ``alfx``, ``bety``, ``alfy``
+   Explicit injected beam Twiss parameters.
+
+``emit_x`` and ``emit_y``
+   Horizontal and vertical geometric emittances.
+
+``bunch_length`` and ``energy_spread``
+   Longitudinal beam size parameters.
+
+``n_particles``
+   Number of particles used when generating injected bunches.
+
+``x_error_syst``, ``px_error_syst``, ``y_error_syst``, ``py_error_syst``,
+   ``tau_error_syst``, ``delta_error_syst``
+   Systematic injection errors.
+
+``x_error_stat``, ``px_error_stat``, ``y_error_stat``, ``py_error_stat``,
+   ``tau_error_stat``, ``delta_error_stat``
+   Shot-to-shot injection jitter.
+
+8. Define tuning families
 -------------------------
 
 ``tuning``

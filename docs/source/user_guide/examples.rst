@@ -11,3 +11,4 @@ the ``examples/`` directory.
    example_scripts/correct_injection_1turn
    example_scripts/orbit_bba_first_10_bpms
    example_scripts/orbit_bba_multiple_threads_first_10_bpms
+   example_scripts/save_and_reload_sc

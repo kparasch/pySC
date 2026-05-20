@@ -329,6 +329,11 @@ class SupportSystem(BaseModel, extra="forbid"):
             else:
                 self._parent.lattice.update_misalignment(index=eo.index, dx=dx, dy=dy, dz=dz,
                                       roll=roll, yaw=yaw, pitch=pitch)
+                magnet_name = self._parent.magnet_settings.index_mapping.get(eo.index)
+                if magnet_name is not None:
+                    magnet = self._parent.magnet_settings.magnets[magnet_name]
+                    if magnet.is_shifted:
+                        magnet.update()
 
     def update_all(self) -> None:
         for index in self.data['L0'].keys():

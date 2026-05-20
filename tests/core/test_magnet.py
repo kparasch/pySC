@@ -1,7 +1,6 @@
 """Tests for pySC.core.magnet: Magnet, ControlMagnetLink."""
 import pytest
-from unittest.mock import MagicMock, PropertyMock
-
+from unittest.mock import MagicMock
 from pySC.core.magnet import Magnet, ControlMagnetLink
 from pySC.core.control import Control, LinearConv
 
@@ -118,3 +117,81 @@ def test_magnet_update_no_length_raises():
 
     with pytest.raises(AssertionError, match="magnet length not specified"):
         m.update()
+
+
+def test_shifted_magnet_update():
+    """Shifted quadrupole feeds down"""
+
+    design_arc_length = 0.25
+    design_shift = 0.01
+    initial_k1 = 5.0
+    initial_bending_angle = design_shift * initial_k1 * design_arc_length
+    initial_b0 = 0.02
+
+    m, parent = _make_magnet_with_parent(max_order=1, length=design_arc_length)
+    m.is_shifted = True
+    m.bending_length = design_arc_length
+    m.design_shift = design_shift
+    m.design_k1 = initial_k1
+    m.offset_B[0] = initial_b0
+
+    element = MagicMock()
+    element.Length = design_arc_length
+    element.BendingAngle = initial_bending_angle
+    element.EntranceAngle = initial_bending_angle / 2
+    element.ExitAngle = initial_bending_angle / 2
+
+    support_system = MagicMock()
+    support_system.get_total_offset.return_value = (0.0, 0.0)
+    support_system.get_total_rotation.return_value = (0.0, 0.0, 0.0)
+    support_system.data = {'L0': {0: MagicMock(dz=0.0)}}
+    parent._parent.support_system = support_system
+    parent._parent.lattice.ring = {0: element}
+    parent._parent.lattice.design = {0: element}
+
+    ctrl = Control(name="c1", setpoint=initial_k1 * design_arc_length)
+    parent.controls["c1"] = ctrl
+    link = ControlMagnetLink(link_name="lk1", magnet_name=0, control_name="c1", component="B", order=2, is_integrated=True)
+    m._links = [link]
+
+    m.update()
+
+    expected_k1 = initial_k1
+    expected_b0 = initial_b0
+    expected_angle = initial_bending_angle
+    assert m.B[1] == pytest.approx(expected_k1)
+    assert m.B[0] == pytest.approx(expected_b0)
+    assert element.Length == pytest.approx(design_arc_length)
+    assert element.BendingAngle == pytest.approx(expected_angle)
+    assert element.EntranceAngle == pytest.approx(expected_angle/2)
+    assert element.ExitAngle == pytest.approx(expected_angle/2)
+    assert m.length == pytest.approx(design_arc_length)
+    assert m.bending_length == pytest.approx(design_arc_length)
+
+    ctrl.setpoint = 5.2 * design_arc_length
+    m.update()
+
+    expected_k1 = 5.2
+    expected_b0 = initial_b0 + design_shift * (expected_k1 - initial_k1)
+    assert m.B[1] == pytest.approx(expected_k1)
+    assert m.B[0] == pytest.approx(expected_b0)
+    assert element.Length == pytest.approx(design_arc_length)
+    assert element.BendingAngle == pytest.approx(initial_bending_angle)
+    assert element.EntranceAngle == pytest.approx(initial_bending_angle/2)
+    assert element.ExitAngle == pytest.approx(initial_bending_angle/2)
+    assert m.length == pytest.approx(design_arc_length)
+    assert m.bending_length == pytest.approx(design_arc_length)
+
+    support_system.get_total_offset.return_value = (0.001, 0.0)
+    m.update()
+
+    total_shift = design_shift + 0.001
+    expected_b0 = initial_b0 + total_shift * expected_k1 - design_shift * initial_k1
+    assert m.B[1] == pytest.approx(expected_k1)
+    assert m.B[0] == pytest.approx(expected_b0)
+    assert element.Length == pytest.approx(design_arc_length)
+    assert element.BendingAngle == pytest.approx(initial_bending_angle)
+    assert element.EntranceAngle == pytest.approx(initial_bending_angle/2)
+    assert element.ExitAngle == pytest.approx(initial_bending_angle/2)
+    assert m.length == pytest.approx(design_arc_length)
+    assert m.bending_length == pytest.approx(design_arc_length)

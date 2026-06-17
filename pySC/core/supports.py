@@ -35,7 +35,7 @@ class ElementOffset(BaseModel, extra="forbid"):
     supported_by: Optional[tuple[str, int]] = None  # (level, index)
     is_bpm: bool = False
     bpm_number: Optional[int] = None  # BPM number if it is a BPM
-    s: Optional[float] = None  # s position in the ring, to be filled later
+    s: Optional[float] = None  # center s position in the ring, to be filled later
 
 
 class SupportEndpoint(BaseModel, extra="forbid"):
@@ -47,7 +47,7 @@ class SupportEndpoint(BaseModel, extra="forbid"):
     dx: float = 0.0
     dy: float = 0.0
     ds: float = 0.0
-    s: Optional[float] = None  # s position in the ring, to be filled later
+    s: Optional[float] = None  # center s position in the ring, to be filled later
 
 
 class Support(BaseModel, extra="forbid"):
@@ -99,10 +99,9 @@ class SupportSystem(BaseModel, extra="forbid"):
             name = 'Support'
 
         support = Support(start=SupportEndpoint(index=index_start), end=SupportEndpoint(index=index_end), name=name)
-        SC = self._parent
-        twiss_s = SC.lattice.twiss['s']
-        support.start.s = float(twiss_s[index_start])
-        support.end.s = float(twiss_s[index_end])
+        twiss_s = self._twiss_s()
+        support.start.s = self._element_center_s(index_start)
+        support.end.s = self._element_center_s(index_end)
 
         support.length = (support.end.s - support.start.s) % float(twiss_s[-1])
 
@@ -122,7 +121,7 @@ class SupportSystem(BaseModel, extra="forbid"):
         if hasattr(self._parent, 'bpm_system') and index in self._parent.bpm_system.indices:
             new_element.is_bpm = True
             new_element.bpm_number = self._parent.bpm_system.bpm_number(index=index)
-        new_element.s = float(self._parent.lattice.twiss['s'][index])
+        new_element.s = self._element_center_s(index)
         self.data['L0'][int(index)] = new_element
 
     def look_for_support(self, my_level, my_index):
@@ -211,9 +210,36 @@ class SupportSystem(BaseModel, extra="forbid"):
         if len(self._reference_X) == 0 or len(self._reference_Y) == 0 or len(self._reference_Angle) == 0:
             self.initialize_reference_orbit()
 
+    def _twiss_s(self) -> np.ndarray:
+        return np.asarray(self._parent.lattice.twiss['s'], dtype=float)
+
+    def _element_center_s(self, index: int) -> float:
+        """
+        Return the longitudinal center of an element from entrance/exit refpoints.
+        """
+        s_ref = self._twiss_s()
+        index = int(index)
+        if index < 0:
+            raise ValueError('Indices must be non-negative')
+        if index + 1 >= len(s_ref):
+            raise IndexError(
+                f'Element index {index} has no exit refpoint in lattice.twiss["s"]. '
+                'SupportSystem needs entrance and exit refpoints to compute element centers.'
+            )
+
+        entrance = float(s_ref[index])
+        exit_ = float(s_ref[index + 1])
+        circumference = float(s_ref[-1])
+        if exit_ < entrance and circumference > 0:
+            exit_ += circumference
+        center = 0.5 * (entrance + exit_)
+        if circumference > 0:
+            center = center % circumference
+        return center
+
     def _reference_pose(self, index_or_s):
         """
-        Return the design world pose at an element index or longitudinal s.
+        Return the design world pose at an element center index or longitudinal s.
         The returned rotation maps local [dx, dy, ds] to world [X, Y, Z].
         """
         self._ensure_reference_orbit()
@@ -222,21 +248,20 @@ class SupportSystem(BaseModel, extra="forbid"):
         angle_ref = np.asarray(self._reference_Angle, dtype=float)
 
         if isinstance(index_or_s, (int, np.integer)):
-            x = x_ref[int(index_or_s)]
-            y = y_ref[int(index_or_s)]
-            theta = angle_ref[int(index_or_s)]
+            s = self._element_center_s(int(index_or_s))
         else:
-            s_ref = np.asarray(self._parent.lattice.twiss['s'], dtype=float)
             s = float(index_or_s)
-            circumference = float(s_ref[-1])
-            if circumference > 0:
-                s = s % circumference
-                if np.isclose(s, 0.0) and float(index_or_s) > 0:
-                    s = circumference
-            theta_ref = np.unwrap(angle_ref)
-            x = np.interp(s, s_ref, x_ref)
-            y = np.interp(s, s_ref, y_ref)
-            theta = np.interp(s, s_ref, theta_ref)
+
+        s_ref = self._twiss_s()
+        circumference = float(s_ref[-1])
+        if circumference > 0:
+            s = s % circumference
+            if np.isclose(s, 0.0) and float(index_or_s) > 0:
+                s = circumference
+        theta_ref = np.unwrap(angle_ref)
+        x = np.interp(s, s_ref, x_ref)
+        y = np.interp(s, s_ref, y_ref)
+        theta = np.interp(s, s_ref, theta_ref)
 
         p = np.array([x, y, 0.0])
         R = np.array([[-np.sin(theta), 0.0, np.cos(theta)],
@@ -259,7 +284,7 @@ class SupportSystem(BaseModel, extra="forbid"):
         s2 = support.end.s
         corr_s = 0.0
         corr_s2 = 0.0
-        circumference = float(self._parent.lattice.twiss['s'][-1])
+        circumference = float(self._twiss_s()[-1])
         if support.start.index > support.end.index:
             corr_s2 = circumference
             if s < s1:

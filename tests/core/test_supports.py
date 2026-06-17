@@ -38,6 +38,14 @@ def test_reference_pose_maps_local_to_world(theta, local, world):
     np.testing.assert_allclose(R.T @ world, local, atol=1e-14)
 
 
+def test_reference_pose_uses_element_center():
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+
+    p, _ = ss._reference_pose(5)
+
+    np.testing.assert_allclose(p, np.array([27.5, 0.0, 0.0]), atol=1e-14)
+
+
 # ---------------------------------------------------------------------------
 # Helper: minimal mock SC for SupportSystem methods that need _parent
 # ---------------------------------------------------------------------------
@@ -88,6 +96,7 @@ def test_add_element():
     assert 5 in ss.data['L0']
     assert isinstance(ss.data['L0'][5], ElementOffset)
     assert ss.data['L0'][5].index == 5
+    assert ss.data['L0'][5].s == pytest.approx(27.5)
 
 
 def test_add_element_duplicate_raises():
@@ -135,11 +144,13 @@ def test_add_support_calculates_length():
     """Support length = (end_s - start_s) mod circumference."""
     circumference = 100.0
     ss, _ = _make_support_system(n_elements=20, circumference=circumference)
-    # Elements are at s = 0, 5, 10, ..., 100
-    # Element 2 at s=10, element 8 at s=40
+    # Element centers are at s = 2.5, 7.5, 12.5, ...
+    # Element 2 center at s=12.5, element 8 center at s=42.5
     key = ss.add_support(2, 8, level=1)
     support = ss.data['L1'][key]
-    assert support.length == pytest.approx(30.0)  # 40 - 10
+    assert support.start.s == pytest.approx(12.5)
+    assert support.end.s == pytest.approx(42.5)
+    assert support.length == pytest.approx(30.0)  # 42.5 - 12.5
 
 
 # ---------------------------------------------------------------------------
@@ -215,8 +226,8 @@ def test_get_total_offset_unsupported():
 def test_get_total_offset_one_level_translation():
     """Element on a translated support gets a 3D parent offset plus its own offset."""
     ss, _ = _make_support_system(n_elements=20, circumference=100.0)
-    ss.add_element(5)  # s=25
-    supp_key = ss.add_support(2, 8, level=1)  # s: 10 to 40, length=30
+    ss.add_element(5)  # center s=27.5
+    supp_key = ss.add_support(2, 8, level=1)  # center s: 12.5 to 42.5, length=30
     ss.resolve_graph()
 
     support = ss.data['L1'][supp_key]
@@ -280,7 +291,8 @@ def test_get_support_offset_linear_interpolation():
     support.end.dy = 2.0
     support.end.ds = 3.0
 
-    offset = ss.get_support_offset(30.0, ('L1', supp_key))
+    midpoint_s = 0.5 * (support.start.s + support.end.s)
+    offset = ss.get_support_offset(midpoint_s, ('L1', supp_key))
     np.testing.assert_allclose(offset, np.array([0.5, 1.0, 1.5]), atol=1e-14)
 
 
@@ -288,8 +300,8 @@ def test_get_support_offset_wrapping():
     """Support crossing s=0 interpolates correctly for elements on both sides."""
     circumference = 100.0
     ss, _ = _make_support_system(n_elements=20, circumference=circumference)
-    # Support from index 18 (s=90) to index 2 (s=10), wrapping
-    # length = (10 - 90) % 100 = 20
+    # Support from index 18 (center s=92.5) to index 2 (center s=12.5), wrapping
+    # length = (12.5 - 92.5) % 100 = 20
     supp_key = ss.add_support(18, 2, level=1)
     support = ss.data['L1'][supp_key]
     support.start.dx = 0.0
@@ -299,12 +311,9 @@ def test_get_support_offset_wrapping():
     support.end.dy = 2.0
     support.end.ds = 3.0
 
-    # Element at s=0 (near the wrap point)
-    # s=0 < s1=90, so corr_s = circumference = 100
-    # corr_s2 = circumference = 100 (because start.index > end.index)
-    # dx = (1.0 - 0.0)/(10 - 90 + 100) * (0 - 90 + 100) + 0.0 = 1.0/20 * 10 = 0.5
-    offset_at_0 = ss.get_support_offset(0.0, ('L1', supp_key))
-    np.testing.assert_allclose(offset_at_0, np.array([0.5, 1.0, 1.5]), atol=1e-14)
+    # Element 0 center is s=2.5, halfway along the wrapped support.
+    offset_at_element_0 = ss.get_support_offset(ss._element_center_s(0), ('L1', supp_key))
+    np.testing.assert_allclose(offset_at_element_0, np.array([0.5, 1.0, 1.5]), atol=1e-14)
 
 
 def test_non_rigid_support_keeps_endpoint_distance_change():
@@ -358,7 +367,8 @@ def test_mixed_parent_support_uses_resolved_endpoint_positions():
     ss.data['L2'][right_parent_key].start.dx = 3.0
     ss.data['L2'][right_parent_key].end.dx = 3.0
 
-    offset = ss.get_support_offset(50.0, ('L1', child_key))
+    child = ss.data['L1'][child_key]
+    offset = ss.get_support_offset(0.5 * (child.start.s + child.end.s), ('L1', child_key))
     np.testing.assert_allclose(offset, np.array([2.0, 0.0, 0.0]), atol=1e-14)
 
 
@@ -369,8 +379,8 @@ def test_mixed_parent_support_uses_resolved_endpoint_positions():
 def test_get_total_rotation_with_support():
     """Support and element rotations compose as matrices, not scalar sums."""
     ss, _ = _make_support_system(n_elements=20, circumference=100.0)
-    ss.add_element(5)  # s=25
-    supp_key = ss.add_support(2, 8, level=1)  # s: 10 to 40
+    ss.add_element(5)  # center s=27.5
+    supp_key = ss.add_support(2, 8, level=1)  # center s: 12.5 to 42.5
     ss.resolve_graph()
 
     # Set element rotation

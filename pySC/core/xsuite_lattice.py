@@ -210,9 +210,9 @@ class XSuiteLattice(Lattice):
         Returns the twiss parameters for the specified indices.
         If no indices are provided, returns all twiss parameters.
         """
-        if indices is None:
-            indices = range(len(self._design))
         line = self._design if use_design else self._ring
+        if indices is None:
+            indices = range(len(line) + 1)
 
         dump = StringIO()
         with redirect_stdout(dump):

@@ -105,6 +105,7 @@ def test_xsuite_get_twiss_exposes_chromatic_keys():
 
     twiss = lattice.get_twiss(use_design=True)
 
+    assert list(line.last_twiss_kwargs['at_elements']) == [0, 1, 2, 3]
     for key in [
         'wx_chrom', 'bx_chrom', 'ax_chrom',
         'wy_chrom', 'by_chrom', 'ay_chrom',

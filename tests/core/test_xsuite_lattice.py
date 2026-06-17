@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 from scipy.constants import c as clight
 
+from pySC.core.transformations import at_rotation, xsuite_angles_from_rotation
 from pySC.core.xsuite_lattice import XSuiteLattice
 
 
@@ -20,6 +21,43 @@ class _FakeLine:
     def twiss(self, **kwargs):
         self.last_twiss_kwargs = kwargs
         return self._twiss
+
+
+class _FakeExpression:
+    def __init__(self, name):
+        self.name = name
+
+    def __mul__(self, other):
+        return ("mul", self.name, other)
+
+    def __rmul__(self, other):
+        return ("mul", other, self.name)
+
+
+class _FakeField:
+    def __init__(self):
+        self.added = []
+
+    def __iadd__(self, value):
+        self.added.append(value)
+        return self
+
+
+class _FakeRef:
+    def __init__(self, element):
+        self._refs = {'pySC': _FakeExpression('pySC'), 'e0': element}
+
+    def __getitem__(self, key):
+        return self._refs.get(key, _FakeExpression(key))
+
+
+class _FakeEnv:
+    def __init__(self, element):
+        self.vars = {}
+        self.ref = _FakeRef(element)
+
+    def __setitem__(self, key, value):
+        self.vars[key] = value
 
 
 def test_xsuite_get_twiss_exposes_chromatic_keys():
@@ -84,3 +122,36 @@ def test_xsuite_get_brho_uses_particle_ref_p0c():
     lattice._ring = line
 
     assert lattice.get_Brho(use_design=True) == pytest.approx(p0c[0] / clight)
+
+
+def test_xsuite_update_misalignment_uses_xsuite_rotation_convention():
+    """XSuite roll is a no-frame field rotation; x-rotation has XSuite sign."""
+    element = SimpleNamespace(
+        shift_x=_FakeField(),
+        shift_y=_FakeField(),
+        shift_s=_FakeField(),
+        rot_s_rad=_FakeField(),
+        rot_s_rad_no_frame=_FakeField(),
+        rot_x_rad=_FakeField(),
+        rot_y_rad=_FakeField(),
+    )
+    env = _FakeEnv(element)
+    line = SimpleNamespace(element_names=['e0'], env=env)
+    lattice = XSuiteLattice.model_construct(lattice_file="dummy.json", no_6d=False)
+    lattice._ring = line
+
+    rot = at_rotation(pitch=0.11, yaw=-0.07, roll=0.05)
+    expected_rot_s, expected_rot_x, expected_rot_y = xsuite_angles_from_rotation(rot)
+
+    lattice.update_misalignment(0, dx=1e-3, dy=2e-3, ds=3e-3, rot=rot)
+
+    assert element.shift_x.added
+    assert element.shift_y.added
+    assert element.shift_s.added
+    assert element.rot_s_rad.added == []
+    assert element.rot_s_rad_no_frame.added
+    assert element.rot_x_rad.added
+    assert element.rot_y_rad.added
+    assert env.vars['pySC_roll_no_frame_0'] == pytest.approx(expected_rot_s)
+    assert env.vars['pySC_pitch_0'] == pytest.approx(expected_rot_x)
+    assert env.vars['pySC_yaw_0'] == pytest.approx(expected_rot_y)

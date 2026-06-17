@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 from types import SimpleNamespace
 
+from pySC.core.transformations import at_rotation
 from pySC.utils.rdt import (
     binomial_coeff,
     feeddown,
@@ -113,8 +114,8 @@ class TestIntegratedStrengthsWithFeeddown:
             lattice=SimpleNamespace(get_twiss=lambda use_design=False: twiss),
             magnet_settings=SimpleNamespace(magnets={'q1': magnet}),
             support_system=SimpleNamespace(
-                get_total_offset=lambda index: (0.0, 0.0),
-                get_total_rotation=lambda index: (0.0, 0.0, 0.0),
+                get_total_offset=lambda index: (0.0, 0.0, 0.0),
+                get_total_rotation=lambda index: at_rotation(),
             ),
         )
 

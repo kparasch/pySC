@@ -7,6 +7,7 @@ from numpy import array as nparray
 from contextlib import redirect_stdout
 from io import StringIO
 from scipy.constants import c as clight
+from .transformations import at_rotation, xsuite_angles_from_rotation
 
 try:
     import xtrack as xt
@@ -539,11 +540,16 @@ class XSuiteLattice(Lattice):
         return M
 
     def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
-                            dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
-                            pitch: Optional[float] = None, use_design=False) -> None:
+                            ds: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
+                            pitch: Optional[float] = None, tilt: Optional[float] = None, rot=None,
+                            use_design=False) -> None:
         line = self._design if use_design else self._ring
         element_name = line.element_names[index]
         env = line.env
+        roll = roll if roll is not None else tilt
+        if rot is None:
+            rot = at_rotation(pitch=pitch or 0.0, yaw=yaw or 0.0, roll=roll or 0.0)
+        rot_s_rad_no_frame, rot_x_rad, rot_y_rad = xsuite_angles_from_rotation(rot)
 
         if dx is not None:
             expression_name = f"pySC_dx_{index}"
@@ -559,33 +565,30 @@ class XSuiteLattice(Lattice):
                 env.ref[element_name].shift_y += env.ref['pySC'] * env.ref[expression_name]
             env[expression_name] = dy
 
-        if dz is not None:
-            expression_name = f"pySC_dz_{index}"
+        if ds is not None:
+            expression_name = f"pySC_ds_{index}"
             if expression_name not in env.vars:
                 env[expression_name] = 0.
                 env.ref[element_name].shift_s += env.ref['pySC'] * env.ref[expression_name]
-            env[expression_name] = dz
+            env[expression_name] = ds
 
-        if roll is not None:
-            expression_name = f"pySC_roll_{index}"
-            if expression_name not in env.vars:
-                env[expression_name] = 0.
-                env.ref[element_name].rot_s_rad += env.ref['pySC'] * env.ref[expression_name]
-            env[expression_name] = roll
+        expression_name = f"pySC_roll_no_frame_{index}"
+        if expression_name not in env.vars:
+            env[expression_name] = 0.
+            env.ref[element_name].rot_s_rad_no_frame += env.ref['pySC'] * env.ref[expression_name]
+        env[expression_name] = rot_s_rad_no_frame
 
-        if pitch is not None:
-            expression_name = f"pySC_pitch_{index}"
-            if expression_name not in env.vars:
-                env[expression_name] = 0.
-                env.ref[element_name].rot_x_rad += env.ref['pySC'] * env.ref[expression_name]
-            env[expression_name] = pitch
+        expression_name = f"pySC_pitch_{index}"
+        if expression_name not in env.vars:
+            env[expression_name] = 0.
+            env.ref[element_name].rot_x_rad += env.ref['pySC'] * env.ref[expression_name]
+        env[expression_name] = rot_x_rad
 
-        if yaw is not None:
-            expression_name = f"pySC_yaw_{index}"
-            if expression_name not in env.vars:
-                env[expression_name] = 0.
-                env.ref[element_name].rot_y_rad += env.ref['pySC'] * env.ref[expression_name]
-            env[expression_name] = yaw
+        expression_name = f"pySC_yaw_{index}"
+        if expression_name not in env.vars:
+            env[expression_name] = 0.
+            env.ref[element_name].rot_y_rad += env.ref['pySC'] * env.ref[expression_name]
+        env[expression_name] = rot_y_rad
 
         return
 

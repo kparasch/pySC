@@ -9,7 +9,8 @@ from pySC.configuration.magnets_conf import configure_magnets
 from pySC.configuration.bpm_system_conf import configure_bpms
 
 
-def _make_sc_with_support_config(hmba_lattice_file, dx_sigma="1e-4", dy_sigma="1e-4", roll_sigma="1e-5"):
+def _make_sc_with_support_config(hmba_lattice_file, dx_sigma="1e-4", dy_sigma="1e-4",
+                                 ds_sigma="1e-4", roll_sigma="1e-5", rigid=False):
     """Build a fresh SC with magnets, BPMs, and supports configuration."""
     lattice = ATLattice(lattice_file=hmba_lattice_file, naming="FamName")
     config = {
@@ -20,6 +21,7 @@ def _make_sc_with_support_config(hmba_lattice_file, dx_sigma="1e-4", dy_sigma="1
             "mag_roll": roll_sigma,
             "support_dx": dx_sigma,
             "support_dy": dy_sigma,
+            "support_ds": ds_sigma,
             "support_roll": roll_sigma,
         },
         "magnets": {
@@ -43,7 +45,9 @@ def _make_sc_with_support_config(hmba_lattice_file, dx_sigma="1e-4", dy_sigma="1
                 "end_endpoints": {"regex": "^QF1E$"},
                 "dx": "support_dx",
                 "dy": "support_dy",
+                "ds": "support_ds",
                 "roll": "support_roll",
+                "rigid": rigid,
             },
         ],
     }
@@ -74,18 +78,20 @@ def test_configure_supports_creates_levels(hmba_lattice_file):
 @pytest.mark.slow
 def test_configure_supports_applies_misalignments(hmba_lattice_file):
     """Support endpoints have non-zero offsets from the error table."""
-    SC = _make_sc_with_support_config(hmba_lattice_file, dx_sigma="1e-4", dy_sigma="1e-4")
+    SC = _make_sc_with_support_config(hmba_lattice_file, dx_sigma="1e-4", dy_sigma="1e-4",
+                                      ds_sigma="1e-4", rigid=True)
     configure_magnets(SC)
     configure_bpms(SC)
     configure_supports(SC)
 
-    # Check L1 supports have been assigned dx/dy for both start and end endpoints
+    # Check L1 supports have been assigned dx/dy/ds for both start and end endpoints
     has_nonzero_start = False
     has_nonzero_end = False
     for support_idx, support in SC.support_system.data["L1"].items():
-        if support.start.dx != 0 or support.start.dy != 0:
+        assert support.rigid is True
+        if support.start.dx != 0 or support.start.dy != 0 or support.start.ds != 0:
             has_nonzero_start = True
-        if support.end.dx != 0 or support.end.dy != 0:
+        if support.end.dx != 0 or support.end.dy != 0 or support.end.ds != 0:
             has_nonzero_end = True
     assert has_nonzero_start, "Expected at least one support with non-zero start endpoint misalignment"
     assert has_nonzero_end, "Expected at least one support with non-zero end endpoint misalignment"

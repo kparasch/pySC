@@ -7,7 +7,7 @@ import warnings
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
 
-from ..utils.sc_tools import update_transformation
+from .transformations import at_rotation, update_at_transformation
 import logging
 logger = logging.getLogger(__name__)
 
@@ -471,14 +471,21 @@ class ATLattice(Lattice):
         return M
 
     def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
-                            dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
-                            pitch: Optional[float] = None, use_design: bool = False) -> None:
+                            ds: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
+                            pitch: Optional[float] = None, tilt: Optional[float] = None, rot=None,
+                            use_design: bool = False) -> None:
         if use_design:
             elem = self._design[index]
         else:
             elem = self._ring[index]
 
-        update_transformation(elem, dx=dx, dy=dy, dz=dz, roll=roll, yaw=yaw, pitch=pitch)
+        roll = roll if roll is not None else tilt
+        rot = rot if rot is not None else at_rotation(
+            pitch=pitch or 0.0,
+            yaw=yaw or 0.0,
+            roll=roll or 0.0,
+        )
+        update_at_transformation(elem, dx=dx or 0.0, dy=dy or 0.0, ds=ds or 0.0, rot=rot)
 
     def get_Brho(self, use_design: bool = False) -> float:
         """
@@ -496,3 +503,12 @@ class ATLattice(Lattice):
         """
         ring = self._design if use_design else self._ring
         return ring.BRho
+
+    def get_reference_orbit(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        N = len(self.design) + 1
+        geometry_data = self.design.get_geometry(refpts=range(N))[0]
+
+        if not np.all(geometry_data.v_angle == 0) or not np.all(geometry_data.z == 0):
+            raise NotImplementedError("Design lattice is not planar. This is not supported yet.")
+
+        return geometry_data.x, geometry_data.y, geometry_data.angle

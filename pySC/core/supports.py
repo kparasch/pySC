@@ -172,6 +172,11 @@ class SupportSystem(BaseModel, extra="forbid"):
         all_levels = self.sorted_levels()
         assert self.check_levels_are_sorted(), 'BUG: why are levels not sorted ?!'
 
+        for level in all_levels:
+            if level != 'L0':
+                for support in self.data[level].values():
+                    support.supports_elements.clear()
+
         ## for each element/endpoint find who it is supported by
         for level in all_levels:
             logger.info(f'Resolving supports: looping through {level}')
@@ -418,6 +423,11 @@ class SupportSystem(BaseModel, extra="forbid"):
         R_total = R_ref.T @ R_world
         return as_rotation(R_total)
 
+    def _element_offset_and_rotation(self, index, level='L0'):
+        p_world, R_world = self._element_pose(index)
+        p_ref, R_ref = self._reference_pose(self.data[level][index].index)
+        return R_ref.T @ (p_world - p_ref), as_rotation(R_ref.T @ R_world)
+
     def set_offset(self, index, level='L0', endpoint=None, dx=0, dy=0, ds=0):
         """
         Set the transverse offset for an element or endpoint.
@@ -458,8 +468,8 @@ class SupportSystem(BaseModel, extra="forbid"):
                 self.trigger_update(trig_level, trig_index)
         else:
             eo = self.data[level][index]
-            dx, dy, ds = self.get_total_offset(eo.index, level)
-            rot = self.get_total_rotation(eo.index, level)
+            offset, rot = self._element_offset_and_rotation(eo.index, level)
+            dx, dy, ds = offset
 
             if eo.is_bpm:
                 roll, _, _ = at_angles_from_rotation(rot)

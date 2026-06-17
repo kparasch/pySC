@@ -188,6 +188,20 @@ def test_resolve_graph_populates_supports_elements():
     assert 15 not in supported_indices
 
 
+def test_resolve_graph_is_idempotent_for_supports_elements():
+    """Calling resolve_graph twice does not duplicate child links."""
+    ss, _ = _make_support_system(n_elements=20)
+    for i in [3, 5, 7]:
+        ss.add_element(i)
+    supp_key = ss.add_support(2, 8, level=1)
+
+    ss.resolve_graph()
+    ss.resolve_graph()
+
+    support = ss.data['L1'][supp_key]
+    assert support.supports_elements == [('L0', 3), ('L0', 5), ('L0', 7)]
+
+
 def test_resolve_graph_wrapping_support():
     """Support crossing s=0 correctly contains elements near start/end of ring."""
     ss, _ = _make_support_system(n_elements=20)
@@ -437,6 +451,27 @@ def test_trigger_update_propagates_to_bpm(sc):
 
     # Clean up
     ss.set_offset(bpm_idx, dx=0.0, dy=0.0)
+
+
+def test_trigger_update_evaluates_element_pose_once():
+    """L0 trigger_update derives offset and rotation from one element pose."""
+    ss, mock_sc = _make_support_system(n_elements=20)
+    idx = 5
+    ss.add_element(idx)
+
+    original_element_pose = ss._element_pose
+    calls = []
+
+    def counting_element_pose(index):
+        calls.append(index)
+        return original_element_pose(index)
+
+    object.__setattr__(ss, '_element_pose', counting_element_pose)
+
+    ss.trigger_update('L0', idx)
+
+    assert calls == [idx]
+    mock_sc.lattice.update_misalignment.assert_called_once()
 
 
 @pytest.mark.slow

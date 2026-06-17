@@ -4,6 +4,7 @@ import numpy as np
 import at
 
 from pySC.core.lattice import ATLattice
+from pySC.core.transformations import at_rotation
 
 
 pytestmark = pytest.mark.slow
@@ -269,7 +270,7 @@ def test_is_dipole(sc):
 # ---------------------------------------------------------------------------
 
 def test_update_misalignment(sc):
-    """update_misalignment(dx=0.001) modifies element T1/T2/R1/R2."""
+    """update_misalignment uses AT element.transform at the element centre."""
     ring = sc.lattice.ring
     quad_idx = next(i for i, e in enumerate(ring) if isinstance(e, at.Quadrupole))
     elem = ring[quad_idx]
@@ -279,13 +280,26 @@ def test_update_misalignment(sc):
         elem.T1 = np.zeros(6)
     t1_before = elem.T1.copy()
 
-    sc.lattice.update_misalignment(quad_idx, dx=0.001)
+    sc.lattice.update_misalignment(
+        quad_idx,
+        dx=0.001,
+        dy=0.002,
+        ds=0.003,
+        rot=at_rotation(pitch=0.004, yaw=0.005, roll=0.006),
+    )
 
     assert hasattr(elem, 'T1')
     assert hasattr(elem, 'T2')
     assert hasattr(elem, 'R1')
     assert hasattr(elem, 'R2')
     assert not np.allclose(elem.T1, t1_before), "T1 should change after misalignment"
+    assert elem.ReferencePoint is at.ReferencePoint.CENTRE
+    assert elem.dx == pytest.approx(0.001)
+    assert elem.dy == pytest.approx(0.002)
+    assert elem.dz == pytest.approx(0.003)
+    assert elem.pitch == pytest.approx(0.004)
+    assert elem.yaw == pytest.approx(0.005)
+    assert elem.tilt == pytest.approx(0.006)
 
 
 # ---------------------------------------------------------------------------

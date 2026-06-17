@@ -7,7 +7,7 @@ import warnings
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
 
-from .transformations import at_rotation, update_at_transformation
+from .transformations import at_angles_from_rotation, at_rotation
 import logging
 logger = logging.getLogger(__name__)
 
@@ -485,7 +485,17 @@ class ATLattice(Lattice):
             yaw=yaw or 0.0,
             roll=roll or 0.0,
         )
-        update_at_transformation(elem, dx=dx or 0.0, dy=dy or 0.0, ds=ds or 0.0, rot=rot)
+        roll, pitch, yaw = at_angles_from_rotation(rot)
+        elem.transform(
+            dx=dx or 0.0,
+            dy=dy or 0.0,
+            dz=ds or 0.0,
+            tilt=roll,
+            pitch=pitch,
+            yaw=yaw,
+            reference=at.ReferencePoint.CENTRE,
+            relative=False,
+        )
 
     def get_Brho(self, use_design: bool = False) -> float:
         """

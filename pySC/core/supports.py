@@ -82,9 +82,9 @@ class SupportSystem(BaseModel, extra="forbid"):
         x, y, angle = SC.lattice.get_reference_orbit()
         self._reference_X = x
         self._reference_Y = y
-        self._reference_Angle = angle
+        self._reference_Angle = np.unwrap(angle)
         return
-    
+
     def add_support(self, index_start, index_end, level=1, name=None):
         assert level >= 1, 'Level must be larger or equal to 1'
         logger.debug(f'Adding support with {index_start=}, {index_end=} in {level=}')
@@ -258,7 +258,7 @@ class SupportSystem(BaseModel, extra="forbid"):
             s = s % circumference
             if np.isclose(s, 0.0) and float(index_or_s) > 0:
                 s = circumference
-        theta_ref = np.unwrap(angle_ref)
+        theta_ref = angle_ref
         x = np.interp(s, s_ref, x_ref)
         y = np.interp(s, s_ref, y_ref)
         theta = np.interp(s, s_ref, theta_ref)

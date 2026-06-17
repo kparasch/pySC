@@ -43,7 +43,7 @@ dependencies = [
     "numpy>=2.0.0",
     "scipy>=1.11.4",
     "matplotlib>=3.7.3",
-    "accelerator-toolbox>=0.6.1",
+    "accelerator-toolbox>=0.8.0",
     "pydantic",
     "PyYAML>=6.0.2",
     "rich",

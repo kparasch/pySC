@@ -135,9 +135,11 @@ def test_xsuite_update_misalignment_uses_xsuite_rotation_convention():
         rot_s_rad_no_frame=_FakeField(),
         rot_x_rad=_FakeField(),
         rot_y_rad=_FakeField(),
+        rot_shift_anchor=0.0,
+        length=2.0,
     )
     env = _FakeEnv(element)
-    line = SimpleNamespace(element_names=['e0'], env=env)
+    line = SimpleNamespace(element_names=['e0'], element_dict={'e0': element}, env=env)
     lattice = XSuiteLattice.model_construct(lattice_file="dummy.json", no_6d=False)
     lattice._ring = line
 
@@ -153,6 +155,7 @@ def test_xsuite_update_misalignment_uses_xsuite_rotation_convention():
     assert element.rot_s_rad_no_frame.added
     assert element.rot_x_rad.added
     assert element.rot_y_rad.added
+    assert element.rot_shift_anchor == pytest.approx(1.0)
     assert env.vars['pySC_roll_no_frame_0'] == pytest.approx(expected_rot_s)
     assert env.vars['pySC_pitch_0'] == pytest.approx(expected_rot_x)
     assert env.vars['pySC_yaw_0'] == pytest.approx(expected_rot_y)

@@ -328,6 +328,11 @@ class XSuiteLattice(Lattice):
         else: # when length is zero
             return 1
 
+    @staticmethod
+    def _element_center_anchor(line, element_name: str) -> float:
+        elem = line.element_dict[element_name]
+        return 0.5 * float(getattr(elem, 'length', 0.0) or 0.0)
+
     def ensure_max_order(self, index: int, max_order: int, use_design=True) -> None:
         """
         Ensure an XSuite lattice element supports multipoles up to ``max_order``.
@@ -545,6 +550,9 @@ class XSuiteLattice(Lattice):
                             use_design=False) -> None:
         line = self._design if use_design else self._ring
         element_name = line.element_names[index]
+        element = line.element_dict[element_name]
+        if hasattr(element, 'rot_shift_anchor'):
+            element.rot_shift_anchor = self._element_center_anchor(line, element_name)
         env = line.env
         roll = roll if roll is not None else tilt
         if rot is None:

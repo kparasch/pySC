@@ -85,6 +85,14 @@ def _make_support_system(n_elements=20, circumference=100.0, bpm_indices=None):
     return ss, mock_sc
 
 
+def _set_curved_reference(ss, radius=40.0):
+    s = ss._twiss_s()
+    theta = s / radius
+    ss._reference_X = radius * np.sin(theta)
+    ss._reference_Y = radius * (1.0 - np.cos(theta))
+    ss._reference_Angle = theta
+
+
 # ---------------------------------------------------------------------------
 # add_element
 # ---------------------------------------------------------------------------
@@ -287,6 +295,38 @@ def test_support_endpoint_ds_propagates_to_element_longitudinal_offset():
 
     offset = ss.get_total_offset(5)
     np.testing.assert_allclose(offset, np.array([0.0, 0.0, 0.1]), atol=1e-14)
+
+
+@pytest.mark.parametrize("rigid", [False, True])
+def test_zero_offset_support_has_no_nominal_rotation_on_curved_reference(rigid):
+    """A support spanning a curve does not replace local reference orientation."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    _set_curved_reference(ss)
+    ss.add_element(5)
+    supp_key = ss.add_support(2, 8, level=1)
+    ss.data['L1'][supp_key].rigid = rigid
+    ss.resolve_graph()
+
+    np.testing.assert_allclose(ss.get_total_offset(5), np.zeros(3), atol=1e-14)
+    np.testing.assert_allclose(ss.get_total_rotation(5).as_matrix(), np.eye(3), atol=1e-14)
+
+
+def test_support_endpoint_geometry_creates_differential_rotation():
+    """Differential endpoint offsets still rotate the support from its nominal chord."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    ss.add_element(5)
+    supp_key = ss.add_support(2, 8, level=1)
+    ss.resolve_graph()
+
+    support = ss.data['L1'][supp_key]
+    support.end.dy = 3.0
+
+    resolved = ss.get_total_rotation(5).as_matrix()
+    length = np.hypot(30.0, 3.0)
+    expected_ds_axis = np.array([0.0, 3.0 / length, 30.0 / length])
+
+    np.testing.assert_allclose(resolved @ np.array([0.0, 0.0, 1.0]), expected_ds_axis, atol=1e-14)
+    assert not np.allclose(resolved, np.eye(3))
 
 
 # ---------------------------------------------------------------------------

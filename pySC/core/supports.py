@@ -299,25 +299,6 @@ class SupportSystem(BaseModel, extra="forbid"):
             return 0.0
         return (s - s1 + corr_s) / denominator
 
-    @staticmethod
-    def _support_design_frame(design_chord, fallback_R):
-        z_norm = np.linalg.norm(design_chord)
-        z_axis = design_chord / z_norm if z_norm >= EPS else fallback_R[:, 2]
-
-        y_axis = np.array([0.0, 0.0, 1.0])
-        y_axis = y_axis - np.dot(y_axis, z_axis) * z_axis
-        if np.linalg.norm(y_axis) < EPS:
-            y_axis = fallback_R[:, 1] - np.dot(fallback_R[:, 1], z_axis) * z_axis
-        if np.linalg.norm(y_axis) < EPS:
-            y_axis = np.array([0.0, 1.0, 0.0]) - np.dot(np.array([0.0, 1.0, 0.0]), z_axis) * z_axis
-
-        y_axis = y_axis / np.linalg.norm(y_axis)
-        x_axis = np.cross(y_axis, z_axis)
-        x_axis = x_axis / np.linalg.norm(x_axis)
-        y_axis = np.cross(z_axis, x_axis)
-        y_axis = y_axis / np.linalg.norm(y_axis)
-        return np.column_stack((x_axis, y_axis, z_axis))
-
     def _support_endpoint_positions(self, support_level_key):
         supp_level, supp_index = support_level_key
         support = self.data[supp_level][supp_index]
@@ -359,15 +340,14 @@ class SupportSystem(BaseModel, extra="forbid"):
 
         design_chord = design_end - design_start
         corrected_chord = end - start
-        R_design = self._support_design_frame(design_chord, R_ref)
-        R_align = rotation_from_vectors(design_chord, corrected_chord).as_matrix()
+        R_delta = rotation_from_vectors(design_chord, corrected_chord).as_matrix()
         axis_norm = np.linalg.norm(corrected_chord)
         if axis_norm < EPS:
-            roll_axis = R_align @ R_design[:, 2]
+            roll_axis = R_delta @ R_ref[:, 2]
         else:
             roll_axis = corrected_chord / axis_norm
         R_roll = axis_angle_rotation(roll_axis, support.roll).as_matrix()
-        R = R_roll @ R_align @ R_design
+        R = R_roll @ R_delta @ R_ref
         return p, R
 
     def _element_pose(self, index):

@@ -519,6 +519,9 @@ class ATLattice(Lattice):
         geometry_data = self.design.get_geometry(refpts=range(N))[0]
 
         if not np.all(geometry_data.v_angle == 0) or not np.all(geometry_data.z == 0):
-            raise NotImplementedError("Design lattice is not planar. This is not supported yet.")
+            logger.warning("Design lattice is not planar. Vertical angles and z positions are ignored, please make sure they are small.")
+            logger.warning(f"Minimum v_angle: {np.min(geometry_data.v_angle)}, maximum v_angle: {np.max(geometry_data.v_angle)}, ")
+            logger.warning(f"Minimum z: {np.min(geometry_data.z)}, maximum z: {np.max(geometry_data.z)}, ")
+            #raise NotImplementedError("Design lattice is not planar. This is not supported yet.")
 
         return geometry_data.x, geometry_data.y, geometry_data.angle

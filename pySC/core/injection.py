@@ -1,6 +1,7 @@
 from typing import Optional, Union, TYPE_CHECKING
 from pydantic import BaseModel, PrivateAttr
 import numpy as np
+from ..utils.rdt import linear_normal_form
 
 if TYPE_CHECKING:
     from .simulated_commissioning import SimulatedCommissioning
@@ -90,17 +91,27 @@ class InjectionSettings(BaseModel, extra="forbid"):
 
     def generate_orbit_centered_bunch(self, use_design=False) -> np.ndarray:
         # When array will be transposed to go to AT, it will be F_CONTIGUOUS :)
+        SC = self._parent
         bunch = np.zeros([self.n_particles, 6])
         if self.n_particles > 1:
             bunch_norm = np.zeros([self.n_particles, 6])
-            bunch_norm[:, 0] = self._parent.rng.normal(size=self.n_particles)
-            bunch_norm[:, 1] = self._parent.rng.normal(size=self.n_particles)
-            bunch_norm[:, 2] = self._parent.rng.normal(size=self.n_particles)
-            bunch_norm[:, 3] = self._parent.rng.normal(size=self.n_particles)
-            bunch_norm[:, 4] = self._parent.rng.normal(size=self.n_particles)
-            bunch_norm[:, 5] = self._parent.rng.normal(size=self.n_particles)
-            raise NotImplementedError
-        
+            bunch_norm[:, 0] = SC.rng.normal(size=self.n_particles)
+            bunch_norm[:, 1] = SC.rng.normal(size=self.n_particles)
+            bunch_norm[:, 2] = SC.rng.normal(size=self.n_particles)
+            bunch_norm[:, 3] = SC.rng.normal(size=self.n_particles)
+            bunch_norm[:, 4] = SC.rng.normal(size=self.n_particles)
+            bunch_norm[:, 5] = SC.rng.normal(size=self.n_particles)
+
+            M = SC.lattice.one_turn_matrix(use_design=use_design)
+            W, *_ = linear_normal_form(M)
+
+            gemit_x, gemit_y, gemit_z = SC.lattice.get_emittances(use_design=use_design)
+            sigmas = np.array([np.sqrt(gemit_x), np.sqrt(gemit_x),
+                               np.sqrt(gemit_y), np.sqrt(gemit_y),
+                               np.sqrt(gemit_z), np.sqrt(gemit_z)])
+
+            bunch = (bunch_norm * sigmas) @ W.T
+
         twiss = self._parent.lattice.get_twiss(use_design=use_design)
 
         bunch[:, 0] += twiss['x'][0]

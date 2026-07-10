@@ -112,6 +112,17 @@ def test_get_chromaticity(hmba_lattice_file):
     assert np.isfinite(dqy)
 
 
+def test_get_emittances_returns_radiation_parameters(hmba_lattice_file):
+    """get_emittances() returns finite nonnegative mode emittances."""
+    lat = ATLattice(lattice_file=hmba_lattice_file)
+
+    emit_x, emit_y, emit_z = lat.get_emittances(use_design=True)
+
+    for value in [emit_x, emit_y, emit_z]:
+        assert np.isfinite(value)
+        assert value >= 0.0
+
+
 def test_get_brho_returns_at_lattice_brho(hmba_lattice_file):
     """get_Brho() returns AT's magnetic rigidity for ring and design lattices."""
     lat = ATLattice(lattice_file=hmba_lattice_file)

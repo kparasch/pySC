@@ -3,6 +3,7 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock
 
+import pySC.core.injection as injection_module
 from pySC.core.injection import InjectionSettings
 from pySC.core.rng import RNG
 
@@ -122,6 +123,56 @@ def test_generate_orbit_centered_bunch():
     assert bunch[0, 0] == pytest.approx(0.001)
     assert bunch[0, 1] == pytest.approx(0.0002)
     assert bunch[0, 2] == pytest.approx(-0.0005)
+
+
+def test_generate_orbit_centered_multi_particle_uses_normal_form(monkeypatch):
+    """Multi-particle bunches are transformed from normalized coordinates by W."""
+    inj = _make_injection(n_particles=3, seed=42)
+
+    draws = [
+        np.array([1.0, 2.0, 3.0]),
+        np.array([4.0, 5.0, 6.0]),
+        np.array([7.0, 8.0, 9.0]),
+        np.array([10.0, 11.0, 12.0]),
+        np.array([13.0, 14.0, 15.0]),
+        np.array([16.0, 17.0, 18.0]),
+    ]
+    inj._parent.rng = MagicMock()
+    inj._parent.rng.normal.side_effect = draws
+
+    orbit = np.array([0.1, 0.2, -0.3, 0.4, 0.5, -0.6])
+    twiss = {
+        "x": np.array([orbit[0]]),
+        "px": np.array([orbit[1]]),
+        "y": np.array([orbit[2]]),
+        "py": np.array([orbit[3]]),
+        "tau": np.array([orbit[4]]),
+        "delta": np.array([orbit[5]]),
+    }
+    inj._parent.lattice.get_twiss.return_value = twiss
+    inj._parent.lattice.one_turn_matrix.return_value = np.eye(6)
+    inj._parent.lattice.get_emittances.return_value = (4.0, 9.0, 25.0)
+
+    W = np.array([
+        [1.0, 2.0, 0.0, 0.0, 0.0, 0.0],
+        [3.0, 4.0, 0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 5.0, 6.0, 0.0, 0.0],
+        [0.0, 0.0, 7.0, 8.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0, 9.0, 10.0],
+        [0.0, 0.0, 0.0, 0.0, 11.0, 12.0],
+    ])
+    monkeypatch.setattr(
+        injection_module,
+        "linear_normal_form",
+        lambda M: (W, None, None, None, None, None),
+    )
+
+    bunch = inj.generate_orbit_centered_bunch(use_design=True)
+
+    bunch_norm = np.column_stack(draws)
+    sigmas = np.array([2.0, 2.0, 3.0, 3.0, 5.0, 5.0])
+    expected = (bunch_norm * sigmas) @ W.T + orbit
+    np.testing.assert_allclose(bunch, expected)
 
 
 # ---------------------------------------------------------------------------

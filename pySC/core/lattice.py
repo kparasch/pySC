@@ -496,3 +496,17 @@ class ATLattice(Lattice):
         """
         ring = self._design if use_design else self._ring
         return ring.BRho
+
+    def get_emittances(self, use_design: bool = False) -> Tuple[float, float, float]:
+        ring = self._design if use_design else self._ring
+        rad_par = ring.radiation_parameters()
+
+        emit_x = rad_par.emittances[0]
+
+        emit_y = rad_par.emittances[1]
+        if emit_y != emit_y:
+            emit_y = 0
+
+        emit_z = rad_par.emittances[2]
+
+        return emit_x, emit_y, emit_z

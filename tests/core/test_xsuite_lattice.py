@@ -84,3 +84,48 @@ def test_xsuite_get_brho_uses_particle_ref_p0c():
     lattice._ring = line
 
     assert lattice.get_Brho(use_design=True) == pytest.approx(p0c[0] / clight)
+
+
+def test_xsuite_get_emittances_uses_radiation_analysis():
+    """get_emittances() returns equilibrium mode emittances."""
+    twiss_result = SimpleNamespace(
+        eq_gemitt_x=2.5e-9,
+        eq_gemitt_y=3.5e-12,
+        eq_gemitt_zeta=4.5e-6,
+    )
+    line = _FakeLine(twiss_result)
+    lattice = XSuiteLattice.model_construct(lattice_file="dummy.json", no_6d=False)
+    lattice._design = line
+    lattice._ring = line
+    lattice.num_turns_search_t_rev = 7
+
+    emit_x, emit_y, emit_z = lattice.get_emittances(use_design=True)
+
+    assert emit_x == pytest.approx(2.5e-9)
+    assert emit_y == pytest.approx(3.5e-12)
+    assert emit_z == pytest.approx(4.5e-6)
+    assert line.last_twiss_kwargs == {
+        "method": "6d",
+        "radiation_analysis": True,
+        "search_for_t_rev": True,
+        "num_turns_search_t_rev": 7,
+    }
+
+
+def test_xsuite_get_emittances_replaces_nan_vertical_emittance():
+    """NaN vertical emittance is converted to zero, matching ATLattice."""
+    twiss_result = SimpleNamespace(
+        eq_gemitt_x=2.5e-9,
+        eq_gemitt_y=np.nan,
+        eq_gemitt_zeta=4.5e-6,
+    )
+    line = _FakeLine(twiss_result)
+    lattice = XSuiteLattice.model_construct(lattice_file="dummy.json", no_6d=False)
+    lattice._design = line
+    lattice._ring = line
+    lattice.num_turns_search_t_rev = 5
+
+    _, emit_y, emit_z = lattice.get_emittances(use_design=False)
+
+    assert emit_y == pytest.approx(0.0)
+    assert emit_z == pytest.approx(4.5e-6)

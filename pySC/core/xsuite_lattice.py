@@ -1,6 +1,6 @@
 from .lattice import Lattice
 from pydantic import PrivateAttr, model_validator
-from typing import Optional, Literal
+from typing import Optional, Literal, Tuple
 import re
 import numpy as np
 from numpy import array as nparray
@@ -595,12 +595,12 @@ class XSuiteLattice(Lattice):
     def get_Brho(self, use_design: bool = False) -> float:
         """
         Return the magnetic rigidity of the reference particle.
-    
+
         Parameters
         ----------
         use_design : bool, optional
             If True, use the design lattice. Otherwise, use the active lattice.
-    
+
         Returns
         -------
         float
@@ -609,5 +609,26 @@ class XSuiteLattice(Lattice):
         line = self._design if use_design else self._ring
         if line.particle_ref is None:
             raise ValueError("Xsuite lattice has no particle_ref. Cannot compute Brho.")
-    
+
         return float(line.particle_ref.p0c[0]) / clight
+
+    def get_emittances(self, use_design: bool = False) -> Tuple[float, float, float]:
+        line = self._design if use_design else self._ring
+
+        dump = StringIO()
+        with redirect_stdout(dump):
+            tw = line.twiss(
+                method='6d',
+                radiation_analysis=True,
+                search_for_t_rev=True,
+                num_turns_search_t_rev=self.num_turns_search_t_rev,
+            )
+
+        emit_x = tw.eq_gemitt_x
+        emit_y = tw.eq_gemitt_y
+        if emit_y != emit_y:
+            emit_y = 0
+
+        emit_z = tw.eq_gemitt_zeta
+
+        return emit_x, emit_y, emit_z

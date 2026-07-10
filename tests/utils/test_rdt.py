@@ -10,6 +10,8 @@ from pySC.utils.rdt import (
     omega,
     FACTORIAL,
     S4,
+    S6,
+    calculate_c_minus,
     linear_normal_form,
     Rot2D,
     hjklm,
@@ -145,37 +147,51 @@ class TestRot2D:
 
 class TestLinearNormalForm:
 
-    def test_symplectic_identity(self):
-        """linear_normal_form of an uncoupled map recovers known tunes and symplectic W."""
+    def test_4d_input_is_promoted_to_6d(self):
+        """linear_normal_form promotes a 4D map and recovers known transverse tunes."""
         # Build a simple stable one-turn map: uncoupled with known tunes
         mux = 0.31 * 2 * np.pi
         muy = 0.22 * 2 * np.pi
         M = np.zeros((4, 4))
         M[0:2, 0:2] = Rot2D(mux)
         M[2:4, 2:4] = Rot2D(muy)
-        W, invW, R, q1, q2 = linear_normal_form(M)
+        W, invW, R, q1, q2, q3 = linear_normal_form(M)
+
+        assert W.shape == (6, 6)
+        assert invW.shape == (6, 6)
+        assert R.shape == (6, 6)
 
         # Tunes should match
         assert abs(q1) == pytest.approx(0.31, abs=1e-10)
         assert abs(q2) == pytest.approx(0.22, abs=1e-10)
+        assert abs(q3) == pytest.approx(0.1 / (2 * np.pi), abs=1e-10)
 
-        # W should be symplectic: W^T S4 W = S4
-        np.testing.assert_allclose(W.T @ S4 @ W, S4, atol=1e-12)
+        # W should be symplectic: W^T S6 W = S6
+        np.testing.assert_allclose(W.T @ S6 @ W, S6, atol=1e-12)
+        np.testing.assert_allclose(invW @ W, np.eye(6), atol=1e-12)
 
         # R should be block-diagonal rotation
         np.testing.assert_allclose(R[0:2, 0:2], Rot2D(2 * np.pi * q1), atol=1e-12)
         np.testing.assert_allclose(R[2:4, 2:4], Rot2D(2 * np.pi * q2), atol=1e-12)
+        np.testing.assert_allclose(R[4:6, 4:6], Rot2D(2 * np.pi * q3), atol=1e-12)
 
-    def test_inverse_relation(self):
-        """invW should satisfy invW @ W = I."""
+    def test_6d_symplectic_identity(self):
+        """linear_normal_form of an uncoupled 6D map recovers known tunes."""
         mux = 0.25 * 2 * np.pi
         muy = 0.35 * 2 * np.pi
-        M = np.zeros((4, 4))
+        muz = 0.08 * 2 * np.pi
+        M = np.zeros((6, 6))
         M[0:2, 0:2] = Rot2D(mux)
         M[2:4, 2:4] = Rot2D(muy)
-        W, invW, R, q1, q2 = linear_normal_form(M)
+        M[4:6, 4:6] = Rot2D(muz)
+        W, invW, R, q1, q2, q3 = linear_normal_form(M)
 
-        np.testing.assert_allclose(invW @ W, np.eye(4), atol=1e-12)
+        assert abs(q1) == pytest.approx(0.25, abs=1e-10)
+        assert abs(q2) == pytest.approx(0.35, abs=1e-10)
+        assert abs(q3) == pytest.approx(0.08, abs=1e-10)
+        np.testing.assert_allclose(W.T @ S6 @ W, S6, atol=1e-12)
+        np.testing.assert_allclose(invW @ W, np.eye(6), atol=1e-12)
+        np.testing.assert_allclose(M @ W, W @ R, atol=1e-12)
 
     def test_coupled_map(self):
         """linear_normal_form handles a weakly coupled symplectic transfer map."""
@@ -196,16 +212,56 @@ class TestLinearNormalForm:
 
         M = M0 @ C  # coupled one-turn map
 
-        W, invW, R, q1, q2 = linear_normal_form(M)
+        W, invW, R, q1, q2, _ = linear_normal_form(M)
 
         # invW @ W should still be identity
-        np.testing.assert_allclose(invW @ W, np.eye(4), atol=1e-10)
+        np.testing.assert_allclose(invW @ W, np.eye(6), atol=1e-10)
         # Tunes should be close to uncoupled values (weak coupling)
         assert abs(q1) == pytest.approx(0.28, abs=0.02)
         assert abs(q2) == pytest.approx(0.19, abs=0.02)
         # Off-diagonal blocks of W should be small but non-zero (coupling present)
         coupling_block = np.sqrt(W[2, 0]**2 + W[2, 1]**2)
         assert coupling_block > 1e-6, "Coupling should produce non-zero off-diagonal W elements"
+
+    def test_rejects_invalid_matrix_shape(self):
+        """linear_normal_form only accepts 4D or 6D transfer matrices."""
+        with pytest.raises(ValueError, match="4x4 or 6x6"):
+            linear_normal_form(np.eye(5))
+
+
+class TestCalculateCMinus:
+
+    def test_uncoupled_4d_map_returns_zero(self):
+        """calculate_c_minus keeps working for the old 4D map consumer path."""
+        mux = 0.31 * 2 * np.pi
+        muy = 0.22 * 2 * np.pi
+        M = np.zeros((4, 4))
+        M[0:2, 0:2] = Rot2D(mux)
+        M[2:4, 2:4] = Rot2D(muy)
+        SC = SimpleNamespace(
+            lattice=SimpleNamespace(one_turn_matrix=lambda use_design=False: M)
+        )
+
+        c_minus = calculate_c_minus(SC)
+
+        assert c_minus == pytest.approx(0j, abs=1e-14)
+
+    def test_uncoupled_6d_map_returns_zero(self):
+        """calculate_c_minus ignores the longitudinal mode for uncoupled 6D maps."""
+        mux = 0.31 * 2 * np.pi
+        muy = 0.22 * 2 * np.pi
+        muz = 0.05 * 2 * np.pi
+        M = np.zeros((6, 6))
+        M[0:2, 0:2] = Rot2D(mux)
+        M[2:4, 2:4] = Rot2D(muy)
+        M[4:6, 4:6] = Rot2D(muz)
+        SC = SimpleNamespace(
+            lattice=SimpleNamespace(one_turn_matrix=lambda use_design=False: M)
+        )
+
+        c_minus = calculate_c_minus(SC)
+
+        assert c_minus == pytest.approx(0j, abs=1e-14)
 
 
 class TestFactorial:

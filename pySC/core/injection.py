@@ -110,7 +110,8 @@ class InjectionSettings(BaseModel, extra="forbid"):
                                np.sqrt(gemit_y), np.sqrt(gemit_y),
                                np.sqrt(gemit_z), np.sqrt(gemit_z)])
 
-            bunch = (bunch_norm * sigmas) @ W.T
+            bunch_norm_scaled = bunch_norm * sigmas
+            bunch = np.dot(bunch_norm_scaled, W.T)
 
         twiss = self._parent.lattice.get_twiss(use_design=use_design)
 

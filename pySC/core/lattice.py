@@ -466,7 +466,14 @@ class ATLattice(Lattice):
         if self.no_6d:
             M = ring.find_m44(orbit=orbit0)[0]
         else:
-            M = ring.find_m66(orbit=orbit0)[0]
+            oldM = ring.find_m66(orbit=orbit0)[0]
+            M = oldM.copy()
+            for ii in range(4):
+                M[ii, 4], M[ii, 5] = oldM[ii, 5], oldM[ii, 4]
+            for ii in range(4):
+                M[4, ii], M[5, ii] = oldM[5, ii], oldM[4, ii]
+            M[4,4], M[5,5] = oldM[5,5], oldM[4,4]
+            M[4,5], M[5,4] = oldM[5,4], oldM[4,5]
 
         return M
 
@@ -510,3 +517,10 @@ class ATLattice(Lattice):
         emit_z = rad_par.emittances[2]
 
         return emit_x, emit_y, emit_z
+
+    def get_momentum_compaction(self, use_design: bool = False) -> float:
+        ring = self._design if use_design else self._ring
+        ring.disable_6d()
+        mcf = ring.get_mcf()
+        ring.enable_6d()
+        return mcf

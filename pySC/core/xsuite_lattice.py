@@ -632,3 +632,6 @@ class XSuiteLattice(Lattice):
         emit_z = tw.eq_gemitt_zeta
 
         return emit_x, emit_y, emit_z
+
+    def get_momentum_compaction(self, use_design: bool = False) -> float:
+        raise NotImplementedError

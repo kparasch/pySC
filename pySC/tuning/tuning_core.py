@@ -9,6 +9,7 @@ from .tune import Tune
 from .chromaticity import Chromaticity
 from .c_minus import CMinus
 from .rf_tuning import RF_tuning
+from .optics import Optics_tuning
 from ..core.control import IndivControl
 from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 from ..apps import orbit_correction
@@ -34,6 +35,7 @@ class Tuning(BaseModel, extra="forbid"):
     chromaticity: Chromaticity = Chromaticity() ## TODO: generate config from yaml file
     c_minus: CMinus = CMinus()
     rf: RF_tuning = RF_tuning() ## TODO: generate config from yaml file
+    optics: Optics_tuning = Optics_tuning()
 
     bba_magnets: list[str] = []
     trajectory_bba_config: Optional[Trajectory_BBA_Configuration] = None

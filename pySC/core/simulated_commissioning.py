@@ -94,6 +94,7 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
         self.tuning.chromaticity._parent = self.tuning
         self.tuning.c_minus._parent = self.tuning
         self.tuning.rf._parent = self.tuning
+        self.tuning.optics._parent = self.tuning
         return
 
     def start_server(self, port : int = 13131, timeout: int = 1) -> None:

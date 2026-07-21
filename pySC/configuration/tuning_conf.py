@@ -92,3 +92,28 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
             c_minus_controls = configure_family(SC, config_dict=c_minus_conf['controls'])
             c_minus_controls = sort_controls(SC, c_minus_controls)
             SC.tuning.c_minus.controls = c_minus_controls
+
+    if 'optics' in tuning_conf:
+        optics_conf = tuning_conf['optics']
+        if 'quadrupoles' not in optics_conf:
+            raise Exception("quadrupoles not found in optics configuration.")
+        quad_controls = configure_family(SC, config_dict=optics_conf['quadrupoles'])
+        quad_weights = [1.] * len(quad_controls)
+
+        if 'weights' in optics_conf:
+            control_map = {}
+            for array in SC.control_arrays:
+                for control in SC.control_arrays[array]:
+                    control_map[control] = array
+            weights_map = {}
+            for category in optics_conf['weights']:
+                array_name, weight_value = category.copy().popitem()
+                weights_map[array_name] = float(weight_value)
+
+            for ii, quad in enumerate(quad_controls):
+                array = control_map[quad]
+                if array in weights_map:
+                    quad_weights[ii] = weights_map[array]
+
+        SC.tuning.optics.quadrupoles = quad_controls
+        SC.tuning.optics.quad_weights = quad_weights

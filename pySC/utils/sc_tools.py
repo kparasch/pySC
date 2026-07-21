@@ -6,9 +6,21 @@ from numpy import ndarray, float64
 # from at import Lattice
 from typing import Union, Optional
 import logging
+import warnings
 
 LOGGER = logging.getLogger(__name__)
 
+def nanmean(x: np.ndarray, axis: Optional[int] = None) -> Union[float, np.ndarray]:
+    with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        out = np.nanmean(x, axis=axis)
+    return out
+
+def nanstd(x: np.ndarray, axis: Optional[int] = None) -> Union[float, np.ndarray]:
+    with warnings.catch_warnings(): # suppress RuntimeWarning: Mean of empty slice
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        out = np.nanstd(x, axis=axis)
+    return out
 
 # def randnc(cut_off: float = 2, shape: tuple = (1,)) -> Union[ndarray, float64]:
 #     """

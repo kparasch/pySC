@@ -1,5 +1,5 @@
 from enum import StrEnum
-from pydantic import BeforeValidator, PlainSerializer, BaseModel, PositiveInt
+from pydantic import BeforeValidator, PlainSerializer, BaseModel, PositiveInt, ConfigDict
 from typing import Annotated, Union, Optional, Literal, Self
 import numpy as np
 from pathlib import Path
@@ -26,6 +26,22 @@ class BaseModelWithSave(BaseModel, extra="forbid"):
             else:
                 raise Exception(f'Unknown file extension: {suffix}.')
         return
+
+    @classmethod
+    def load(cls, filename: Union[Path, str]):
+        if type(filename) is not Path:
+            filename = Path(filename)
+
+        suffix = filename.suffix
+        with open(filename, 'r') as fp:
+            if suffix in ['', '.json']:
+                import json
+                ob = json.load(fp)
+            else:
+                raise Exception(f'Unknown file extension: {suffix}.')
+
+        return cls.model_validate(ob)
+
 
 class MagnetType(StrEnum):
     norm_dip = "normal_dipole"
@@ -54,3 +70,15 @@ class MagnetType(StrEnum):
                 return MagnetType.skew_quad
 
         return MagnetType.undefined
+
+class Quadrupole_response(BaseModelWithSave):
+    quadrupoles: list[str]
+    betx_response: NPARRAY
+    bety_response: NPARRAY
+    dx_response: NPARRAY
+    eta_response: NPARRAY
+    mux_response: NPARRAY
+    muy_response: NPARRAY
+    qx_response: NPARRAY
+    qy_response: NPARRAY
+    model_config = ConfigDict(arbitrary_types_allowed=True)

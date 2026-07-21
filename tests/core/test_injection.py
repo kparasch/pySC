@@ -171,7 +171,7 @@ def test_generate_orbit_centered_multi_particle_uses_normal_form(monkeypatch):
 
     bunch_norm = np.column_stack(draws)
     sigmas = np.array([2.0, 2.0, 3.0, 3.0, 5.0, 5.0])
-    expected = (bunch_norm * sigmas) @ W.T + orbit
+    expected = np.dot(bunch_norm * sigmas, W.T) + orbit
     np.testing.assert_allclose(bunch, expected)
 
 

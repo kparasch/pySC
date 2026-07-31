@@ -4,6 +4,7 @@ import numpy as np
 from math import pi
 
 from pySC.core.bpm_system import BPMSystem, _rotation_matrix
+from pySC.core.rng import RNG
 
 
 # ---------------------------------------------------------------------------
@@ -352,3 +353,142 @@ def test_capture_injection_design_mode(sc):
     x_design2, y_design2 = bpm.capture_injection(n_turns=1, use_design=True)
     np.testing.assert_array_equal(x_design, x_design2)
     np.testing.assert_array_equal(y_design, y_design2)
+
+
+# ---------------------------------------------------------------------------
+# Dead-BPM alive-mask guard
+#
+# Regression coverage for the guard present in every capture method:
+#
+#     if self.dead is not None and self.dead.any():
+#         dead_alive_x = self.dead & ~np.isnan(fake_x)
+#         dead_alive_y = self.dead & ~np.isnan(fake_y)
+#         fake_x[dead_alive_x] = noise_x[dead_alive_x] * 10
+#         fake_y[dead_alive_y] = noise_y[dead_alive_y] * 10
+#
+# A dead BPM downstream of a beam-loss point already reads NaN (the beam never
+# arrived) and MUST stay NaN — it must not be overwritten with fabricated
+# ``noise * 10``, which would inflate transmission/reach metrics. A dead BPM
+# upstream of the loss (where the beam did arrive) must still emit the
+# amplified dead-BPM noise.
+# ---------------------------------------------------------------------------
+
+
+def test_capture_injection_dead_bpm_downstream_of_loss_stays_nan(sc, monkeypatch):
+    """Tracking path: a downstream dead BPM past a beam-loss point stays NaN.
+
+    ``capture_injection`` obtains the mean trajectory from
+    ``lattice.track_mean`` and then applies the dead-BPM guard. On real beam
+    loss, ``track_mean`` returns NaN for every BPM whose transmission falls
+    below the threshold — i.e. every BPM downstream of the loss point. The
+    HMBA test lattice has no physical apertures, so a partial-NaN trajectory
+    cannot be produced by pushing amplitude; instead we craft the pre-noise
+    trajectory that ``track_mean`` hands back (finite up to the loss point,
+    NaN after it), which is exactly the shape real loss produces. The guard
+    under test lives in ``capture_injection``, and this exercises it on a
+    genuine partial-NaN trajectory.
+    """
+    bpm = sc.bpm_system
+    n = len(bpm.indices)
+
+    # Non-zero TbT noise so the amplified dead-BPM value is finite and non-zero.
+    bpm.noise_tbt_x = np.full(n, 1e-6)
+    bpm.noise_tbt_y = np.full(n, 1e-6)
+
+    # Beam is lost at loss_idx: BPMs [0, loss_idx) see the beam (finite),
+    # BPMs [loss_idx, n) are downstream and read NaN.
+    loss_idx = n // 2 + 1          # 6 for the 10-BPM HMBA lattice
+    up_idx = loss_idx - 2          # dead BPM upstream of loss (finite reading)
+    down_idx = loss_idx + 2        # dead BPM downstream of loss (NaN reading)
+    pre_noise_val = 1.0            # absurd 1 m value: proves the overwrite fired
+
+    def fake_track_mean(self, bunch, indices=None, n_turns=1, use_design=False,
+                        coordinates=None, transmission_threshold=0):
+        # (coords, n_bpms, n_turns); NaN downstream of the loss point.
+        traj = np.full((2, n, n_turns), pre_noise_val)
+        traj[:, loss_idx:, :] = np.nan
+        transmission = np.zeros(n_turns)
+        return traj, transmission
+
+    monkeypatch.setattr(type(sc.lattice), "track_mean", fake_track_mean)
+
+    dead = np.zeros(n, dtype=bool)
+    dead[up_idx] = True
+    dead[down_idx] = True
+    bpm.dead = dead
+
+    # Reproduce the guard's noise draw: capture_injection first calls
+    # generate_bunch (which consumes RNG via the per-shot injection jitter),
+    # then draws noise_x, then noise_y — mirror that exact order.
+    sc.rng = RNG(seed=2024)
+    x, y = bpm.capture_injection(n_turns=1, bba=False, subtract_reference=False)
+
+    sc.rng = RNG(seed=2024)
+    sc.injection.generate_bunch()
+    noise_x = sc.rng.normal(scale=bpm.noise_tbt_x)
+    noise_y = sc.rng.normal(scale=bpm.noise_tbt_y)
+
+    # Downstream dead BPM: beam never arrived -> stays NaN, NOT fabricated.
+    assert np.isnan(x[down_idx, 0])
+    assert np.isnan(y[down_idx, 0])
+
+    # Upstream dead BPM: beam arrived -> emits amplified noise (noise * 10).
+    assert np.isfinite(x[up_idx, 0])
+    assert np.isfinite(y[up_idx, 0])
+    assert x[up_idx, 0] == noise_x[up_idx] * 10
+    assert y[up_idx, 0] == noise_y[up_idx] * 10
+    # The 1 m pre-noise value was overwritten by the (tiny) amplified noise.
+    assert abs(x[up_idx, 0]) < 1e-3
+
+
+def test_capture_orbit_dead_bpm_guard_nan_index_stays_nan(sc, monkeypatch):
+    """Guard unit test for ``capture_orbit``: a NaN orbit index stays NaN.
+
+    NOTE: this is a UNIT test of the dead-BPM guard, not a physical
+    closed-orbit claim. ``capture_orbit`` sources its orbit from
+    ``at.find_orbit`` (via ``lattice.get_orbit``), which is all-or-nothing —
+    a real closed orbit is never partially NaN. We therefore monkeypatch
+    ``get_orbit`` to inject a NaN at one index purely to drive the guard, and
+    assert the guard keeps that index NaN while a finite index still receives
+    amplified dead-BPM noise.
+    """
+    bpm = sc.bpm_system
+    n = len(bpm.indices)
+
+    bpm.noise_co_x = np.full(n, 1e-6)
+    bpm.noise_co_y = np.full(n, 1e-6)
+
+    nan_idx = n - 2        # "downstream" index whose crafted orbit reads NaN
+    finite_idx = 2         # index with a finite orbit reading
+    orbit_val = 5e-4       # distinctive finite pre-noise orbit value
+
+    def fake_get_orbit(self, indices=None, use_design=False):
+        # get_orbit returns shape (2, n_bpms): (x, y) per BPM.
+        orbit = np.full((2, n), orbit_val)
+        orbit[:, nan_idx] = np.nan
+        return orbit
+
+    monkeypatch.setattr(type(sc.lattice), "get_orbit", fake_get_orbit)
+
+    dead = np.zeros(n, dtype=bool)
+    dead[nan_idx] = True
+    dead[finite_idx] = True
+    bpm.dead = dead
+
+    # capture_orbit draws noise_x then noise_y (no bunch generation).
+    sc.rng = RNG(seed=2024)
+    fake_x, fake_y = bpm.capture_orbit(bba=False, subtract_reference=False)
+
+    sc.rng = RNG(seed=2024)
+    noise_x = sc.rng.normal(scale=bpm.noise_co_x)
+    noise_y = sc.rng.normal(scale=bpm.noise_co_y)
+
+    # Dead BPM at the NaN index: stays NaN, not fabricated.
+    assert np.isnan(fake_x[nan_idx])
+    assert np.isnan(fake_y[nan_idx])
+
+    # Dead BPM at a finite index: overwritten with amplified noise (noise * 10).
+    assert np.isfinite(fake_x[finite_idx])
+    assert np.isfinite(fake_y[finite_idx])
+    assert fake_x[finite_idx] == noise_x[finite_idx] * 10
+    assert fake_y[finite_idx] == noise_y[finite_idx] * 10

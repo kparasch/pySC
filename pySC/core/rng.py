@@ -46,5 +46,8 @@ class RNG(BaseModel, extra="forbid"):
     def uniform(self, low: float = 0, high: float = 1, size: Optional[int] = None) -> Union[float, np.ndarray]:
         return low + self._rng.random(size=size) * (high - low)
 
+    def choice(self, a, size=None, replace=True):
+        return self._rng.choice(a, size=size, replace=replace)
+
     def randomize_rng(self) -> None:
         self._rng = default_rng()

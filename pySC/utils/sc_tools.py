@@ -102,23 +102,39 @@ LOGGER = logging.getLogger(__name__)
 #     return matrix_inv
 
 
-# def scale_circumference(RING, circ, mode='abs'):  # TODO
-#     allowed_modes = ("abs", "rel")
-#     if mode not in allowed_modes:
-#         raise ValueError(f'Unsupported circumference scaling mode: ``{mode}``. Allowed are {allowed_modes}.')
-#     C = at_wrapper.findspos(RING)[-1]
-#     D = 0
-#     for ind in range(len(RING)):
-#         if RING[ind].PassMethod == 'DriftPass':
-#             D += RING[ind].Length
-#     if mode == 'rel':
-#         Dscale = 1 - (1 - circ) * C / D
-#     else:  # mode == 'abs'
-#         Dscale = 1 - (C - circ) / D
-#     for ind in range(len(RING)):
-#         if RING[ind].PassMethod == 'DriftPass':
-#             RING[ind].Length = RING[ind].Length * Dscale
-#     return RING
+def scale_circumference(ring, circ, mode='rel'):
+    """Scale the circumference of a ring by adjusting drift space lengths.
+
+    Parameters
+    ----------
+    ring : at.Lattice
+        The AT lattice to modify (modified in place).
+    circ : float
+        Circumference value. Interpretation depends on *mode*.
+    mode : str
+        ``'rel'`` — *circ* is a multiplicative factor (e.g. 1 + 1e-6).
+        ``'abs'`` — *circ* is the desired circumference in metres.
+
+    Returns
+    -------
+    at.Lattice
+        The modified lattice (same object, returned for chaining).
+    """
+    allowed_modes = ('abs', 'rel')
+    if mode not in allowed_modes:
+        raise ValueError(f'Unsupported circumference scaling mode: {mode!r}. Allowed are {allowed_modes}.')
+    C = sum(elem.Length for elem in ring)
+    D = sum(elem.Length for elem in ring if elem.PassMethod == 'DriftPass')
+    if D == 0:
+        raise ValueError('No drift elements found in ring — cannot scale circumference.')
+    if mode == 'rel':
+        Dscale = 1 - (1 - circ) * C / D
+    else:  # mode == 'abs'
+        Dscale = 1 - (C - circ) / D
+    for elem in ring:
+        if elem.PassMethod == 'DriftPass':
+            elem.Length = elem.Length * Dscale
+    return ring
 
 
 def update_transformation(element, dx=None, dy=None, dz=None, roll=None, yaw=None, pitch=None):

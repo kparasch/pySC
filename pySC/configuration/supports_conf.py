@@ -12,7 +12,7 @@ ZERO_LENGTH_THRESHOLD = 1e-6
 def generate_element_misalignments(SC: SimulatedCommissioning, index: int, category_conf: dict[str, Any]) -> None:
     error_table = dict.get(SC.configuration, 'error_table', {}) # defaults to empty error_table if not declared
     SC.support_system.add_element(index)
-    for error_type in ['dx', 'dy', 'ds', 'roll', 'yaw', 'pitch']:
+    for error_type in ['dx', 'dy', 'dz', 'roll', 'yaw', 'pitch']:
         if error_type in category_conf:
             sigma = get_error(category_conf[error_type], error_table)
             setattr(SC.support_system.data['L0'][index], error_type, SC.rng.normal_trunc(0, sigma))
@@ -76,15 +76,15 @@ def configure_supports(SC: SimulatedCommissioning):
                 else:
                     this_support.end.dy = SC.rng.normal_trunc(0, sigma)
 
-            if 'ds' in level_conf:
-                sigma = get_error(level_conf['ds'], error_table)
+            if 'dz' in level_conf:
+                sigma = get_error(level_conf['dz'], error_table)
                 if alignment == 'relative':
                     sigma = sigma / SQRT2
-                this_support.start.ds = SC.rng.normal_trunc(0, sigma)
+                this_support.start.dz = SC.rng.normal_trunc(0, sigma)
                 if support_has_zero_length:
-                    this_support.end.ds = this_support.start.ds
+                    this_support.end.dz = this_support.start.dz
                 else:
-                    this_support.end.ds = SC.rng.normal_trunc(0, sigma)
+                    this_support.end.dz = SC.rng.normal_trunc(0, sigma)
 
             if 'roll' in level_conf:
                 sigma = get_error(level_conf['roll'], error_table)

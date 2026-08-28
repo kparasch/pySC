@@ -239,7 +239,7 @@ def test_get_total_offset_unsupported():
     ss.add_element(5)
     ss.data['L0'][5].dx = 0.001
     ss.data['L0'][5].dy = 0.002
-    ss.data['L0'][5].ds = 0.003
+    ss.data['L0'][5].dz = 0.003
 
     offset = ss.get_total_offset(5)
     np.testing.assert_allclose(offset, np.array([0.001, 0.002, 0.003]), atol=1e-14)
@@ -255,14 +255,14 @@ def test_get_total_offset_one_level_translation():
     support = ss.data['L1'][supp_key]
     support.start.dx = 0.010
     support.start.dy = 0.020
-    support.start.ds = 0.030
+    support.start.dz = 0.030
     support.end.dx = 0.010
     support.end.dy = 0.020
-    support.end.ds = 0.030
+    support.end.dz = 0.030
 
     ss.data['L0'][5].dx = 0.001
     ss.data['L0'][5].dy = 0.002
-    ss.data['L0'][5].ds = 0.003
+    ss.data['L0'][5].dz = 0.003
 
     offset = ss.get_total_offset(5)
     np.testing.assert_allclose(offset, np.array([0.011, 0.022, 0.033]), atol=1e-14)
@@ -282,16 +282,16 @@ def test_support_roll_rotates_child_element_offset():
     np.testing.assert_allclose(offset, np.array([0.0, 1.0, 0.0]), atol=1e-14)
 
 
-def test_support_endpoint_ds_propagates_to_element_longitudinal_offset():
-    """Endpoint ds contributes to the resolved element longitudinal component."""
+def test_support_endpoint_dz_propagates_to_element_longitudinal_offset():
+    """Endpoint dz contributes to the resolved element longitudinal component."""
     ss, _ = _make_support_system(n_elements=20, circumference=100.0)
     ss.add_element(5)
     supp_key = ss.add_support(2, 8, level=1)
     ss.resolve_graph()
 
     support = ss.data['L1'][supp_key]
-    support.start.ds = 0.1
-    support.end.ds = 0.1
+    support.start.dz = 0.1
+    support.end.dz = 0.1
 
     offset = ss.get_total_offset(5)
     np.testing.assert_allclose(offset, np.array([0.0, 0.0, 0.1]), atol=1e-14)
@@ -340,10 +340,10 @@ def test_get_support_offset_linear_interpolation():
     support = ss.data['L1'][supp_key]
     support.start.dx = 0.0
     support.start.dy = 0.0
-    support.start.ds = 0.0
+    support.start.dz = 0.0
     support.end.dx = 1.0
     support.end.dy = 2.0
-    support.end.ds = 3.0
+    support.end.dz = 3.0
 
     midpoint_s = 0.5 * (support.start.s + support.end.s)
     offset = ss.get_support_offset(midpoint_s, ('L1', supp_key))
@@ -360,10 +360,10 @@ def test_get_support_offset_wrapping():
     support = ss.data['L1'][supp_key]
     support.start.dx = 0.0
     support.start.dy = 0.0
-    support.start.ds = 0.0
+    support.start.dz = 0.0
     support.end.dx = 1.0
     support.end.dy = 2.0
-    support.end.ds = 3.0
+    support.end.dz = 3.0
 
     # Element 0 center is s=2.5, halfway along the wrapped support.
     offset_at_element_0 = ss.get_support_offset(ss._element_center_s(0), ('L1', supp_key))
@@ -375,7 +375,7 @@ def test_non_rigid_support_keeps_endpoint_distance_change():
     ss, _ = _make_support_system(n_elements=20, circumference=100.0)
     supp_key = ss.add_support(2, 8, level=1)
     support = ss.data['L1'][supp_key]
-    support.end.ds = 1.0
+    support.end.dz = 1.0
 
     start_offset = ss.get_total_offset(supp_key, level='L1', endpoint='start')
     end_offset = ss.get_total_offset(supp_key, level='L1', endpoint='end')
@@ -393,7 +393,7 @@ def test_rigid_support_preserves_nominal_endpoint_distance():
     supp_key = ss.add_support(2, 8, level=1)
     support = ss.data['L1'][supp_key]
     support.rigid = True
-    support.end.ds = 1.0
+    support.end.dz = 1.0
 
     start_offset = ss.get_total_offset(supp_key, level='L1', endpoint='start')
     end_offset = ss.get_total_offset(supp_key, level='L1', endpoint='end')

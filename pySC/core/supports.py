@@ -28,7 +28,7 @@ class ElementOffset(BaseModel, extra="forbid"):
     index: int
     dx: float = 0.0
     dy: float = 0.0
-    ds: float = 0.0
+    dz: float = 0.0
     roll: float = 0.0
     yaw: float = 0.0
     pitch: float = 0.0
@@ -46,7 +46,7 @@ class SupportEndpoint(BaseModel, extra="forbid"):
     supported_by: Optional[tuple[str, int]] = None  # (level, index)
     dx: float = 0.0
     dy: float = 0.0
-    ds: float = 0.0
+    dz: float = 0.0
     s: Optional[float] = None  # center s position in the ring, to be filled later
 
 
@@ -245,7 +245,7 @@ class SupportSystem(BaseModel, extra="forbid"):
     def _reference_pose(self, index_or_s):
         """
         Return the design world pose at an element center index or longitudinal s.
-        The returned rotation maps local [dx, dy, ds] to world [X, Y, Z].
+        The returned rotation maps local [dx, dy, dz] to world [X, Y, Z].
         """
         self._ensure_reference_orbit()
         x_ref = np.asarray(self._reference_X, dtype=float)
@@ -308,8 +308,8 @@ class SupportSystem(BaseModel, extra="forbid"):
         base_start, R_start_parent = self._endpoint_parent_pose(support.start)
         base_end, R_end_parent = self._endpoint_parent_pose(support.end)
 
-        start_offset = np.array([support.start.dx, support.start.dy, support.start.ds])
-        end_offset = np.array([support.end.dx, support.end.dy, support.end.ds])
+        start_offset = np.array([support.start.dx, support.start.dy, support.start.dz])
+        end_offset = np.array([support.end.dx, support.end.dy, support.end.dz])
         start = base_start + R_start_parent @ start_offset
         end = base_end + R_end_parent @ end_offset
 
@@ -357,7 +357,7 @@ class SupportSystem(BaseModel, extra="forbid"):
         else:
             parent_p, parent_R = self._support_pose_at_s(eo.s, eo.supported_by)
 
-        offset = np.array([eo.dx, eo.dy, eo.ds])
+        offset = np.array([eo.dx, eo.dy, eo.dz])
         R_local = at_rotation(pitch=eo.pitch, yaw=eo.yaw, roll=eo.roll).as_matrix()
         p = parent_p + parent_R @ offset
         R = parent_R @ R_local
@@ -408,7 +408,7 @@ class SupportSystem(BaseModel, extra="forbid"):
         p_ref, R_ref = self._reference_pose(self.data[level][index].index)
         return R_ref.T @ (p_world - p_ref), as_rotation(R_ref.T @ R_world)
 
-    def set_offset(self, index, level='L0', endpoint=None, dx=0, dy=0, ds=0):
+    def set_offset(self, index, level='L0', endpoint=None, dx=0, dy=0, dz=0):
         """
         Set the transverse offset for an element or endpoint.
         """
@@ -421,15 +421,15 @@ class SupportSystem(BaseModel, extra="forbid"):
         if endpoint is None:
             self.data[level][index].dx = dx
             self.data[level][index].dy = dy
-            self.data[level][index].ds = ds
+            self.data[level][index].dz = dz
         elif endpoint == 'start':
             self.data[level][index].start.dx = dx
             self.data[level][index].start.dy = dy
-            self.data[level][index].start.ds = ds
+            self.data[level][index].start.dz = dz
         elif endpoint == 'end':
             self.data[level][index].end.dx = dx
             self.data[level][index].end.dy = dy
-            self.data[level][index].end.ds = ds
+            self.data[level][index].end.dz = dz
         else:
             raise Exception(f'BUG: Unknown case ?! endpoint={endpoint}')
 
@@ -449,7 +449,7 @@ class SupportSystem(BaseModel, extra="forbid"):
         else:
             eo = self.data[level][index]
             offset, rot = self._element_offset_and_rotation(eo.index, level)
-            dx, dy, ds = offset
+            dx, dy, dz = offset
 
             if eo.is_bpm:
                 roll, _, _ = at_angles_from_rotation(rot)
@@ -458,7 +458,7 @@ class SupportSystem(BaseModel, extra="forbid"):
                 self._parent.bpm_system.rolls[eo.bpm_number] = roll
                 self._parent.bpm_system.update_rot_matrices()
             else:
-                self._parent.lattice.update_misalignment(index=eo.index, dx=dx, dy=dy, ds=ds, rot=rot)
+                self._parent.lattice.update_misalignment(index=eo.index, dx=dx, dy=dy, dz=dz, rot=rot)
 
     def update_all(self) -> None:
         for index in self.data['L0'].keys():

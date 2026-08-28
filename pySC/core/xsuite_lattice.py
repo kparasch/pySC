@@ -545,7 +545,7 @@ class XSuiteLattice(Lattice):
         return M
 
     def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
-                            ds: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
+                            dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
                             pitch: Optional[float] = None, tilt: Optional[float] = None, rot=None,
                             use_design=False) -> None:
         line = self._design if use_design else self._ring
@@ -573,12 +573,12 @@ class XSuiteLattice(Lattice):
                 env.ref[element_name].shift_y += env.ref['pySC'] * env.ref[expression_name]
             env[expression_name] = dy
 
-        if ds is not None:
-            expression_name = f"pySC_ds_{index}"
+        if dz is not None:
+            expression_name = f"pySC_dz_{index}"
             if expression_name not in env.vars:
                 env[expression_name] = 0.
                 env.ref[element_name].shift_s += env.ref['pySC'] * env.ref[expression_name]
-            env[expression_name] = ds
+            env[expression_name] = dz
 
         expression_name = f"pySC_roll_no_frame_{index}"
         if expression_name not in env.vars:

@@ -284,7 +284,7 @@ def test_update_misalignment(sc):
         quad_idx,
         dx=0.001,
         dy=0.002,
-        ds=0.003,
+        dz=0.003,
         rot=at_rotation(pitch=0.004, yaw=0.005, roll=0.006),
     )
 

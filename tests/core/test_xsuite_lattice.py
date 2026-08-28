@@ -146,7 +146,7 @@ def test_xsuite_update_misalignment_uses_xsuite_rotation_convention():
     rot = at_rotation(pitch=0.11, yaw=-0.07, roll=0.05)
     expected_rot_s, expected_rot_x, expected_rot_y = xsuite_angles_from_rotation(rot)
 
-    lattice.update_misalignment(0, dx=1e-3, dy=2e-3, ds=3e-3, rot=rot)
+    lattice.update_misalignment(0, dx=1e-3, dy=2e-3, dz=3e-3, rot=rot)
 
     assert element.shift_x.added
     assert element.shift_y.added
@@ -156,6 +156,7 @@ def test_xsuite_update_misalignment_uses_xsuite_rotation_convention():
     assert element.rot_x_rad.added
     assert element.rot_y_rad.added
     assert element.rot_shift_anchor == pytest.approx(1.0)
+    assert env.vars['pySC_dz_0'] == pytest.approx(3e-3)
     assert env.vars['pySC_roll_no_frame_0'] == pytest.approx(expected_rot_s)
     assert env.vars['pySC_pitch_0'] == pytest.approx(expected_rot_x)
     assert env.vars['pySC_yaw_0'] == pytest.approx(expected_rot_y)

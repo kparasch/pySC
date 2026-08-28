@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 class Optics_tuning(BaseModel, extra="forbid"):
-    quadrupoles: list[str] = None
+    quadrupoles: list[str] = []
     quad_weights: Optional[list[float]] = None
     response: Optional[Quadrupole_response] = None
 
@@ -27,9 +27,7 @@ class Optics_tuning(BaseModel, extra="forbid"):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def build_quadrupole_response(self, delta: float = 1e-6, save_as: Optional[str] = None):
-        if self.quadrupoles is None:
-            raise Exception("tuning.optics.quads have not been specified.")
-        if self.quadrupoles is not None and len(self.quadrupoles) == 0:
+        if len(self.quadrupoles) == 0:
             raise Exception("list of tuning.optics.quads is empty.")
 
         logger.info(f"Building optics responses of {len(self.quadrupoles)} quadrupoles.")

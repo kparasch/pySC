@@ -1,4 +1,6 @@
 """Tests for pySC.core.lattice: ATLattice loading, tracking, optics, magnets."""
+from types import SimpleNamespace
+
 import pytest
 import numpy as np
 import at
@@ -23,6 +25,60 @@ def test_lattice_loads_from_file(hmba_lattice_file):
     assert isinstance(lat.design, at.Lattice)
     assert len(lat.ring) > 0
     assert len(lat.design) == len(lat.ring)
+
+
+def test_at_lattice_warns_for_existing_misalignments(caplog):
+    """Existing AT element transform fields are reported before pySC owns them."""
+    lattice = ATLattice.model_construct(lattice_file="dummy.mat")
+    lattice._design = [
+        SimpleNamespace(
+            FamName="q1",
+            dx=1e-6,
+            dy=0.0,
+            dz=0.0,
+            tilt=0.0,
+            pitch=0.0,
+            yaw=0.0,
+            tilt_frame=0.0,
+        ),
+        SimpleNamespace(
+            FamName="q2",
+            dx=0.0,
+            dy=0.0,
+            dz=0.0,
+            tilt=2e-6,
+            pitch=0.0,
+            yaw=0.0,
+            tilt_frame=0.0,
+        ),
+    ]
+
+    lattice._warn_if_existing_misalignments()
+
+    assert "pre-existing element misalignments" in caplog.text
+    assert "0:q1(dx)" in caplog.text
+    assert "1:q2(tilt)" in caplog.text
+
+
+def test_at_lattice_misalignment_warning_ignores_zero_fields(caplog):
+    """Zero AT element transform fields do not warn."""
+    lattice = ATLattice.model_construct(lattice_file="dummy.mat")
+    lattice._design = [
+        SimpleNamespace(
+            FamName="q1",
+            dx=0.0,
+            dy=0.0,
+            dz=0.0,
+            tilt=0.0,
+            pitch=0.0,
+            yaw=0.0,
+            tilt_frame=0.0,
+        )
+    ]
+
+    lattice._warn_if_existing_misalignments()
+
+    assert "pre-existing element misalignments" not in caplog.text
 
 
 # ---------------------------------------------------------------------------

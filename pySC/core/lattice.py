@@ -99,6 +99,7 @@ class ATLattice(Lattice):
     def load_lattice(self):
         self._ring = at.load_lattice(self.lattice_file, use=self.use, **self.loader_kwargs)
         self._design = at.load_lattice(self.lattice_file, use=self.use, **self.loader_kwargs)
+        self._warn_if_existing_misalignments()
 
         if not self.no_6d:
             self._ring.enable_6d()
@@ -110,6 +111,37 @@ class ATLattice(Lattice):
         self._twiss = self.get_twiss(use_design=True)
 
         return self
+
+    def _warn_if_existing_misalignments(self) -> None:
+        fields = ("dx", "dy", "dz", "tilt", "pitch", "yaw", "tilt_frame")
+        offending = []
+
+        for index, elem in enumerate(self._design):
+            nonzero = []
+            for field in fields:
+                if not hasattr(elem, field):
+                    continue
+                value = getattr(elem, field)
+                if value is not None and np.any(np.asarray(value) != 0.0):
+                    nonzero.append(field)
+
+            if nonzero:
+                name = getattr(elem, "FamName", str(index))
+                offending.append(f"{index}:{name}({', '.join(nonzero)})")
+
+        if not offending:
+            return
+
+        shown = ", ".join(offending[:10])
+        extra = "" if len(offending) <= 10 else f", ... +{len(offending) - 10} more"
+        logger.warning(
+            "Loaded AT lattice contains pre-existing element misalignments: %s%s. "
+            "These values are present in the design and active ring copies; pySC "
+            "support-system updates use element.transform(..., relative=False) "
+            "and may overwrite them on touched active-ring elements.",
+            shown,
+            extra,
+        )
 
     @property
     def omp_num_threads(self):

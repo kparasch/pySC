@@ -211,8 +211,8 @@ class Optics_tuning(BaseModel, extra="forbid"):
 
         dx = factor * data.frequency_response_x
         dx_err = factor * data.frequency_response_x_err
-        dy = factor * data.frequency_response_x
-        dy_err = factor * data.frequency_response_x_err
+        dy = factor * data.frequency_response_y
+        dy_err = factor * data.frequency_response_y_err
 
         dx_beat = np.std(dx - SC.lattice.twiss['dx'][SC.bpm_system.indices])
         dy_beat = np.std(dy - SC.lattice.twiss['dy'][SC.bpm_system.indices])

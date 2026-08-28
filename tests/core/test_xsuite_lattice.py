@@ -125,6 +125,46 @@ def test_xsuite_get_brho_uses_particle_ref_p0c():
     assert lattice.get_Brho(use_design=True) == pytest.approx(p0c[0] / clight)
 
 
+def test_xsuite_get_reference_orbit_maps_survey_to_pysc_plane():
+    """XSuite survey Z/X/theta become pySC reference x/y/angle."""
+    survey = SimpleNamespace(
+        X=np.array([0.0, -0.1, -0.4]),
+        Y=np.zeros(3),
+        Z=np.array([0.0, 1.0, 2.0]),
+        theta=np.array([0.0, -0.1, -0.2]),
+        phi=np.zeros(3),
+        psi=np.zeros(3),
+    )
+    line = SimpleNamespace(survey=lambda: survey)
+    lattice = XSuiteLattice.model_construct(lattice_file="dummy.json", no_6d=False)
+    lattice._design = line
+
+    x, y, angle = lattice.get_reference_orbit()
+
+    np.testing.assert_array_equal(x, survey.Z)
+    np.testing.assert_array_equal(y, survey.X)
+    np.testing.assert_array_equal(angle, survey.theta)
+
+
+def test_xsuite_get_reference_orbit_warns_for_non_planar_survey(caplog):
+    """Out-of-plane survey components are ignored by support geometry."""
+    survey = SimpleNamespace(
+        X=np.zeros(2),
+        Y=np.array([0.0, 1e-6]),
+        Z=np.array([0.0, 1.0]),
+        theta=np.zeros(2),
+        phi=np.array([0.0, 2e-6]),
+        psi=np.array([0.0, 3e-6]),
+    )
+    line = SimpleNamespace(survey=lambda: survey)
+    lattice = XSuiteLattice.model_construct(lattice_file="dummy.json", no_6d=False)
+    lattice._design = line
+
+    lattice.get_reference_orbit()
+
+    assert "Design lattice is not planar" in caplog.text
+
+
 def test_xsuite_update_misalignment_uses_xsuite_rotation_convention():
     """XSuite roll is a no-frame field rotation; x-rotation has XSuite sign."""
     element = SimpleNamespace(

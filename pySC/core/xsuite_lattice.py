@@ -1,6 +1,6 @@
 from .lattice import Lattice
 from pydantic import PrivateAttr, model_validator
-from typing import Optional, Literal
+from typing import Optional, Literal, Tuple
 import re
 import numpy as np
 from numpy import array as nparray
@@ -622,3 +622,14 @@ class XSuiteLattice(Lattice):
             raise ValueError("Xsuite lattice has no particle_ref. Cannot compute Brho.")
     
         return float(line.particle_ref.p0c[0]) / clight
+
+    def get_reference_orbit(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        survey = self.design.survey()
+
+        if not np.all(survey.Y == 0) or not np.all(survey.phi == 0) or not np.all(survey.psi == 0):
+            logger.warning("Design lattice is not planar. Vertical positions and out-of-plane angles are ignored, please make sure they are small.")
+            logger.warning(f"Minimum Y: {np.min(survey.Y)}, maximum Y: {np.max(survey.Y)}, ")
+            logger.warning(f"Minimum phi: {np.min(survey.phi)}, maximum phi: {np.max(survey.phi)}, ")
+            logger.warning(f"Minimum psi: {np.min(survey.psi)}, maximum psi: {np.max(survey.psi)}, ")
+
+        return np.asarray(survey.Z), np.asarray(survey.X), np.asarray(survey.theta)

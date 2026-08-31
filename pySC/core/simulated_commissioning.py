@@ -16,6 +16,7 @@ from .injection import InjectionSettings
 from .rng import RNG
 from ..control_system.server import start_server as _start_server
 from .control import KnobData
+from .kickers import KickerSettings
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
     rf_settings: RFSettings = RFSettings()
     design_rf_settings: RFSettings = RFSettings()
     injection: InjectionSettings = InjectionSettings()
+    kickers: KickerSettings = KickerSettings()
     tuning: Tuning = Tuning()
 
     configuration: dict = {}
@@ -79,6 +81,7 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
         self.design_magnet_settings._parent = self
         self.support_system._parent = self
         self.bpm_system._parent = self
+        self.kickers._parent = self
 
         for rf_settings in [self.rf_settings, self.design_rf_settings]:
             rf_settings._parent = self

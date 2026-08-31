@@ -141,7 +141,7 @@ class KickerSettings(BaseModel, extra="forbid"):
         self.programs[name] = SingleKickProgram(control=control, turn_to_kick=turn_to_kick, amplitude=amplitude) 
 
     def add_ac_program(self, name: str, control: str, amplitude: float, tune: float = 0,
-                       ramp_up_turns: float = 0, flat_top_turns: int = 1000, ramp_down_turns: int = 0):
+                       ramp_up_turns: int = 0, flat_top_turns: int = 1000, ramp_down_turns: int = 0):
         self._check_control_exists(name, control)
         self.programs[name] = ACProgram(control=control, amplitude=amplitude, tune=tune, ramp_up_turns=ramp_up_turns,
                                         flat_top_turns=flat_top_turns, ramp_down_turns=ramp_down_turns)

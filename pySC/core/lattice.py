@@ -1,5 +1,5 @@
 from pydantic import BaseModel, PrivateAttr, model_validator
-from typing import Optional, Literal, Tuple
+from typing import Optional, Literal, Tuple, TYPE_CHECKING
 import re
 import numpy as np
 import at
@@ -7,8 +7,12 @@ import warnings
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
 
+if TYPE_CHECKING:
+    from .kickers import KickerSettings
+
 from ..utils.sc_tools import update_transformation
 import logging
+
 logger = logging.getLogger(__name__)
 
 class Lattice(BaseModel, extra="forbid"):
@@ -37,7 +41,8 @@ class Lattice(BaseModel, extra="forbid"):
         return self._twiss
 
     def track_mean(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False,
-                   coordinates: Optional[list] = None, transmission_threshold: float = 0) -> Tuple[nparray, nparray]:
+                   coordinates: Optional[list] = None, transmission_threshold: float = 0,
+                   kickers: Optional["KickerSettings"] = None) -> Tuple[nparray, nparray]:
         new_bunch = bunch.copy()
         turns_per_chunk = self.turns_per_chunk
 
@@ -59,7 +64,7 @@ class Lattice(BaseModel, extra="forbid"):
         turns_tracked = 0
         while turns_left_to_track >= turns_per_chunk:
             track_data = self.track(new_bunch, indices=indices, n_turns=turns_per_chunk, use_design=use_design,
-                                                    coordinates=coordinates, modify_bunch_in_place=True)
+                                    coordinates=coordinates, modify_bunch_in_place=True, kickers=kickers)
             mean_data_chunk, transmission_chunk = apply_mean_and_transmission_threshold(track_data, transmission_threshold)
             xy[:, :, turns_tracked:turns_tracked + turns_per_chunk] = mean_data_chunk
             transmission[turns_tracked:turns_tracked + turns_per_chunk] = transmission_chunk
@@ -68,7 +73,7 @@ class Lattice(BaseModel, extra="forbid"):
 
         if turns_left_to_track != 0:
             track_data = self.track(new_bunch, indices=indices, n_turns=turns_left_to_track, use_design=use_design,
-                                                    coordinates=coordinates, modify_bunch_in_place=True)
+                                    coordinates=coordinates, modify_bunch_in_place=True, kickers=kickers)
 
             mean_data_chunk, transmission_chunk = apply_mean_and_transmission_threshold(track_data, transmission_threshold)
             xy[:, :, turns_tracked:] = mean_data_chunk
@@ -144,7 +149,7 @@ class ATLattice(Lattice):
         self.orbit_guess = list(guess)
 
     def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False, coordinates: Optional[list] = None,
-              modify_bunch_in_place: bool = False) -> nparray:
+              modify_bunch_in_place: bool = False, kickers: Optional["KickerSettings"] = None) -> nparray:
         new_bunch = bunch.copy()
         new_bunch[:,4], new_bunch[:,5] = new_bunch[:,5].copy(), new_bunch[:,4].copy()  # swap zeta and delta for AT
         if use_design:

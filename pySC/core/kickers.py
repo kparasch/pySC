@@ -30,7 +30,7 @@ class KickProgram(BaseModel, ABC, extra='forbid'):
         self._initial_value = self._magnet_settings.get(self.control)
         self._rng = magnet_settings._parent.rng
 
-    def next(self):
+    def apply_next_turn(self):
         value = next(self._generator)
         self._buffer.append(value)
         self._magnet_settings.set(self.control, value + self._initial_value)
@@ -149,3 +149,15 @@ class KickerSettings(BaseModel, extra="forbid"):
     def add_white_noise_program(self, name: str, control: str, amplitude: float):
         self._check_control_exists(name, control)
         self.programs[name] = WhiteNoiseProgram(control=control, amplitude=amplitude)
+
+    def initialize(self, magnet_settings: MagnetSettings):
+        for name in self.active_programs:
+            self.programs[name].initialize(magnet_settings)
+
+    def apply_next_turn(self):
+        for name in self.active_programs:
+            self.programs[name].apply_next_turn()
+
+    def finalize(self):
+        for name in self.active_programs:
+            self.programs[name].finalize()

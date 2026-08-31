@@ -139,18 +139,39 @@ class BPMSystem(BaseModel, extra='forbid'):
             If return_transmission is False: (fake_trajectory_x, fake_trajectory_y)
             If return_transmission is True: (fake_trajectory_x, fake_trajectory_y, transmission)
         '''
+
+        SC = self._parent
+        apply_kickers = SC.kickers.has_active
+
+
         if use_design:
-            bunch = self._parent.injection.generate_bunch(use_design=True)
-            trajectory, transmission = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True,
-                                                                       transmission_threshold=self.transmission_threshold)
+            bunch = SC.injection.generate_bunch(use_design=True)
+            if apply_kickers:
+                SC.kickers.initialize(SC.design_magnet_settings)
+            try:
+                trajectory, transmission = SC.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True,
+                                                                           transmission_threshold=self.transmission_threshold,
+                                                                           kickers=SC.kickers if apply_kickers else None)
+            finally:
+                if apply_kickers:
+                    SC.kickers.finalize()
+
             if return_transmission:
                 return trajectory[0], trajectory[1], transmission
             else:
                 return trajectory[0], trajectory[1]
 
-        bunch = self._parent.injection.generate_bunch()
-        trajectory, transmission = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False,
-                                                                   transmission_threshold=self.transmission_threshold)
+        bunch = SC.injection.generate_bunch()
+        if apply_kickers:
+            SC.kickers.initialize(SC.magnet_settings)
+        try:
+            trajectory, transmission = SC.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False,
+                                                                       transmission_threshold=self.transmission_threshold,
+                                                                       kickers=SC.kickers if apply_kickers else None)
+        finally:
+            if apply_kickers:
+                SC.kickers.finalize()
+
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])
@@ -159,8 +180,8 @@ class BPMSystem(BaseModel, extra='forbid'):
             one_trajectory = trajectory[:, :, n]
             rotated_trajectory = np.einsum('ijk,jk->ik', self._rot_matrices, one_trajectory)  
 
-            noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
-            noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
+            noise_x = SC.rng.normal(scale=self.noise_tbt_x)
+            noise_y = SC.rng.normal(scale=self.noise_tbt_y)
 
             fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
             fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
@@ -195,19 +216,37 @@ class BPMSystem(BaseModel, extra='forbid'):
             fake_orbit_x: Simulated x-coordinates of the orbit at the BPMs.
             fake_orbit_y: Simulated y-coordinates of the orbit at the BPMs.
         '''
+
+        SC = self._parent
+        apply_kickers = SC.kickers.has_active
+
         if use_design:
-            bunch = self._parent.injection.generate_orbit_centered_bunch(use_design=True)
+            bunch = SC.injection.generate_orbit_centered_bunch(use_design=True)
             bunch[:, 1] += kick_px
             bunch[:, 3] += kick_py
-            trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True,
-                                                            transmission_threshold=self.transmission_threshold)
+            if apply_kickers:
+                SC.kickers.initialize(SC.design_magnet_settings)
+            try:
+                trajectory, _ = SC.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=True,
+                                                      transmission_threshold=self.transmission_threshold,
+                                                      kickers=SC.kickers if apply_kickers else None)
+            finally:
+                if apply_kickers:
+                    SC.kickers.finalize()
             return trajectory[0], trajectory[1]
 
-        bunch = self._parent.injection.generate_orbit_centered_bunch()
+        bunch = SC.injection.generate_orbit_centered_bunch()
         bunch[:, 1] += kick_px
         bunch[:, 3] += kick_py
-        trajectory, _ = self._parent.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False,
-                                                        transmission_threshold=self.transmission_threshold)
+        if apply_kickers:
+            SC.kickers.initialize(SC.magnet_settings)
+        try:
+            trajectory, _ = SC.lattice.track_mean(bunch, indices=self.indices, n_turns=n_turns, use_design=False,
+                                                  transmission_threshold=self.transmission_threshold,
+                                                  kickers=SC.kickers if apply_kickers else None)
+        finally:
+            if apply_kickers:
+                SC.kickers.finalize()
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])
@@ -216,8 +255,8 @@ class BPMSystem(BaseModel, extra='forbid'):
             one_trajectory = trajectory[:, :, n]
             rotated_trajectory = np.einsum('ijk,jk->ik', self._rot_matrices, one_trajectory)  
 
-            noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
-            noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
+            noise_x = SC.rng.normal(scale=self.noise_tbt_x)
+            noise_y = SC.rng.normal(scale=self.noise_tbt_y)
 
             fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
             fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y

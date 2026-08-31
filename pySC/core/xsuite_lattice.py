@@ -1,12 +1,15 @@
 from .lattice import Lattice
 from pydantic import PrivateAttr, model_validator
-from typing import Optional, Literal, Tuple
+from typing import Optional, Literal, Tuple, TYPE_CHECKING
 import re
 import numpy as np
 from numpy import array as nparray
 from contextlib import redirect_stdout
 from io import StringIO
 from scipy.constants import c as clight
+
+if TYPE_CHECKING:
+    from .kickers import KickerSettings
 
 try:
     import xtrack as xt
@@ -101,7 +104,7 @@ class XSuiteLattice(Lattice):
             self._design.build_tracker(_context=self._context)
 
     def track(self, bunch: nparray, indices: Optional[list[int]] = None, n_turns: int = 1, use_design: bool = False,
-              coordinates: Optional[list] = None, modify_bunch_in_place: bool = False) -> nparray:
+              coordinates: Optional[list] = None, modify_bunch_in_place: bool = False, kickers: Optional["KickerSettings"] = None) -> nparray:
         n_particles = bunch.shape[0]
 
         if indices is None:
@@ -135,6 +138,8 @@ class XSuiteLattice(Lattice):
 
         for turn in range(n_turns):
             if sum(particles.state > 0): #track only if there are alive particles
+                if kickers is not None:
+                    kickers.apply_next_turn()
                 line.track(particles, turn_by_turn_monitor='ONE_TURN_EBE')
                 record = line.record_last_track
                 state = record.state[:, indices]

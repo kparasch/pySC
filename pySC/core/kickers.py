@@ -108,6 +108,14 @@ class KickerSettings(BaseModel, extra="forbid"):
         if name in self.active_programs:
             logger.warning(f"Kick program {name} is already active.")
         else:
+            control = self.programs[name].control
+            for active_name in self.active_programs:
+                active_control = self.programs[active_name].control
+                if active_control == control:
+                    raise ValueError(
+                        f"Cannot activate kick program {name}: control {control} is already "
+                        f"used by active kick program {active_name}."
+                    )
             self.active_programs.append(name)
 
     def deactivate(self, name: Optional[str] = None):

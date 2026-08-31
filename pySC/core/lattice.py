@@ -163,30 +163,52 @@ class ATLattice(Lattice):
         coord_map = {'x':0, 'px':1, 'y':2, 'py':3, 'tau':5, 'delta':4}
         coords = [coord_map[c] for c in coordinates]
 
-        if indices is not None:
-            if self.omp_num_threads is not None:
-                out = at.patpass(ring, new_bunch.T, refpts=indices, nturns=n_turns)
-            else:
-                out = ring.track(new_bunch.T, refpts=indices, nturns=n_turns, in_place=True)[0]
-            #out = self._design.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+        active_kickers = kickers is not None and kickers.has_active
+
+        if active_kickers:
+            n_particles = bunch.shape[0]
+            n_indices = len(indices) if indices is not None else 1
+            xy = np.full((len(coords), n_particles, n_indices, n_turns), np.nan)
+
+            for turn in range(n_turns):
+                kickers.apply_next_turn()
+                if indices is not None:
+                    if self.omp_num_threads is not None:
+                        refpts = list(indices) + [len(ring)]
+                        out = at.patpass(ring, new_bunch.T, refpts=refpts, nturns=1)
+                        new_bunch[:, :] = out[:, :, -1, 0].T
+                        out = out[:, :, :-1, :]
+                    else:
+                        out = ring.track(new_bunch.T, refpts=indices, nturns=1, in_place=True)[0]
+                else:
+                    if self.omp_num_threads is not None:
+                        out = at.patpass(ring, new_bunch.T, nturns=1)
+                        new_bunch[:, :] = out[:, :, -1, 0].T
+                    else:
+                        out = ring.track(new_bunch.T, nturns=1, in_place=True)[0]
+                xy[:, :, :, turn] = out[coords, :, :, 0]
         else:
-            if self.omp_num_threads is not None:
-                out = at.patpass(ring, new_bunch.T, nturns=n_turns)
+            if indices is not None:
+                if self.omp_num_threads is not None:
+                    out = at.patpass(ring, new_bunch.T, refpts=indices, nturns=n_turns)
+                else:
+                    out = ring.track(new_bunch.T, refpts=indices, nturns=n_turns, in_place=True)[0]
+                #out = self._design.track(bunch.T, refpts=indices, nturns=n_turns)[0]
             else:
-                out = ring.track(new_bunch.T, nturns=n_turns, in_place=True)[0]
-            # out = ring.track(bunch.T, nturns=n_turns)[0]
-        #     if indices is not None:
-        #         out = ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
-        #     else:
-        #         out = ring.track(bunch.T, nturns=n_turns)[0]
-        xy = out[coords, :, :, :]
+                if self.omp_num_threads is not None:
+                    out = at.patpass(ring, new_bunch.T, nturns=n_turns)
+                else:
+                    out = ring.track(new_bunch.T, nturns=n_turns, in_place=True)[0]
+                # out = ring.track(bunch.T, nturns=n_turns)[0]
+            #     if indices is not None:
+            #         out = ring.track(bunch.T, refpts=indices, nturns=n_turns)[0]
+            #     else:
+            #         out = ring.track(bunch.T, nturns=n_turns)[0]
+            xy = out[coords, :, :, :]
         if modify_bunch_in_place:
             new_bunch[:,4], new_bunch[:,5] = new_bunch[:,5].copy(), new_bunch[:,4].copy()  # swap zeta and delta again
             bunch[:,:] = new_bunch[:,:]
         return xy # shape of [coordinates, particles, ref points, turns]
-
-
-
 
     def get_orbit(self, indices: list[int] = None, use_design=False) -> dict:
         """

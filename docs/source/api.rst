@@ -21,6 +21,7 @@ Core
    core.magnet
    core.supports
    core.injection
+   core.kickers
    core.rfsettings
    core.control
    core.types
@@ -33,6 +34,7 @@ Configuration
    configuration.generation
    configuration.load_config
    configuration.general
+   configuration.kickers_conf
 
 Applications
 ------------

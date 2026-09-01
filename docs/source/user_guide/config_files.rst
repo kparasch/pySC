@@ -543,7 +543,103 @@ Supported injection options are:
    ``tau_error_stat``, ``delta_error_stat``
    Shot-to-shot injection jitter.
 
-8. Define tuning families
+8. Define kicker programs
+-------------------------
+
+``kickers``
+   Defines optional turn-by-turn magnet programs. These programs are stored in
+   ``SC.kickers.programs`` when the configuration is loaded. They are not
+   activated by the YAML file; activate the programs explicitly in Python before
+   taking a turn-by-turn BPM measurement.
+
+Kicker programs select one already-declared magnet control. The ``control``
+entry uses the same family/component selector style as tuning families: the key
+must be a group declared under ``magnets``, and the value must be one of that
+group's declared components.
+
+For example:
+
+.. code-block:: yaml
+
+   kickers:
+     single_kick:
+       injection_pulse:
+         control:
+           - correctors: B1
+         amplitude: 1e-6
+         turn_to_kick: 0
+
+     ac:
+       horizontal_shaker:
+         control:
+           - sextupoles: B1
+         amplitude: 5e-7
+         tune: 0.23
+         ramp_up_turns: 100
+         flat_top_turns: 500
+         ramp_down_turns: 100
+
+     white_noise:
+       vertical_noise:
+         control:
+           - correctors: A1
+         amplitude: 2e-7
+
+Supported kicker program types are:
+
+``single_kick``
+   Applies ``amplitude`` on one turn and zero on all other turns.
+
+``ac``
+   Applies a sinusoidal excitation with fractional tune ``tune``. The amplitude
+   ramps up over ``ramp_up_turns``, stays constant for ``flat_top_turns``, ramps
+   down over ``ramp_down_turns``, and then returns to zero.
+
+``white_noise``
+   Applies normally distributed white noise with RMS amplitude ``amplitude`` on
+   every tracked turn.
+
+Common fields are:
+
+``control``
+   Required selector for the magnet control to drive. If the selector matches
+   more than one control, pySC sorts them by lattice position, uses the first
+   one, and logs a warning.
+
+``amplitude``
+   Required kick amplitude. The program value is added to the control setpoint
+   that exists when the program is initialized for a measurement.
+
+Program-specific fields are:
+
+``turn_to_kick``
+   ``single_kick`` only. Turn number at which the kick is applied. The first
+   tracked turn is turn ``0``.
+
+``tune``
+   ``ac`` only. Fractional oscillation frequency in cycles per turn.
+
+``ramp_up_turns``, ``flat_top_turns``, ``ramp_down_turns``
+   ``ac`` only. Number of turns in each amplitude-envelope section.
+
+Configured programs are inactive by default. Activate them from Python:
+
+.. code-block:: python
+
+   from pySC.configuration.generation import generate_SC
+
+   SC = generate_SC("my_config.yaml")
+   SC.kickers.activate("horizontal_shaker")
+   x, y = SC.bpm_system.capture_injection(n_turns=1000)
+
+Only one active program may drive a given control at a time. Attempting to
+activate a second program on the same control raises an error. After each BPM
+capture call, pySC restores the driven controls to their initial setpoints.
+Kickers are applied both for ``use_design=False`` and ``use_design=True`` BPM
+capture calls; the program is initialized against the corresponding magnet
+settings object.
+
+9. Define tuning families
 -------------------------
 
 ``tuning``

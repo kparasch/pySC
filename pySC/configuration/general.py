@@ -7,6 +7,10 @@ from ..core.magnet import MAGNET_NAME_TYPE
 
 logger = logging.getLogger(__name__)
 
+class pySCConfigurationError(Exception):
+    """Exception raised during generation of SimulatedCommissioning object."""
+    pass
+
 def get_error(error_name: Optional[str], error_table: dict) -> float:
     if error_name is None:
         return 0

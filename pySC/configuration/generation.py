@@ -12,6 +12,7 @@ from .rf_conf import configure_rf
 from .supports_conf import configure_supports
 from .tuning_conf import configure_tuning
 from .injection_conf import configure_injection
+from .kickers_conf import configure_kickers
 from .general import scale_error_table
 from .multipolar_imperfections_conf import expand_multipolar_imperfection_models
 
@@ -87,6 +88,9 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
 
     logger.info('Configuring supports...')
     configure_supports(SC)
+
+    logger.info('Configuring kickers...')
+    configure_kickers(SC)
 
     logger.info('Configuring tuning...')
     configure_tuning(SC)

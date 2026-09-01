@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class KickProgram(BaseModel, ABC, extra='forbid'):
     control: str
+    amplitude: float
 
     _generator: Optional[Iterable] = PrivateAttr(default=None)
     _buffer: list[float] = PrivateAttr(default_factory=list)
@@ -41,7 +42,6 @@ class KickProgram(BaseModel, ABC, extra='forbid'):
 class SingleKickProgram(KickProgram):
     kind: Literal["single_kick"] = "single_kick"
     turn_to_kick: int
-    amplitude: float
 
     def get_generator(self):
         turn = 0
@@ -58,7 +58,6 @@ class ACProgram(KickProgram):
     ramp_up_turns: int = 0
     flat_top_turns: int = 1000
     ramp_down_turns: int = 0
-    amplitude: float
 
     def get_generator(self):
         t1 = self.ramp_up_turns
@@ -79,7 +78,6 @@ class ACProgram(KickProgram):
 
 class WhiteNoiseProgram(KickProgram):
     kind: Literal["white_noise"] = "white_noise"
-    amplitude: float
 
     def get_generator(self):
         while 1:

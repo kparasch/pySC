@@ -83,6 +83,56 @@ def _make_bba_data(n0=7, n_bpms=10, bpm_number=3, plane='H', bipolar=True,
     return data
 
 
+def _make_hv_bba_data(n0=7, n_bpms=10, bpm_number=3, bipolar=True,
+                      dk0l_x=1e-4, dk0l_y=2e-4, dk1l=0.05,
+                      offset_x=0.0, offset_y=0.0):
+    """Build synthetic normal-quadrupole HV BBA data with known offsets."""
+    data = BBAData(
+        quadrupole='Q1', bpm='BPM3', corrector=('CH1', 'CV1'), plane='HV',
+        dk0l=(dk0l_x, dk0l_y), dk1l=dk1l, n0=n0, shots_per_orbit=1,
+        bipolar=bipolar, bpm_number=bpm_number,
+    )
+
+    x_steps = np.linspace(-dk0l_x, dk0l_x, n0)
+    y_steps = np.linspace(-dk0l_y, dk0l_y, n0)
+    rng = np.random.default_rng(321)
+    x_response = np.abs(1.0 + 0.3 * rng.standard_normal(n_bpms))
+    y_response = np.abs(1.0 + 0.3 * rng.standard_normal(n_bpms))
+
+    for x_step, y_step in zip(x_steps, y_steps):
+        x_center = np.zeros(n_bpms)
+        y_center = np.zeros(n_bpms)
+        x_center[bpm_number] = x_step + offset_x
+        y_center[bpm_number] = y_step + offset_y
+
+        x_ios = x_response * x_step
+        y_ios = y_response * y_step
+
+        x_up = x_center + x_ios
+        y_up = y_center + y_ios
+        x_down = x_center.copy()
+        y_down = y_center.copy()
+        if bipolar:
+            x_down -= x_ios
+            y_down -= y_ios
+
+        data.raw_bpm_x_center.append(list(x_center))
+        data.raw_bpm_y_center.append(list(y_center))
+        data.raw_bpm_x_up.append(list(x_up))
+        data.raw_bpm_y_up.append(list(y_up))
+        data.raw_bpm_x_down.append(list(x_down))
+        data.raw_bpm_y_down.append(list(y_down))
+
+        data.raw_bpm_x_center_err.append(list(np.zeros(n_bpms)))
+        data.raw_bpm_y_center_err.append(list(np.zeros(n_bpms)))
+        data.raw_bpm_x_up_err.append(list(np.zeros(n_bpms)))
+        data.raw_bpm_y_up_err.append(list(np.zeros(n_bpms)))
+        data.raw_bpm_x_down_err.append(list(np.zeros(n_bpms)))
+        data.raw_bpm_y_down_err.append(list(np.zeros(n_bpms)))
+
+    return data
+
+
 def _make_sextupole_bba_data(n0=9, n_bpms=10, bpm_number=3, plane='H',
                              dk0l=1e-4, dk1l=0.05, offset=0.0):
     """Build synthetic normal-sextupole BBA data with a known quadratic center."""
@@ -195,6 +245,29 @@ class TestPrepIos:
 
             assert one_bpm_position == pytest.approx(bpm_position[ii])
             np.testing.assert_allclose(one_induced_orbit_shift, induced_orbit_shift[ii])
+
+    def test_prep_ios_hv_raises_clear_error(self):
+        """HV data are analyzed as separate planes, not through prep_ios."""
+        data = _make_hv_bba_data()
+
+        with pytest.raises(Exception, match="does not support HV plane"):
+            prep_ios(data)
+
+        assert data.plane == 'HV'
+
+    def test_get_one_ios_hv_returns_both_planes(self):
+        """Single-step IOS for HV data returns separate H and V values."""
+        data = _make_hv_bba_data(n0=5, n_bpms=8, bpm_number=2,
+                                 offset_x=0.001, offset_y=-0.002)
+
+        bpm_position, induced_orbit_shift = get_one_ios(data, ii=2)
+
+        assert len(bpm_position) == 2
+        assert len(induced_orbit_shift) == 2
+        assert induced_orbit_shift[0].shape == (8,)
+        assert induced_orbit_shift[1].shape == (8,)
+        assert np.all(np.isfinite(induced_orbit_shift[0]))
+        assert np.all(np.isfinite(induced_orbit_shift[1]))
 
 
 class TestRejectBpmOutlier:
@@ -323,6 +396,16 @@ class TestBBAAnalysis:
         )
         assert result.total_rejections == expected
 
+    def test_bba_analysis_hv_known_offsets(self):
+        """HV analysis returns one analysis result per plane."""
+        data = _make_hv_bba_data(n0=9, offset_x=0.0015, offset_y=-0.002)
+
+        result_h, result_v = BBAAnalysis.analyze(data)
+
+        np.testing.assert_allclose(result_h.offset, 0.0015, atol=1e-6)
+        np.testing.assert_allclose(result_v.offset, -0.002, atol=1e-6)
+        assert data.plane == 'HV'
+
 
 # ===========================================================================
 # Generator / measurement tests (need MockInterface)
@@ -440,6 +523,49 @@ class TestBBAMeasurement:
                 assert np.isfinite(meas.last_bpm_pos)
                 assert meas.last_ios.shape == (10,)
                 assert np.all(np.isfinite(meas.last_ios))
+
+        assert len(ready_codes) == meas.n0
+        assert code == BBACode.DONE
+
+    def test_bba_measurement_generate_hv_plane(self, mock_interface):
+        """Generator produces HV codes and collects HV data."""
+        iface = mock_interface(n_bpms=10)
+        meas = self._make_measurement()
+
+        codes = list(meas.generate(iface, plane='HV', skip_cycle=True))
+
+        assert BBACode.HYSTERESIS not in codes
+        assert BBACode.HORIZONTAL_VERTICAL in codes
+        assert BBACode.HORIZONTAL_VERTICAL_DONE in codes
+        assert BBACode.HORIZONTAL not in codes
+        assert BBACode.VERTICAL not in codes
+        assert codes[-1] == BBACode.DONE
+        assert len(meas.HV_data.raw_bpm_x_center) == meas.n0
+        assert len(meas.HV_data.raw_bpm_y_center) == meas.n0
+        assert meas.HV_data.initial_k0l == (
+            pytest.approx(meas.initial_h_k0l),
+            pytest.approx(meas.initial_v_k0l),
+        )
+        assert meas.HV_data.initial_k1 == pytest.approx(meas.initial_k1l)
+        assert meas.HV_data.timestamp is not None
+
+    def test_bba_measurement_live_ios_hv_yields_ready_codes(self, mock_interface):
+        """live_ios=True yields one HV IOS-ready code per measured point."""
+        iface = mock_interface(n_bpms=10)
+        meas = self._make_measurement()
+        meas.live_ios = True
+
+        ready_codes = []
+        for code in meas.generate(iface, plane='HV', skip_cycle=True):
+            if code == BBACode.HORIZONTAL_VERTICAL_IOS_READY:
+                ready_codes.append(code)
+                assert iface.get(meas.quadrupole) == pytest.approx(meas.initial_k1l)
+                assert len(meas.last_bpm_pos) == 2
+                assert len(meas.last_ios) == 2
+                assert meas.last_ios[0].shape == (10,)
+                assert meas.last_ios[1].shape == (10,)
+                assert np.all(np.isfinite(meas.last_ios[0]))
+                assert np.all(np.isfinite(meas.last_ios[1]))
 
         assert len(ready_codes) == meas.n0
         assert code == BBACode.DONE

@@ -6,6 +6,7 @@ import numpy as np
 from pySC.apps.measurements import orbit_correction, measure_bba, measure_ORM, measure_dispersion
 from pySC.apps.response_matrix import ResponseMatrix
 from pySC.apps.codes import BBACode, ResponseCode, DispersionCode
+from pySC.utils.file_tools import h5_to_dict
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +147,37 @@ class TestMeasureBBA:
         _, measurement = results[-1]
         assert measurement.magnet_type == 'skew_quadrupole'
         assert measurement.H_data.magnet_type == 'skew_quadrupole'
+
+    def test_measure_bba_hv_saves_data(self, mock_interface, tmp_path):
+        """HV BBA measurement saves one HDF5 file with split corrector data."""
+        iface = mock_interface(n_bpms=5)
+        config = _bba_config()
+        del config['QUAD_is_skew']
+        config['magnet_type'] = 'normal_quadrupole'
+
+        results = list(measure_bba(
+            iface,
+            'BPM0',
+            config,
+            skip_save=False,
+            folder_to_save=tmp_path,
+            plane='HV',
+            skip_cycle=True,
+        ))
+
+        codes = [code for code, _ in results]
+        files = list(tmp_path.glob('BBA_BPM0_HV_*.h5'))
+
+        assert BBACode.HYSTERESIS not in codes
+        assert BBACode.HYSTERESIS_DONE not in codes
+        assert BBACode.HORIZONTAL_VERTICAL_DONE in codes
+        assert len(files) == 1
+
+        saved_data = h5_to_dict(files[0])
+        assert saved_data['plane'] == 'HV'
+        assert tuple(saved_data['corrector']) == (b'CH0', b'CV0')
+        np.testing.assert_allclose(saved_data['dk0l'], [1e-4, 1e-4])
+        np.testing.assert_allclose(saved_data['initial_k0l'], [0.0, 0.0])
 
 
 # ---------------------------------------------------------------------------

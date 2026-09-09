@@ -22,7 +22,7 @@ class BBAData(BaseModel, extra="forbid"):
     """
     quadrupole: str
     bpm: str
-    corrector: Union[str, Tuple[str,str]] 
+    corrector: Union[str, Tuple[str,str]]
     plane: str
     dk0l: Union[float, Tuple[float,float]]  # Corrector k0 (max) step
     dk1l: float  # Quadrupole k1 step

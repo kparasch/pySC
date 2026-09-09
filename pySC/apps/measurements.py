@@ -99,7 +99,7 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
                                   live_ios=live_ios,
                                  )
 
-    generator = measurement.generate(interface=interface, plane=plane)
+    generator = measurement.generate(interface=interface, plane=plane, skip_cycle=skip_cycle)
 
     # run measurement loop
     for code in generator:
@@ -108,6 +108,8 @@ def measure_bba(interface: AbstractInterface, bpm_name, config: dict, shots_per_
             measurement.H_data.save(folder_to_save=folder_to_save)
         if not skip_save and code is BBACode.VERTICAL_DONE:
             measurement.V_data.save(folder_to_save=folder_to_save)
+        if not skip_save and code is BBACode.HORIZONTAL_VERTICAL_DONE:
+            measurement.HV_data.save(folder_to_save=folder_to_save)
         yield code, measurement 
 
 def measure_ORM(interface: AbstractInterface, corrector_names: list[str], delta: Union[float, list[float]],

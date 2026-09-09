@@ -66,6 +66,16 @@ class BBAData(BaseModel, extra="forbid"):
         filename = Path(folder_to_save) / Path(f'BBA_{self.bpm}_{self.plane}_{time_str}.h5')
         self.original_save_path = str(filename.resolve())
         dict_to_save = self.model_dump()
+
+        if isinstance(dict_to_save["corrector"], tuple):
+            dict_to_save["corrector"] = np.array(dict_to_save["corrector"], dtype="S")
+        if isinstance(dict_to_save["dk0l"], tuple):
+            dict_to_save["dk0l"] = np.array(dict_to_save["dk0l"], dtype=float)
+        if isinstance(dict_to_save["initial_k0l"], tuple):
+            dict_to_save["initial_k0l"] = np.array(dict_to_save["initial_k0l"], dtype=float)
+        if isinstance(dict_to_save["magnet_type"], MagnetType):
+            dict_to_save["magnet_type"] = dict_to_save["magnet_type"].value
+
         dict_to_h5(dict_to_save, filename)
         logger.info(f'Saved data to {filename} .')
         return filename
@@ -331,6 +341,13 @@ class BBA_Measurement(BaseModel, extra="forbid"):
             self.V_data.initial_k1 = self.initial_k1l
             self.V_data.timestamp = timestamp
 
+        if plane == "HV":
+            if self.h_corrector is None or self.v_corrector is None:
+                raise ValueError("BBA_Measurement.h_corrector or BBA_Measurement.v_corrector is not defined.")
+            self.HV_data.initial_k0l = (self.initial_h_k0l, self.initial_v_k0l)
+            self.HV_data.initial_k1 = self.initial_k1l
+            self.HV_data.timestamp = timestamp
+
         self.print_init()
 
         if self.h_corrector is None:
@@ -365,6 +382,8 @@ class BBA_Measurement(BaseModel, extra="forbid"):
     #         logger.debug(f'    Got code: {code}')
 
 def prep_ios(data: BBAData, n_downstream: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
+    if data.plane == 'HV':
+        raise Exception("prep_ios does not support HV plane.")
     ( bpm_number, bpm_position, induced_orbit_shift, start, k1_arr, all_x, all_y,
     ) = _prepare_data_for_ios_calculation(data=data, n_downstream=n_downstream)
 
@@ -376,8 +395,7 @@ def prep_ios(data: BBAData, n_downstream: Optional[int] = None) -> tuple[np.ndar
 
     return bpm_position, induced_orbit_shift
 
-def get_one_ios(data: BBAData, ii: int, n_downstream: Optional[int] = None,
-                plane: Optional[Literal["H","V","HV"]] = None) -> tuple[float, np.ndarray]:
+def get_one_ios(data: BBAData, ii: int, n_downstream: Optional[int] = None) -> tuple[float, np.ndarray]:
     ( bpm_number,_, _, start, k1_arr, all_x, all_y,
     ) = _prepare_data_for_ios_calculation(data=data, n_downstream=n_downstream)
 
@@ -515,12 +533,15 @@ class BBAAnalysis(BaseModel):
                 slope_cutoff: Optional[float] = None, center_cutoff: Optional[float] = None):
 
         if data.plane == "HV":
-            data.plane = "H"
-            resultH = cls.analyze(data=data, n_downstream=n_downstream, bpm_outlier_sigma=bpm_outlier_sigma,
-                                  slope_cutoff=slope_cutoff, center_cutoff=center_cutoff)
-            data.plane = "V"
-            resultV = cls.analyze(data=data, n_downstream=n_downstream, bpm_outlier_sigma=bpm_outlier_sigma,
-                                  slope_cutoff=slope_cutoff, center_cutoff=center_cutoff)
+            try:
+                data.plane = "H"
+                resultH = cls.analyze(data=data, n_downstream=n_downstream, bpm_outlier_sigma=bpm_outlier_sigma,
+                                      slope_cutoff=slope_cutoff, center_cutoff=center_cutoff)
+                data.plane = "V"
+                resultV = cls.analyze(data=data, n_downstream=n_downstream, bpm_outlier_sigma=bpm_outlier_sigma,
+                                      slope_cutoff=slope_cutoff, center_cutoff=center_cutoff)
+            finally:
+                data.plane = "HV"
             return (resultH, resultV)
 
         if bpm_outlier_sigma is None:

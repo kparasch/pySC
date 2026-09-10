@@ -491,32 +491,32 @@ def reject_center_outlier(center: np.ndarray, center_cutoff: float) -> np.ndarra
     return mask
 
 class BBAAnalysis(BaseModel):
-    offset: float
-    offset_error: float
+    offset: Union[float, Tuple[float, float]]
+    offset_error: Union[float, Tuple[float, float]]
 
-    quadratics: NPARRAY
-    slopes: NPARRAY
-    intercepts: NPARRAY
-    centers: NPARRAY
+    quadratics: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    slopes: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    intercepts: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    centers: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
 
-    quadratics_err: NPARRAY
-    slopes_err: NPARRAY
-    intercepts_err: NPARRAY
-    centers_err: NPARRAY
+    quadratics_err: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    slopes_err: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    intercepts_err: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    centers_err: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
 
-    induced_orbit_shift: NPARRAY
-    bpm_position: NPARRAY
+    induced_orbit_shift: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    bpm_position: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
 
-    mask_accepted: NPARRAY
+    mask_accepted: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
 
     n_downstream: Optional[int]
 
     fit_order:int
 
-    rejected_outliers: int
-    rejected_slopes: int
-    rejected_centers: int
-    total_rejections: int = 0
+    rejected_outliers: Union[int, Tuple[int, int]]
+    rejected_slopes: Union[int, Tuple[int, int]]
+    rejected_centers: Union[int, Tuple[int, int]]
+    total_rejections: Union[int, Tuple[int, int]] = 0
 
     bpm_outlier_sigma: float
     slope_cutoff: float
@@ -532,6 +532,15 @@ class BBAAnalysis(BaseModel):
     def analyze(cls, data: BBAData, n_downstream: Optional[int] = None, bpm_outlier_sigma: Optional[float] = None,
                 slope_cutoff: Optional[float] = None, center_cutoff: Optional[float] = None):
 
+        if bpm_outlier_sigma is None:
+            bpm_outlier_sigma = cls.default_bpm_outlier_sigma
+
+        if slope_cutoff is None:
+            slope_cutoff = cls.default_slope_cutoff
+
+        if center_cutoff is None:
+            center_cutoff = cls.default_center_cutoff
+
         if data.plane == "HV":
             try:
                 data.plane = "H"
@@ -542,16 +551,29 @@ class BBAAnalysis(BaseModel):
                                       slope_cutoff=slope_cutoff, center_cutoff=center_cutoff)
             finally:
                 data.plane = "HV"
-            return (resultH, resultV)
-
-        if bpm_outlier_sigma is None:
-            bpm_outlier_sigma = cls.default_bpm_outlier_sigma
-
-        if slope_cutoff is None:
-            slope_cutoff = cls.default_slope_cutoff
-
-        if center_cutoff is None:
-            center_cutoff = cls.default_center_cutoff
+            return BBAAnalysis(offset=(resultH.offset, resultV.offset),
+                               offset_error=(resultH.offset_error, resultV.offset_error),
+                               quadratics=(resultH.quadratics, resultV.quadratics),
+                               slopes=(resultH.slopes, resultV.slopes),
+                               intercepts=(resultH.intercepts, resultV.intercepts),
+                               centers=(resultH.centers, resultV.centers),
+                               quadratics_err=(resultH.quadratics_err, resultV.quadratics_err),
+                               slopes_err=(resultH.slopes_err, resultV.slopes_err),
+                               intercepts_err=(resultH.intercepts_err, resultV.intercepts_err),
+                               centers_err=(resultH.centers_err, resultV.centers_err),
+                               induced_orbit_shift=(resultH.induced_orbit_shift, resultV.induced_orbit_shift),
+                               bpm_position=(resultH.bpm_position, resultV.bpm_position),
+                               mask_accepted=(resultH.mask_accepted, resultV.mask_accepted),
+                               n_downstream=n_downstream,
+                               fit_order=resultH.fit_order,
+                               rejected_outliers=(resultH.rejected_outliers, resultV.rejected_outliers),
+                               rejected_slopes=(resultH.rejected_slopes, resultV.rejected_slopes),
+                               rejected_centers=(resultH.rejected_centers, resultV.rejected_centers),
+                               total_rejections=(resultH.total_rejections, resultV.total_rejections),
+                               bpm_outlier_sigma=bpm_outlier_sigma,
+                               slope_cutoff=slope_cutoff,
+                               center_cutoff=center_cutoff,
+                              )
 
         bpm_position, induced_orbit_shift = prep_ios(data=data, n_downstream=n_downstream)
 

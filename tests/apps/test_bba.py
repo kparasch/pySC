@@ -397,13 +397,15 @@ class TestBBAAnalysis:
         assert result.total_rejections == expected
 
     def test_bba_analysis_hv_known_offsets(self):
-        """HV analysis returns one analysis result per plane."""
+        """HV analysis returns one aggregate result with both planes."""
         data = _make_hv_bba_data(n0=9, offset_x=0.0015, offset_y=-0.002)
 
-        result_h, result_v = BBAAnalysis.analyze(data)
+        result = BBAAnalysis.analyze(data)
 
-        np.testing.assert_allclose(result_h.offset, 0.0015, atol=1e-6)
-        np.testing.assert_allclose(result_v.offset, -0.002, atol=1e-6)
+        np.testing.assert_allclose(result.offset, (0.0015, -0.002), atol=1e-6)
+        assert len(result.bpm_position) == 2
+        assert len(result.induced_orbit_shift) == 2
+        assert len(result.mask_accepted) == 2
         assert data.plane == 'HV'
 
 

@@ -47,6 +47,7 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
             self.propagate_parents()
             if self.rng is None:
                 self.rng = RNG(seed=self.seed)
+            self.support_system.initialize_reference_orbit()
             self.support_system.update_all()
             self.design_magnet_settings.sendall()
             self.magnet_settings.sendall()

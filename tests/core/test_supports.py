@@ -1,7 +1,7 @@
 """Tests for pySC.core.supports: Support, SupportSystem, ElementOffset."""
 import pytest
 import numpy as np
-from unittest.mock import MagicMock, PropertyMock, patch
+from unittest.mock import MagicMock
 
 from pySC.core.supports import (
     ElementOffset,
@@ -9,32 +9,41 @@ from pySC.core.supports import (
     SupportEndpoint,
     SupportSystem,
 )
+from pySC.core.transformations import at_rotation
 
 
 # ---------------------------------------------------------------------------
-# Support yaw / pitch properties
+# Reference transforms
 # ---------------------------------------------------------------------------
 
-def test_support_yaw_pitch_zero_length():
-    """Support with length=0 returns yaw=0, pitch=0."""
-    s = Support(
-        start=SupportEndpoint(index=0, dx=0.1, dy=0.2, s=0.0),
-        end=SupportEndpoint(index=5, dx=0.3, dy=0.5, s=0.0),
-        length=0.0,
-    )
-    assert s.yaw == 0.0
-    assert s.pitch == 0.0
+
+@pytest.mark.parametrize(
+    "theta, local, world",
+    [
+        (0.0, np.array([1.0, 2.0, 3.0]), np.array([3.0, 1.0, 2.0])),
+        (np.pi / 2, np.array([1.0, 2.0, 3.0]), np.array([-1.0, 3.0, 2.0])),
+        (0.37, np.array([1.0, 2.0, 3.0]), np.array([
+            -np.sin(0.37) * 1.0 + np.cos(0.37) * 3.0,
+             np.cos(0.37) * 1.0 + np.sin(0.37) * 3.0,
+             2.0,
+        ])),
+    ],
+)
+def test_reference_pose_maps_local_to_world(theta, local, world):
+    ss, _ = _make_support_system(n_elements=2, circumference=2.0)
+    ss._reference_Angle[:] = theta
+
+    _, R = ss._reference_pose(0)
+    np.testing.assert_allclose(R @ local, world, atol=1e-14)
+    np.testing.assert_allclose(R.T @ world, local, atol=1e-14)
 
 
-def test_support_yaw_pitch_calculation():
-    """Yaw = (end.dx - start.dx)/length, Pitch = (end.dy - start.dy)/length."""
-    s = Support(
-        start=SupportEndpoint(index=0, dx=0.1, dy=0.2, s=0.0),
-        end=SupportEndpoint(index=10, dx=0.5, dy=0.8, s=2.0),
-        length=2.0,
-    )
-    assert s.yaw == pytest.approx((0.5 - 0.1) / 2.0)
-    assert s.pitch == pytest.approx((0.8 - 0.2) / 2.0)
+def test_reference_pose_uses_element_center():
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+
+    p, _ = ss._reference_pose(5)
+
+    np.testing.assert_allclose(p, np.array([27.5, 0.0, 0.0]), atol=1e-14)
 
 
 # ---------------------------------------------------------------------------
@@ -49,6 +58,10 @@ def _make_support_system(n_elements=20, circumference=100.0, bpm_indices=None):
     # twiss['s'] returns an array of s-positions: evenly spaced, ending at circumference
     s_positions = np.linspace(0, circumference, n_elements + 1)  # n_elements + 1 because element 0 is at s=0
     mock_sc.lattice.twiss.__getitem__ = lambda self_dict, key: s_positions if key == 's' else None
+    x_ref = s_positions.copy()
+    y_ref = np.zeros_like(s_positions)
+    angle_ref = np.zeros_like(s_positions)
+    mock_sc.lattice.get_reference_orbit = lambda: (x_ref, y_ref, angle_ref)
 
     if bpm_indices is None:
         bpm_indices = []
@@ -68,7 +81,16 @@ def _make_support_system(n_elements=20, circumference=100.0, bpm_indices=None):
     mock_sc.bpm_system.update_rot_matrices = MagicMock()
 
     ss._parent = mock_sc
+    ss.initialize_reference_orbit()
     return ss, mock_sc
+
+
+def _set_curved_reference(ss, radius=40.0):
+    s = ss._twiss_s()
+    theta = s / radius
+    ss._reference_X = radius * np.sin(theta)
+    ss._reference_Y = radius * (1.0 - np.cos(theta))
+    ss._reference_Angle = theta
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +104,7 @@ def test_add_element():
     assert 5 in ss.data['L0']
     assert isinstance(ss.data['L0'][5], ElementOffset)
     assert ss.data['L0'][5].index == 5
+    assert ss.data['L0'][5].s == pytest.approx(27.5)
 
 
 def test_add_element_duplicate_raises():
@@ -129,11 +152,13 @@ def test_add_support_calculates_length():
     """Support length = (end_s - start_s) mod circumference."""
     circumference = 100.0
     ss, _ = _make_support_system(n_elements=20, circumference=circumference)
-    # Elements are at s = 0, 5, 10, ..., 100
-    # Element 2 at s=10, element 8 at s=40
+    # Element centers are at s = 2.5, 7.5, 12.5, ...
+    # Element 2 center at s=12.5, element 8 center at s=42.5
     key = ss.add_support(2, 8, level=1)
     support = ss.data['L1'][key]
-    assert support.length == pytest.approx(30.0)  # 40 - 10
+    assert support.start.s == pytest.approx(12.5)
+    assert support.end.s == pytest.approx(42.5)
+    assert support.length == pytest.approx(30.0)  # 42.5 - 12.5
 
 
 # ---------------------------------------------------------------------------
@@ -171,6 +196,20 @@ def test_resolve_graph_populates_supports_elements():
     assert 15 not in supported_indices
 
 
+def test_resolve_graph_is_idempotent_for_supports_elements():
+    """Calling resolve_graph twice does not duplicate child links."""
+    ss, _ = _make_support_system(n_elements=20)
+    for i in [3, 5, 7]:
+        ss.add_element(i)
+    supp_key = ss.add_support(2, 8, level=1)
+
+    ss.resolve_graph()
+    ss.resolve_graph()
+
+    support = ss.data['L1'][supp_key]
+    assert support.supports_elements == [('L0', 3), ('L0', 5), ('L0', 7)]
+
+
 def test_resolve_graph_wrapping_support():
     """Support crossing s=0 correctly contains elements near start/end of ring."""
     ss, _ = _make_support_system(n_elements=20)
@@ -195,42 +234,99 @@ def test_resolve_graph_wrapping_support():
 # ---------------------------------------------------------------------------
 
 def test_get_total_offset_unsupported():
-    """Element with no support returns its own (dx, dy)."""
+    """Element with no support returns its own 3D offset."""
     ss, _ = _make_support_system(n_elements=20)
     ss.add_element(5)
     ss.data['L0'][5].dx = 0.001
     ss.data['L0'][5].dy = 0.002
+    ss.data['L0'][5].dz = 0.003
 
-    dx, dy = ss.get_total_offset(5)
-    assert dx == pytest.approx(0.001)
-    assert dy == pytest.approx(0.002)
+    offset = ss.get_total_offset(5)
+    np.testing.assert_allclose(offset, np.array([0.001, 0.002, 0.003]), atol=1e-14)
 
 
-def test_get_total_offset_one_level():
-    """Element on a girder: total = own offset + interpolated girder offset."""
+def test_get_total_offset_one_level_translation():
+    """Element on a translated support gets a 3D parent offset plus its own offset."""
     ss, _ = _make_support_system(n_elements=20, circumference=100.0)
-    # Elements at s = 0, 5, 10, ..., 100
-    ss.add_element(5)  # s=25
-    supp_key = ss.add_support(2, 8, level=1)  # s: 10 to 40, length=30
+    ss.add_element(5)  # center s=27.5
+    supp_key = ss.add_support(2, 8, level=1)  # center s: 12.5 to 42.5, length=30
     ss.resolve_graph()
 
-    # Set girder endpoint offsets
-    ss.data['L1'][supp_key].start.dx = 0.010
-    ss.data['L1'][supp_key].start.dy = 0.020
-    ss.data['L1'][supp_key].end.dx = 0.040
-    ss.data['L1'][supp_key].end.dy = 0.080
+    support = ss.data['L1'][supp_key]
+    support.start.dx = 0.010
+    support.start.dy = 0.020
+    support.start.dz = 0.030
+    support.end.dx = 0.010
+    support.end.dy = 0.020
+    support.end.dz = 0.030
 
-    # Element at s=25, support from s=10 to s=40 (length=30)
-    # Interpolated girder dx: (0.040 - 0.010)/(40-10) * (25-10) + 0.010 = 0.030/30 * 15 + 0.010 = 0.025
-    # Interpolated girder dy: (0.080 - 0.020)/(40-10) * (25-10) + 0.020 = 0.060/30 * 15 + 0.020 = 0.050
-
-    # Element own offset
     ss.data['L0'][5].dx = 0.001
     ss.data['L0'][5].dy = 0.002
+    ss.data['L0'][5].dz = 0.003
 
-    dx, dy = ss.get_total_offset(5)
-    assert dx == pytest.approx(0.001 + 0.025)
-    assert dy == pytest.approx(0.002 + 0.050)
+    offset = ss.get_total_offset(5)
+    np.testing.assert_allclose(offset, np.array([0.011, 0.022, 0.033]), atol=1e-14)
+
+
+def test_support_roll_rotates_child_element_offset():
+    """Child element offsets are composed through the support rotation matrix."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    ss.add_element(5)
+    supp_key = ss.add_support(2, 8, level=1)
+    ss.resolve_graph()
+
+    ss.data['L1'][supp_key].roll = np.pi / 2
+    ss.data['L0'][5].dx = 1.0
+
+    offset = ss.get_total_offset(5)
+    np.testing.assert_allclose(offset, np.array([0.0, 1.0, 0.0]), atol=1e-14)
+
+
+def test_support_endpoint_dz_propagates_to_element_longitudinal_offset():
+    """Endpoint dz contributes to the resolved element longitudinal component."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    ss.add_element(5)
+    supp_key = ss.add_support(2, 8, level=1)
+    ss.resolve_graph()
+
+    support = ss.data['L1'][supp_key]
+    support.start.dz = 0.1
+    support.end.dz = 0.1
+
+    offset = ss.get_total_offset(5)
+    np.testing.assert_allclose(offset, np.array([0.0, 0.0, 0.1]), atol=1e-14)
+
+
+@pytest.mark.parametrize("rigid", [False, True])
+def test_zero_offset_support_has_no_nominal_rotation_on_curved_reference(rigid):
+    """A support spanning a curve does not replace local reference orientation."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    _set_curved_reference(ss)
+    ss.add_element(5)
+    supp_key = ss.add_support(2, 8, level=1)
+    ss.data['L1'][supp_key].rigid = rigid
+    ss.resolve_graph()
+
+    np.testing.assert_allclose(ss.get_total_offset(5), np.zeros(3), atol=1e-14)
+    np.testing.assert_allclose(ss.get_total_rotation(5).as_matrix(), np.eye(3), atol=1e-14)
+
+
+def test_support_endpoint_geometry_creates_differential_rotation():
+    """Differential endpoint offsets still rotate the support from its nominal chord."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    ss.add_element(5)
+    supp_key = ss.add_support(2, 8, level=1)
+    ss.resolve_graph()
+
+    support = ss.data['L1'][supp_key]
+    support.end.dy = 3.0
+
+    resolved = ss.get_total_rotation(5).as_matrix()
+    length = np.hypot(30.0, 3.0)
+    expected_ds_axis = np.array([0.0, 3.0 / length, 30.0 / length])
+
+    np.testing.assert_allclose(resolved @ np.array([0.0, 0.0, 1.0]), expected_ds_axis, atol=1e-14)
+    assert not np.allclose(resolved, np.eye(3))
 
 
 # ---------------------------------------------------------------------------
@@ -238,42 +334,96 @@ def test_get_total_offset_one_level():
 # ---------------------------------------------------------------------------
 
 def test_get_support_offset_linear_interpolation():
-    """Element at midpoint of support gets the mean of endpoint offsets."""
+    """Midpoint of support gets the mean of endpoint offsets in 3D."""
     ss, _ = _make_support_system(n_elements=20, circumference=100.0)
-    # Support from index 4 (s=20) to index 8 (s=40), length=20
     supp_key = ss.add_support(4, 8, level=1)
     support = ss.data['L1'][supp_key]
     support.start.dx = 0.0
     support.start.dy = 0.0
+    support.start.dz = 0.0
     support.end.dx = 1.0
     support.end.dy = 2.0
+    support.end.dz = 3.0
 
-    # Midpoint s = 30
-    offset = ss.get_support_offset(30.0, ('L1', supp_key))
-    assert offset[0] == pytest.approx(0.5)
-    assert offset[1] == pytest.approx(1.0)
+    midpoint_s = 0.5 * (support.start.s + support.end.s)
+    offset = ss.get_support_offset(midpoint_s, ('L1', supp_key))
+    np.testing.assert_allclose(offset, np.array([0.5, 1.0, 1.5]), atol=1e-14)
 
 
 def test_get_support_offset_wrapping():
     """Support crossing s=0 interpolates correctly for elements on both sides."""
     circumference = 100.0
     ss, _ = _make_support_system(n_elements=20, circumference=circumference)
-    # Support from index 18 (s=90) to index 2 (s=10), wrapping
-    # length = (10 - 90) % 100 = 20
+    # Support from index 18 (center s=92.5) to index 2 (center s=12.5), wrapping
+    # length = (12.5 - 92.5) % 100 = 20
     supp_key = ss.add_support(18, 2, level=1)
     support = ss.data['L1'][supp_key]
     support.start.dx = 0.0
     support.start.dy = 0.0
+    support.start.dz = 0.0
     support.end.dx = 1.0
     support.end.dy = 2.0
+    support.end.dz = 3.0
 
-    # Element at s=0 (near the wrap point)
-    # s=0 < s1=90, so corr_s = circumference = 100
-    # corr_s2 = circumference = 100 (because start.index > end.index)
-    # dx = (1.0 - 0.0)/(10 - 90 + 100) * (0 - 90 + 100) + 0.0 = 1.0/20 * 10 = 0.5
-    offset_at_0 = ss.get_support_offset(0.0, ('L1', supp_key))
-    assert offset_at_0[0] == pytest.approx(0.5)
-    assert offset_at_0[1] == pytest.approx(1.0)
+    # Element 0 center is s=2.5, halfway along the wrapped support.
+    offset_at_element_0 = ss.get_support_offset(ss._element_center_s(0), ('L1', supp_key))
+    np.testing.assert_allclose(offset_at_element_0, np.array([0.5, 1.0, 1.5]), atol=1e-14)
+
+
+def test_non_rigid_support_keeps_endpoint_distance_change():
+    """Non-rigid supports keep the endpoint positions created by endpoint offsets."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    supp_key = ss.add_support(2, 8, level=1)
+    support = ss.data['L1'][supp_key]
+    support.end.dz = 1.0
+
+    start_offset = ss.get_total_offset(supp_key, level='L1', endpoint='start')
+    end_offset = ss.get_total_offset(supp_key, level='L1', endpoint='end')
+    start_ref, R_start = ss._reference_pose(support.start.index)
+    end_ref, R_end = ss._reference_pose(support.end.index)
+    start = start_ref + R_start @ start_offset
+    end = end_ref + R_end @ end_offset
+
+    assert np.linalg.norm(end - start) == pytest.approx(31.0)
+
+
+def test_rigid_support_preserves_nominal_endpoint_distance():
+    """Rigid supports rescale misaligned endpoints to preserve nominal chord length."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    supp_key = ss.add_support(2, 8, level=1)
+    support = ss.data['L1'][supp_key]
+    support.rigid = True
+    support.end.dz = 1.0
+
+    start_offset = ss.get_total_offset(supp_key, level='L1', endpoint='start')
+    end_offset = ss.get_total_offset(supp_key, level='L1', endpoint='end')
+    start_ref, R_start = ss._reference_pose(support.start.index)
+    end_ref, R_end = ss._reference_pose(support.end.index)
+    start = start_ref + R_start @ start_offset
+    end = end_ref + R_end @ end_offset
+
+    assert np.linalg.norm(end - start) == pytest.approx(30.0)
+
+
+def test_mixed_parent_support_uses_resolved_endpoint_positions():
+    """A support can be defined by endpoints resolved from different parents."""
+    ss, _ = _make_support_system(n_elements=20, circumference=100.0)
+    child_key = ss.add_support(5, 15, level=1)
+    left_parent_key = ss.add_support(0, 9, level=2)
+    right_parent_key = ss.add_support(10, 19, level=2)
+    ss.resolve_graph()
+
+    assert ('L1', child_key) in ss.data['L2'][left_parent_key].supports_elements
+    assert ('L1', child_key) in ss.data['L2'][right_parent_key].supports_elements
+
+    ss.data['L2'][left_parent_key].start.dx = 1.0
+    ss.data['L2'][left_parent_key].end.dx = 1.0
+    ss.data['L2'][right_parent_key].start.dx = 3.0
+    ss.data['L2'][right_parent_key].end.dx = 3.0
+
+    child = ss.data['L1'][child_key]
+    offset = ss.get_support_offset(0.5 * (child.start.s + child.end.s), ('L1', child_key))
+    np.testing.assert_allclose(offset, np.array([2.0, 0.0, 0.0]), atol=1e-14)
 
 
 # ---------------------------------------------------------------------------
@@ -281,10 +431,10 @@ def test_get_support_offset_wrapping():
 # ---------------------------------------------------------------------------
 
 def test_get_total_rotation_with_support():
-    """roll/yaw/pitch from support adds to element's own rotation."""
+    """Support and element rotations compose as matrices, not scalar sums."""
     ss, _ = _make_support_system(n_elements=20, circumference=100.0)
-    ss.add_element(5)  # s=25
-    supp_key = ss.add_support(2, 8, level=1)  # s: 10 to 40
+    ss.add_element(5)  # center s=27.5
+    supp_key = ss.add_support(2, 8, level=1)  # center s: 12.5 to 42.5
     ss.resolve_graph()
 
     # Set element rotation
@@ -292,17 +442,14 @@ def test_get_total_rotation_with_support():
     ss.data['L0'][5].yaw = 0.02
     ss.data['L0'][5].pitch = 0.03
 
-    # Set support roll (yaw/pitch come from endpoint dx/dy differences)
     ss.data['L1'][supp_key].roll = 0.1
-    ss.data['L1'][supp_key].start.dx = 0.0
-    ss.data['L1'][supp_key].end.dx = 0.6   # yaw = 0.6/30 = 0.02
-    ss.data['L1'][supp_key].start.dy = 0.0
-    ss.data['L1'][supp_key].end.dy = 0.9   # pitch = 0.9/30 = 0.03
 
-    roll, pitch, yaw = ss.get_total_rotation(5)
-    assert roll == pytest.approx(0.01 + 0.1)     # element + support roll
-    assert yaw == pytest.approx(0.02 + 0.02)     # element + support yaw
-    assert pitch == pytest.approx(0.03 + 0.03)   # element + support pitch
+    resolved = ss.get_total_rotation(5).as_matrix()
+    expected = (
+        at_rotation(roll=0.1).as_matrix()
+        @ at_rotation(pitch=0.03, yaw=0.02, roll=0.01).as_matrix()
+    )
+    np.testing.assert_allclose(resolved, expected, atol=1e-14)
 
 
 # ---------------------------------------------------------------------------
@@ -344,6 +491,27 @@ def test_trigger_update_propagates_to_bpm(sc):
 
     # Clean up
     ss.set_offset(bpm_idx, dx=0.0, dy=0.0)
+
+
+def test_trigger_update_evaluates_element_pose_once():
+    """L0 trigger_update derives offset and rotation from one element pose."""
+    ss, mock_sc = _make_support_system(n_elements=20)
+    idx = 5
+    ss.add_element(idx)
+
+    original_element_pose = ss._element_pose
+    calls = []
+
+    def counting_element_pose(index):
+        calls.append(index)
+        return original_element_pose(index)
+
+    object.__setattr__(ss, '_element_pose', counting_element_pose)
+
+    ss.trigger_update('L0', idx)
+
+    assert calls == [idx]
+    mock_sc.lattice.update_misalignment.assert_called_once()
 
 
 @pytest.mark.slow

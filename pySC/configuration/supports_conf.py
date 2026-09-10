@@ -49,6 +49,7 @@ def configure_supports(SC: SimulatedCommissioning):
             support_index = SC.support_system.add_support(index_start, index_end, name=level_name, level=level)
 
             this_support = SC.support_system.data[f'L{level}'][support_index]
+            this_support.rigid = bool(dict.get(level_conf, 'rigid', False))
 
             support_has_zero_length = False
             if this_support.length < ZERO_LENGTH_THRESHOLD:
@@ -74,6 +75,16 @@ def configure_supports(SC: SimulatedCommissioning):
                     this_support.end.dy = this_support.start.dy
                 else:
                     this_support.end.dy = SC.rng.normal_trunc(0, sigma)
+
+            if 'dz' in level_conf:
+                sigma = get_error(level_conf['dz'], error_table)
+                if alignment == 'relative':
+                    sigma = sigma / SQRT2
+                this_support.start.dz = SC.rng.normal_trunc(0, sigma)
+                if support_has_zero_length:
+                    this_support.end.dz = this_support.start.dz
+                else:
+                    this_support.end.dz = SC.rng.normal_trunc(0, sigma)
 
             if 'roll' in level_conf:
                 sigma = get_error(level_conf['roll'], error_table)

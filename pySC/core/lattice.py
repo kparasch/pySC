@@ -7,7 +7,7 @@ import warnings
 from scipy.constants import c as C_LIGHT
 from numpy import array as nparray
 
-from ..utils.sc_tools import update_transformation
+from .transformations import at_angles_from_rotation, at_rotation
 import logging
 logger = logging.getLogger(__name__)
 
@@ -99,6 +99,7 @@ class ATLattice(Lattice):
     def load_lattice(self):
         self._ring = at.load_lattice(self.lattice_file, use=self.use, **self.loader_kwargs)
         self._design = at.load_lattice(self.lattice_file, use=self.use, **self.loader_kwargs)
+        self._warn_if_existing_misalignments()
 
         if not self.no_6d:
             self._ring.enable_6d()
@@ -110,6 +111,37 @@ class ATLattice(Lattice):
         self._twiss = self.get_twiss(use_design=True)
 
         return self
+
+    def _warn_if_existing_misalignments(self) -> None:
+        fields = ("dx", "dy", "dz", "tilt", "pitch", "yaw", "tilt_frame")
+        offending = []
+
+        for index, elem in enumerate(self._design):
+            nonzero = []
+            for field in fields:
+                if not hasattr(elem, field):
+                    continue
+                value = getattr(elem, field)
+                if value is not None and np.any(np.asarray(value) != 0.0):
+                    nonzero.append(field)
+
+            if nonzero:
+                name = getattr(elem, "FamName", str(index))
+                offending.append(f"{index}:{name}({', '.join(nonzero)})")
+
+        if not offending:
+            return
+
+        shown = ", ".join(offending[:10])
+        extra = "" if len(offending) <= 10 else f", ... +{len(offending) - 10} more"
+        logger.warning(
+            "Loaded AT lattice contains pre-existing element misalignments: %s%s. "
+            "These values are present in the design and active ring copies; pySC "
+            "support-system updates use element.transform(..., relative=False) "
+            "and may overwrite them on touched active-ring elements.",
+            shown,
+            extra,
+        )
 
     @property
     def omp_num_threads(self):
@@ -472,13 +504,30 @@ class ATLattice(Lattice):
 
     def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
                             dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
-                            pitch: Optional[float] = None, use_design: bool = False) -> None:
+                            pitch: Optional[float] = None, tilt: Optional[float] = None, rot=None,
+                            use_design: bool = False) -> None:
         if use_design:
             elem = self._design[index]
         else:
             elem = self._ring[index]
 
-        update_transformation(elem, dx=dx, dy=dy, dz=dz, roll=roll, yaw=yaw, pitch=pitch)
+        roll = roll if roll is not None else tilt
+        rot = rot if rot is not None else at_rotation(
+            pitch=pitch or 0.0,
+            yaw=yaw or 0.0,
+            roll=roll or 0.0,
+        )
+        roll, pitch, yaw = at_angles_from_rotation(rot)
+        elem.transform(
+            dx=dx or 0.0,
+            dy=dy or 0.0,
+            dz=dz or 0.0,
+            tilt=roll,
+            pitch=pitch,
+            yaw=yaw,
+            reference=at.ReferencePoint.CENTRE,
+            relative=False,
+        )
 
     def get_Brho(self, use_design: bool = False) -> float:
         """
@@ -496,3 +545,15 @@ class ATLattice(Lattice):
         """
         ring = self._design if use_design else self._ring
         return ring.BRho
+
+    def get_reference_orbit(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        N = len(self.design) + 1
+        geometry_data = self.design.get_geometry(refpts=range(N))[0]
+
+        if not np.all(geometry_data.v_angle == 0) or not np.all(geometry_data.z == 0):
+            logger.warning("Design lattice is not planar. Vertical angles and z positions are ignored, please make sure they are small.")
+            logger.warning(f"Minimum v_angle: {np.min(geometry_data.v_angle)}, maximum v_angle: {np.max(geometry_data.v_angle)}, ")
+            logger.warning(f"Minimum z: {np.min(geometry_data.z)}, maximum z: {np.max(geometry_data.z)}, ")
+            #raise NotImplementedError("Design lattice is not planar. This is not supported yet.")
+
+        return geometry_data.x, geometry_data.y, geometry_data.angle

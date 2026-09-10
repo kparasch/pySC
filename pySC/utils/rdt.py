@@ -1,4 +1,5 @@
 import numpy as np
+from ..core.transformations import at_angles_from_rotation
 from typing import TYPE_CHECKING, Optional
 from pySC.core.xsuite_lattice import XSuiteLattice
 
@@ -73,8 +74,8 @@ def get_integrated_strengths_with_feeddown(SC: "SimulatedCommissioning", use_des
         x_co = 0.5*(twiss['x'][ii] + twiss['x'][(ii+1)%N])
         y_co = 0.5*(twiss['y'][ii] + twiss['y'][(ii+1)%N])
         if not use_design:
-            dx, dy = SC.support_system.get_total_offset(ii)
-            roll, _, _ = SC.support_system.get_total_rotation(ii)
+            dx, dy = SC.support_system.get_total_offset(ii)[:2]
+            roll, _, _ = at_angles_from_rotation(SC.support_system.get_total_rotation(ii))
         else:
             dx = 0
             dy = 0

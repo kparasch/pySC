@@ -1,5 +1,5 @@
 from pydantic import BaseModel, PrivateAttr, ConfigDict, model_validator
-from typing import Optional, ClassVar, Literal
+from typing import Optional, ClassVar, Literal, Union, Tuple
 import datetime
 import logging
 import numpy as np
@@ -22,9 +22,9 @@ class BBAData(BaseModel, extra="forbid"):
     """
     quadrupole: str
     bpm: str
-    corrector: str 
+    corrector: Union[str, Tuple[str,str]]
     plane: str
-    dk0l: float  # Corrector k0 (max) step
+    dk0l: Union[float, Tuple[float,float]]  # Corrector k0 (max) step
     dk1l: float  # Quadrupole k1 step
     n0: int  # Number of steps in the corrector strength
     shots_per_orbit: int
@@ -32,7 +32,7 @@ class BBAData(BaseModel, extra="forbid"):
     magnet_type: BBA_MagnetType = MagnetType.norm_quad
     bpm_number: int
 
-    initial_k0l: Optional[float] = None
+    initial_k0l: Optional[Union[float, Tuple[float,float]]] = None
     initial_k1: Optional[float] = None
     timestamp: Optional[float] = None
     original_save_path: Optional[str] = None
@@ -66,6 +66,16 @@ class BBAData(BaseModel, extra="forbid"):
         filename = Path(folder_to_save) / Path(f'BBA_{self.bpm}_{self.plane}_{time_str}.h5')
         self.original_save_path = str(filename.resolve())
         dict_to_save = self.model_dump()
+
+        if isinstance(dict_to_save["corrector"], tuple):
+            dict_to_save["corrector"] = np.array(dict_to_save["corrector"], dtype="S")
+        if isinstance(dict_to_save["dk0l"], tuple):
+            dict_to_save["dk0l"] = np.array(dict_to_save["dk0l"], dtype=float)
+        if isinstance(dict_to_save["initial_k0l"], tuple):
+            dict_to_save["initial_k0l"] = np.array(dict_to_save["initial_k0l"], dtype=float)
+        if isinstance(dict_to_save["magnet_type"], MagnetType):
+            dict_to_save["magnet_type"] = dict_to_save["magnet_type"].value
+
         dict_to_h5(dict_to_save, filename)
         logger.info(f'Saved data to {filename} .')
         return filename
@@ -120,6 +130,7 @@ class BBA_Measurement(BaseModel, extra="forbid"):
 
     H_data: Optional[BBAData] = None
     V_data: Optional[BBAData] = None
+    HV_data: Optional[BBAData] = None
 
     last_ios: NPARRAY = np.array([])
     last_bpm_pos: float = 0
@@ -152,7 +163,12 @@ class BBA_Measurement(BaseModel, extra="forbid"):
                                   corrector=self.v_corrector, dk0l=self.dk0l_y, dk1l=self.dk1l_y,
                                   n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
                                   magnet_type=self.magnet_type)
-
+        if self.h_corrector is not None and self.v_corrector is not None:
+            self.HV_data = BBAData(plane='HV', bpm=self.bpm, quadrupole=self.quadrupole, bpm_number=self.bpm_number,
+                                  corrector=(self.h_corrector, self.v_corrector), dk0l=(self.dk0l_x, self.dk0l_y),
+                                  dk1l=max(self.dk1l_x, self.dk1l_y),
+                                  n0=self.n0, shots_per_orbit=self.shots_per_orbit, bipolar=self.bipolar,
+                                  magnet_type=self.magnet_type)
 
     def print_init(self):
         logger.debug("Measurement plan:")
@@ -174,7 +190,7 @@ class BBA_Measurement(BaseModel, extra="forbid"):
 
     def one_plane_loop(self, plane: str):
         assert self._interface is not None
-        assert plane in ['H', 'V']
+        assert plane in ['H', 'V', 'HV']
 
         interface = self._interface
         if plane == 'H':
@@ -182,28 +198,56 @@ class BBA_Measurement(BaseModel, extra="forbid"):
             code = BBACode.HORIZONTAL
             ios_ready_code = BBACode.HORIZONTAL_IOS_READY
             code_done = BBACode.HORIZONTAL_DONE
-        else:
+        elif plane == 'V':
             logger.debug('Starting measurement in vertical plane.')
             code = BBACode.VERTICAL
             ios_ready_code = BBACode.VERTICAL_IOS_READY
             code_done = BBACode.VERTICAL_DONE
+        elif plane == 'HV':
+            logger.debug('Starting measurement in horizontal and vertical plane.')
+            code = BBACode.HORIZONTAL_VERTICAL
+            ios_ready_code = BBACode.HORIZONTAL_VERTICAL_IOS_READY
+            code_done = BBACode.HORIZONTAL_VERTICAL_DONE
 
-        corrector = self.h_corrector if plane == 'H' else self.v_corrector
-        initial_k0l = self.initial_h_k0l if plane == 'H' else self.initial_v_k0l
-        data = self.H_data if plane == 'H' else self.V_data
+        if plane == 'H':
+            corrector = self.h_corrector
+            initial_k0l = self.initial_h_k0l
+            data = self.H_data
+        elif plane == 'V':
+            corrector = self.v_corrector
+            initial_k0l = self.initial_v_k0l
+            data = self.V_data
+        elif plane == 'HV':
+            corrector = (self.h_corrector, self.v_corrector)
+            initial_k0l = (self.initial_h_k0l, self.initial_v_k0l)
+            data = self.HV_data
 
         logger.debug('Setting corrector to under first value (k0 - 1.2 dk0) for hysteresis')
-        interface.set(corrector, initial_k0l - 1.2 * data.dk0l)
+        if plane == 'HV':
+            interface.set(corrector[0], initial_k0l[0] - 1.2 * data.dk0l[0])
+            interface.set(corrector[1], initial_k0l[1] - 1.2 * data.dk0l[1])
+        else:
+            interface.set(corrector, initial_k0l - 1.2 * data.dk0l)
         yield code
 
-        k0_array = np.linspace(-data.dk0l, data.dk0l, self.n0) + initial_k0l
+        if plane == 'HV':
+            k0_array0 = np.linspace(-data.dk0l[0], data.dk0l[0], self.n0) + initial_k0l[0]
+            k0_array1 = np.linspace(-data.dk0l[1], data.dk0l[1], self.n0) + initial_k0l[1]
+            k0_array = [(k0_array0[i], k0_array1[i]) for i in range(self.n0)]
+        else:
+            k0_array = np.linspace(-data.dk0l, data.dk0l, self.n0) + initial_k0l
 
         get_orbit = self._interface.get_orbit
         for ii, k0_sp in enumerate(k0_array):
 
             # set next setpoint in corrector
-            logger.debug(f'{ii+1}/{self.n0} Stepping to next corrector setpoint: {k0_sp*1e6:+.1f} murad')
-            interface.set(corrector, k0_sp)
+            if plane == 'HV':
+                logger.debug(f'{ii+1}/{self.n0} Stepping to next corrector setpoint: ({k0_sp[0]*1e6:+.1f}, {k0_sp[1]*1e6:+.1f})  murad')
+                interface.set(corrector[0], k0_sp[0])
+                interface.set(corrector[1], k0_sp[1])
+            else:
+                logger.debug(f'{ii+1}/{self.n0} Stepping to next corrector setpoint: {k0_sp*1e6:+.1f} murad')
+                interface.set(corrector, k0_sp)
             yield code
 
             # correct vertical orbit?
@@ -255,12 +299,23 @@ class BBA_Measurement(BaseModel, extra="forbid"):
             if self.live_ios:
                 # TODO decide how to use n_downstream after writing an actual application for trajectory-based BBA.
                 self.last_bpm_pos, self.last_ios = get_one_ios(data=data, ii=ii, n_downstream=None)
-                logger.debug(f"    Position at BPM = {1e6*self.last_bpm_pos:.3f} μm, std(I.O.S.) = {1e6*np.std(self.last_ios):.3f} μm")
+                if plane == "HV":
+                    bpm0 = 1e6*self.last_bpm_pos[0]
+                    bpm1 = 1e6*self.last_bpm_pos[1]
+                    ios0 = 1e6*np.std(self.last_ios[0])
+                    ios1 = 1e6*np.std(self.last_ios[1])
+                    logger.debug(f"    Position at BPM = ({bpm0:.3f}, {bpm1:.3f}) μm, std(I.O.S.) = ({ios0:.3f}, {ios1:.3f}) μm")
+                else:
+                    logger.debug(f"    Position at BPM = {1e6*self.last_bpm_pos:.3f} μm, std(I.O.S.) = {1e6*np.std(self.last_ios):.3f} μm")
                 yield ios_ready_code
 
             logger.debug("")
         # restore corrector to initial setpoint
-        interface.set(corrector, initial_k0l)
+        if plane == 'HV':
+            interface.set(corrector[0], initial_k0l[0])
+            interface.set(corrector[1], initial_k0l[1])
+        else:
+            interface.set(corrector, initial_k0l)
 
         #save data
         yield code_done
@@ -286,6 +341,13 @@ class BBA_Measurement(BaseModel, extra="forbid"):
             self.V_data.initial_k1 = self.initial_k1l
             self.V_data.timestamp = timestamp
 
+        if plane == "HV":
+            if self.h_corrector is None or self.v_corrector is None:
+                raise ValueError("BBA_Measurement.h_corrector or BBA_Measurement.v_corrector is not defined.")
+            self.HV_data.initial_k0l = (self.initial_h_k0l, self.initial_v_k0l)
+            self.HV_data.initial_k1 = self.initial_k1l
+            self.HV_data.timestamp = timestamp
+
         self.print_init()
 
         if self.h_corrector is None:
@@ -307,6 +369,10 @@ class BBA_Measurement(BaseModel, extra="forbid"):
             for code in self.one_plane_loop('V'):
                 yield code
 
+        if (plane == 'HV') and self.h_corrector is not None and self.v_corrector is not None:
+            for code in self.one_plane_loop('HV'):
+                yield code
+
         yield BBACode.DONE
 
     # def run(self, generator=None):
@@ -316,6 +382,8 @@ class BBA_Measurement(BaseModel, extra="forbid"):
     #         logger.debug(f'    Got code: {code}')
 
 def prep_ios(data: BBAData, n_downstream: Optional[int] = None) -> tuple[np.ndarray, np.ndarray]:
+    if data.plane == 'HV':
+        raise Exception("prep_ios does not support HV plane.")
     ( bpm_number, bpm_position, induced_orbit_shift, start, k1_arr, all_x, all_y,
     ) = _prepare_data_for_ios_calculation(data=data, n_downstream=n_downstream)
 
@@ -381,7 +449,7 @@ def calc_ios(ii: int, magnet_type: MagnetType, delta: float, k1_arr: list[float]
             induced_orbit_shift = np.polyfit(k1_arr, all_x[:,ii], 1)[0] * delta
         else:
             raise Exception(f"Unknown magnet type {magnet_type}.")
-    else:
+    elif plane == 'V':
         bpm_position = np.mean(all_y[:, ii, bpm_number - start])
         if magnet_type in [MagnetType.skew_quad, MagnetType.norm_sext]:
             induced_orbit_shift = np.polyfit(k1_arr, all_x[:,ii], 1)[0] * delta
@@ -389,6 +457,17 @@ def calc_ios(ii: int, magnet_type: MagnetType, delta: float, k1_arr: list[float]
             induced_orbit_shift = np.polyfit(k1_arr, all_y[:,ii], 1)[0] * delta
         else:
             raise Exception(f"Unknown magnet type {magnet_type}.")
+    elif plane == 'HV':
+        bpm_position = (np.mean(all_x[:, ii, bpm_number - start]),
+                        np.mean(all_y[:, ii, bpm_number - start])
+                       )
+        if magnet_type in [MagnetType.skew_quad]:
+            induced_orbit_shift = (np.polyfit(k1_arr, all_y[:,ii], 1)[0] * delta, np.polyfit(k1_arr, all_x[:,ii], 1)[0] * delta)
+        elif magnet_type in [MagnetType.norm_quad]:
+            induced_orbit_shift = (np.polyfit(k1_arr, all_x[:,ii], 1)[0] * delta, np.polyfit(k1_arr, all_y[:,ii], 1)[0] * delta)
+        else:
+            raise Exception(f"Magnet type {magnet_type} not supported in plane=HV measurement.")
+
     return bpm_position, induced_orbit_shift
 
 def reject_bpm_outlier(induced_orbit_shift: np.ndarray, bpm_outlier_sigma: float) -> np.ndarray[bool]:
@@ -412,32 +491,32 @@ def reject_center_outlier(center: np.ndarray, center_cutoff: float) -> np.ndarra
     return mask
 
 class BBAAnalysis(BaseModel):
-    offset: float
-    offset_error: float
+    offset: Union[float, Tuple[float, float]]
+    offset_error: Union[float, Tuple[float, float]]
 
-    quadratics: NPARRAY
-    slopes: NPARRAY
-    intercepts: NPARRAY
-    centers: NPARRAY
+    quadratics: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    slopes: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    intercepts: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    centers: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
 
-    quadratics_err: NPARRAY
-    slopes_err: NPARRAY
-    intercepts_err: NPARRAY
-    centers_err: NPARRAY
+    quadratics_err: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    slopes_err: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    intercepts_err: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    centers_err: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
 
-    induced_orbit_shift: NPARRAY
-    bpm_position: NPARRAY
+    induced_orbit_shift: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
+    bpm_position: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
 
-    mask_accepted: NPARRAY
+    mask_accepted: Union[NPARRAY, Tuple[NPARRAY, NPARRAY]]
 
     n_downstream: Optional[int]
 
     fit_order:int
 
-    rejected_outliers: int
-    rejected_slopes: int
-    rejected_centers: int
-    total_rejections: int = 0
+    rejected_outliers: Union[int, Tuple[int, int]]
+    rejected_slopes: Union[int, Tuple[int, int]]
+    rejected_centers: Union[int, Tuple[int, int]]
+    total_rejections: Union[int, Tuple[int, int]] = 0
 
     bpm_outlier_sigma: float
     slope_cutoff: float
@@ -461,6 +540,40 @@ class BBAAnalysis(BaseModel):
 
         if center_cutoff is None:
             center_cutoff = cls.default_center_cutoff
+
+        if data.plane == "HV":
+            try:
+                data.plane = "H"
+                resultH = cls.analyze(data=data, n_downstream=n_downstream, bpm_outlier_sigma=bpm_outlier_sigma,
+                                      slope_cutoff=slope_cutoff, center_cutoff=center_cutoff)
+                data.plane = "V"
+                resultV = cls.analyze(data=data, n_downstream=n_downstream, bpm_outlier_sigma=bpm_outlier_sigma,
+                                      slope_cutoff=slope_cutoff, center_cutoff=center_cutoff)
+            finally:
+                data.plane = "HV"
+            return BBAAnalysis(offset=(resultH.offset, resultV.offset),
+                               offset_error=(resultH.offset_error, resultV.offset_error),
+                               quadratics=(resultH.quadratics, resultV.quadratics),
+                               slopes=(resultH.slopes, resultV.slopes),
+                               intercepts=(resultH.intercepts, resultV.intercepts),
+                               centers=(resultH.centers, resultV.centers),
+                               quadratics_err=(resultH.quadratics_err, resultV.quadratics_err),
+                               slopes_err=(resultH.slopes_err, resultV.slopes_err),
+                               intercepts_err=(resultH.intercepts_err, resultV.intercepts_err),
+                               centers_err=(resultH.centers_err, resultV.centers_err),
+                               induced_orbit_shift=(resultH.induced_orbit_shift, resultV.induced_orbit_shift),
+                               bpm_position=(resultH.bpm_position, resultV.bpm_position),
+                               mask_accepted=(resultH.mask_accepted, resultV.mask_accepted),
+                               n_downstream=n_downstream,
+                               fit_order=resultH.fit_order,
+                               rejected_outliers=(resultH.rejected_outliers, resultV.rejected_outliers),
+                               rejected_slopes=(resultH.rejected_slopes, resultV.rejected_slopes),
+                               rejected_centers=(resultH.rejected_centers, resultV.rejected_centers),
+                               total_rejections=(resultH.total_rejections, resultV.total_rejections),
+                               bpm_outlier_sigma=bpm_outlier_sigma,
+                               slope_cutoff=slope_cutoff,
+                               center_cutoff=center_cutoff,
+                              )
 
         bpm_position, induced_orbit_shift = prep_ios(data=data, n_downstream=n_downstream)
 

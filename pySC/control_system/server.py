@@ -24,7 +24,9 @@ def start_server(SC: "SimulatedCommissioning" , port : int = 13131, refresh_rate
         s.settimeout(refresh_rate)
         print("Socket successfully created")
         atexit.register(s.close)
+        start_time = time.time()
         while True:
+            #if time.time() > start_time + refresh_rate:
             print('Calculating orbit...')
             if mode == 0:
                 orbit_x, orbit_y = SC.bpm_system.capture_orbit()
@@ -40,6 +42,7 @@ def start_server(SC: "SimulatedCommissioning" , port : int = 13131, refresh_rate
                     ## this is an extra check to raise a timeout error if the server has
                     ## been accepting commands for more than 'timeout'.
                     if time.time() > start_time + refresh_rate:
+                        break
                         raise socket.timeout
 
                     conn, addr = s.accept()
@@ -73,5 +76,4 @@ def start_server(SC: "SimulatedCommissioning" , port : int = 13131, refresh_rate
                             send_int(conn, 0)
                             raise socket.timeout
                 except socket.timeout:
-                    break
-
+                    continue

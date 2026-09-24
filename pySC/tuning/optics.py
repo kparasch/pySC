@@ -46,7 +46,7 @@ class Optics_tuning(BaseModel, extra="forbid"):
     vertical_kick: Optional[str] = None
     horizontal_ac: Optional[str] = None
     vertical_ac: Optional[str] = None
-    response: Optional[Quadrupole_response] = None
+    _quadrupole_response: Optional[Quadrupole_response] = PrivateAttr(default=None)
 
     _parent: Optional['Tuning'] = PrivateAttr(default=None)
 
@@ -101,7 +101,7 @@ class Optics_tuning(BaseModel, extra="forbid"):
                                        mux_response=mux_response, muy_response=muy_response,
                                        dx_response=dx_response, eta_response=eta_response,
                                        qx_response=qx_response, qy_response=qy_response)
-        self.response = response
+        self._quadrupole_response = response
         if save_as is not None:
             logger.info(f"Saving quadrupole response in {save_as}.")
             response.save_as(filename=save_as)
@@ -111,7 +111,7 @@ class Optics_tuning(BaseModel, extra="forbid"):
         if filename is None:
             filename = self._parent.RM_folder + '/quadrupole_responses.json'
         logger.info(f"Loading quadrupole responses: {filename}.")
-        self.response = Quadrupole_response.load(filename=filename)
+        self._quadrupole_response = Quadrupole_response.load(filename=filename)
         return
 
     def beta_from_amplitude(self, n_kicks: int = 1, n_turns: int = 50, 
@@ -574,15 +574,15 @@ class Optics_tuning(BaseModel, extra="forbid"):
     def assemble_response_matrix(self, observables: list[str]):
         SC = self._parent._parent
         nbpm = len(SC.bpm_system.indices)
-        nquads = len(self.response.quadrupoles)
+        nquads = len(self._quadrupole_response.quadrupoles)
         nobs = len(observables)
 
         matrix = np.zeros([nobs*nbpm, nquads])
         for ii, obs in enumerate(observables):
             if obs in ['mux', 'muy']:
                 tune_response_name = "qx_response" if obs == "mux" else "qy_response"
-                phase_response = getattr(self.response, f"{obs}_response")
-                tune_response = getattr(self.response, tune_response_name)
+                phase_response = getattr(self._quadrupole_response, f"{obs}_response")
+                tune_response = getattr(self._quadrupole_response, tune_response_name)
 
                 delta_mu_response = np.diff(
                     phase_response,
@@ -591,7 +591,7 @@ class Optics_tuning(BaseModel, extra="forbid"):
                 )
                 matrix[ii * nbpm:(ii + 1) * nbpm, :] = delta_mu_response.T
             else:
-                matrix[ii * nbpm:(ii + 1) * nbpm, :] = np.transpose(getattr(self.response, f"{obs}_response"))
+                matrix[ii * nbpm:(ii + 1) * nbpm, :] = np.transpose(getattr(self._quadrupole_response, f"{obs}_response"))
 
         input_weights = np.array(self.quad_weights) if self.quad_weights is not None else None
         RM = ResponseMatrix(matrix=matrix, input_weights=input_weights, input_names=self.quadrupoles)
@@ -614,6 +614,10 @@ class Optics_tuning(BaseModel, extra="forbid"):
             raise ValueError(
                 f"Only one optics measurement can be used per correction: {active_beta_phase_measurements}"
             )
+
+        if len(active_beta_phase_measurements) and self._quadrupole_response is None:
+            self.load_quadrupole_response()
+
         observables = []
         beta_phase_measurement = active_beta_phase_measurements[0]
         if beta_phase_measurement in ['beta_from_amplitude', 'beta_from_amplitude_ac', 'beta_cheat']:

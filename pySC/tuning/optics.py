@@ -6,11 +6,13 @@ import warnings
 import scipy.optimize
 import json
 from ..core.control import KnobControl, KnobData
-from ..core.types import NPARRAY, Quadrupole_response
+from ..core.types import NPARRAY, QuadrupoleResponse
 from ..apps.response_matrix import ResponseMatrix
 from ..apps.measurements import measure_dispersion
 from .pySC_interface import pySCOrbitInterface
 from ..utils.sc_tools import nanmean, nanstd
+from ..utils import rdt
+from .coupling import Coupling_Tuning
 
 if TYPE_CHECKING:
     from .tuning_core import Tuning
@@ -46,7 +48,9 @@ class Optics_tuning(BaseModel, extra="forbid"):
     vertical_kick: Optional[str] = None
     horizontal_ac: Optional[str] = None
     vertical_ac: Optional[str] = None
-    _quadrupole_response: Optional[Quadrupole_response] = PrivateAttr(default=None)
+    coupling: Coupling_Tuning = Coupling_Tuning()
+    dispersion_weight: float = 1
+    _quadrupole_response: Optional[QuadrupoleResponse] = PrivateAttr(default=None)
 
     _parent: Optional['Tuning'] = PrivateAttr(default=None)
 
@@ -96,7 +100,7 @@ class Optics_tuning(BaseModel, extra="forbid"):
             qx_response[ii] = (twiss["qx"] - qx0) / delta
             qy_response[ii] = (twiss["qy"] - qy0) / delta
 
-        response = Quadrupole_response(quadrupoles=self.quadrupoles,
+        response = QuadrupoleResponse(quadrupoles=self.quadrupoles,
                                        betx_response=betx_response, bety_response=bety_response,
                                        mux_response=mux_response, muy_response=muy_response,
                                        dx_response=dx_response, eta_response=eta_response,
@@ -111,7 +115,7 @@ class Optics_tuning(BaseModel, extra="forbid"):
         if filename is None:
             filename = self._parent.RM_folder + '/quadrupole_responses.json'
         logger.info(f"Loading quadrupole responses: {filename}.")
-        self._quadrupole_response = Quadrupole_response.load(filename=filename)
+        self._quadrupole_response = QuadrupoleResponse.load(filename=filename)
         return
 
     def beta_from_amplitude(self, n_kicks: int = 1, n_turns: int = 50, 
@@ -133,63 +137,21 @@ class Optics_tuning(BaseModel, extra="forbid"):
         for iter in range(n_kicks):
             logger.info(f"Capturing {iter+1} out {n_kicks} kicks.")
 
-            if self.horizontal_kick is not None:
-                SC.kickers.programs[self.horizontal_kick].amplitude = kick_px
-                SC.kickers.activate(self.horizontal_kick)
-                kick_px_for_capture = 0
+            if self.horizontal_kick is not None or self.vertical_kick is not None:
+                x_tbt, y_tbt = self.free_kick(n_turns=n_turns,
+                                              kick_px=kick_px,
+                                              kick_py=kick_py,
+                                              use_design=use_design)
             else:
-                kick_px_for_capture = kick_px
+                x_tbt, y_tbt = SC.bpm_system.capture_kick(n_turns=n_turns,
+                                                          kick_px=kick_px,
+                                                          kick_py=kick_py,
+                                                          use_design=use_design)
 
-            if self.vertical_kick is not None:
-                SC.kickers.programs[self.vertical_kick].amplitude = kick_py
-                SC.kickers.activate(self.vertical_kick)
-                kick_py_for_capture = 0
-            else:
-                kick_py_for_capture = kick_py
-
-            x_tbt, y_tbt = SC.bpm_system.capture_kick(n_turns=n_turns,
-                                                      kick_px=kick_px_for_capture,
-                                                      kick_py=kick_py_for_capture,
-                                                      use_design=use_design)
-
-            if self.horizontal_kick is not None:
-                SC.kickers.deactivate(self.horizontal_kick)
-            if self.vertical_kick is not None:
-                SC.kickers.deactivate(self.vertical_kick)
-
-            qx_rejections = 0
-            qy_rejections = 0
-
-            Ax_bpm = np.zeros(N)
-            qx_bpm = np.zeros(N)
-            for ii in range(N):
-                fftx = np.fft.fft(x_tbt[ii] - np.mean(x_tbt[ii]), n=fft_n)
-                ix = np.argmax(np.abs(fftx[pmask]))
-                amp = fftx[pmask][ix]
-                qx = freqs[pmask][ix]
-                if qx < qx_low or qx > qx_high:
-                    Ax_bpm[ii] = np.nan
-                    qx_bpm[ii] = np.nan
-                    qx_rejections += 1
-                else:
-                    Ax_bpm[ii] = abs(amp)
-                    qx_bpm[ii] = qx
-
-            Ay_bpm = np.zeros(N)
-            qy_bpm = np.zeros(N)
-            for ii in range(N):
-                ffty = np.fft.fft(y_tbt[ii] - np.mean(y_tbt[ii]), n=fft_n)
-                iy = np.argmax(np.abs(ffty[pmask]))
-                amp = ffty[pmask][iy]
-                qy = freqs[pmask][iy]
-                if qy < qy_low or qy > qy_high:
-                    Ay_bpm[ii] = np.nan
-                    qy_bpm[ii] = np.nan
-                    qy_rejections += 1
-                    #print(qy_low, qy, qy_high)
-                else:
-                    Ay_bpm[ii] = abs(amp)
-                    qy_bpm[ii] = qy
+            qx_bpm, Ax_bpm, phasex_bpm, qx_rejections = self._single_frequency_analysis(tbt=x_tbt,
+                                                         q_low=qx_low, q_high=qx_high, fft_n=fft_n)
+            qy_bpm, Ay_bpm, phasey_bpm, qy_rejections = self._single_frequency_analysis(tbt=y_tbt,
+                                                         q_low=qy_low, q_high=qy_high, fft_n=fft_n)
 
             logger.info(f"Average tunes Qx={nanmean(qx_bpm):.4f}, Qy={nanmean(qy_bpm):.4f}")
             logger.info(f"Rejected {qx_rejections} on Qx and {qy_rejections} on Qy")
@@ -222,29 +184,30 @@ class Optics_tuning(BaseModel, extra="forbid"):
                   use_design: bool = False) -> Tuple[np.ndarray, np.ndarray]:
         SC = self._parent._parent
 
-        if self.horizontal_kick is not None:
-            SC.kickers.programs[self.horizontal_kick].amplitude = kick_px
-            SC.kickers.activate(self.horizontal_kick)
-            kick_px_for_capture = 0
-        else:
-            kick_px_for_capture = kick_px
+        try:
+            if self.horizontal_kick is not None:
+                SC.kickers.programs[self.horizontal_kick].amplitude = kick_px
+                SC.kickers.activate(self.horizontal_kick)
+                kick_px_for_capture = 0
+            else:
+                kick_px_for_capture = kick_px
 
-        if self.vertical_kick is not None:
-            SC.kickers.programs[self.vertical_kick].amplitude = kick_py
-            SC.kickers.activate(self.vertical_kick)
-            kick_py_for_capture = 0
-        else:
-            kick_py_for_capture = kick_py
+            if self.vertical_kick is not None:
+                SC.kickers.programs[self.vertical_kick].amplitude = kick_py
+                SC.kickers.activate(self.vertical_kick)
+                kick_py_for_capture = 0
+            else:
+                kick_py_for_capture = kick_py
 
-        x_tbt, y_tbt = SC.bpm_system.capture_kick(n_turns=n_turns,
-                                                  kick_px=kick_px_for_capture,
-                                                  kick_py=kick_py_for_capture,
-                                                  use_design=use_design)
-
-        if self.horizontal_kick is not None:
-            SC.kickers.deactivate(self.horizontal_kick)
-        if self.vertical_kick is not None:
-            SC.kickers.deactivate(self.vertical_kick)
+            x_tbt, y_tbt = SC.bpm_system.capture_kick(n_turns=n_turns,
+                                                      kick_px=kick_px_for_capture,
+                                                      kick_py=kick_py_for_capture,
+                                                      use_design=use_design)
+        finally:
+            if self.horizontal_kick is not None:
+                SC.kickers.deactivate(self.horizontal_kick)
+            if self.vertical_kick is not None:
+                SC.kickers.deactivate(self.vertical_kick)
 
         return x_tbt, y_tbt
 
@@ -365,26 +328,29 @@ class Optics_tuning(BaseModel, extra="forbid"):
     def ac_kick(self,  n_turns: int = 50, qx_ac: float = 0.176, qy_ac: float = 0.286,
                 kick_px: float = 1e-6, kick_py: float = 1e-6, use_design: bool = False):
         SC = self._parent._parent
-        if self.horizontal_ac is not None:
-            SC.kickers.programs[self.horizontal_ac].amplitude = kick_px
-            SC.kickers.programs[self.horizontal_ac].tune = qx_ac
-            SC.kickers.activate(self.horizontal_ac)
-        else:
-            raise Exception("Horizontal ac program was not found. Please specify 'tuning.optics.horizontal_ac'.")
+        try:
+            if self.horizontal_ac is not None:
+                SC.kickers.programs[self.horizontal_ac].amplitude = kick_px
+                SC.kickers.programs[self.horizontal_ac].tune = qx_ac
+                SC.kickers.activate(self.horizontal_ac)
+            else:
+                raise Exception("Horizontal ac program was not found. Please specify 'tuning.optics.horizontal_ac'.")
 
-        if self.vertical_ac is not None:
-            SC.kickers.programs[self.vertical_ac].amplitude = kick_py
-            SC.kickers.programs[self.vertical_ac].tune = qy_ac
-            SC.kickers.activate(self.vertical_ac)
-        else:
-            raise Exception("Vertical ac program was not found. Please specify 'tuning.optics.vertical_ac'.")
+            if self.vertical_ac is not None:
+                SC.kickers.programs[self.vertical_ac].amplitude = kick_py
+                SC.kickers.programs[self.vertical_ac].tune = qy_ac
+                SC.kickers.activate(self.vertical_ac)
+            else:
+                raise Exception("Vertical ac program was not found. Please specify 'tuning.optics.vertical_ac'.")
 
-        x_tbt, y_tbt = SC.bpm_system.capture_kick(n_turns=n_turns,
-                                                  kick_px=0, kick_py=0,
-                                                  use_design=use_design)
-
-        SC.kickers.deactivate(self.horizontal_ac)
-        SC.kickers.deactivate(self.vertical_ac)
+            x_tbt, y_tbt = SC.bpm_system.capture_kick(n_turns=n_turns,
+                                                      kick_px=0, kick_py=0,
+                                                      use_design=use_design)
+        finally:
+            if self.horizontal_ac is not None:
+                SC.kickers.deactivate(self.horizontal_ac)
+            if self.vertical_ac is not None:
+                SC.kickers.deactivate(self.vertical_ac)
 
         return x_tbt, y_tbt
 
@@ -431,7 +397,8 @@ class Optics_tuning(BaseModel, extra="forbid"):
         for iter in range(n_kicks):
             logger.info(f"Capturing {iter+1} out {n_kicks} kicks.")
 
-            x_tbt, y_tbt = self.ac_kick(n_turns=n_turns, kick_px=0, kick_py=0, use_design=use_design)
+            x_tbt, y_tbt = self.ac_kick(n_turns=n_turns, kick_px=kick_px, kick_py=kick_py,
+                                        qx_ac=qx_ac, qy_ac=qy_ac, use_design=use_design)
 
             Ax_bpm = np.zeros(N)
             for ii in range(N):
@@ -496,7 +463,7 @@ class Optics_tuning(BaseModel, extra="forbid"):
 
             phasey_bpm = np.zeros(N)
             for ii in range(N):
-                amp = dft(y_tbt[ii] - nanmean(x_tbt[ii]), qy_ac)
+                amp = dft(y_tbt[ii] - nanmean(y_tbt[ii]), qy_ac)
                 phasey_bpm[ii] = np.angle(amp)
 
             phasex_bpm = np.arctan( factor_x * np.tan(phasex_bpm - np.pi*qx_ac) )
@@ -596,6 +563,19 @@ class Optics_tuning(BaseModel, extra="forbid"):
         input_weights = np.array(self.quad_weights) if self.quad_weights is not None else None
         RM = ResponseMatrix(matrix=matrix, input_weights=input_weights, input_names=self.quadrupoles)
 
+        if 'dx' in observables and len(observables) > 1:
+            if observables[-1] != 'dx':
+                raise Exception(f"Dispersion not in the last place of observables list: {observables}")
+            split = (len(observables) - 1) * nbpm
+            optics_norm = np.linalg.norm(matrix[:split])
+            dispersion_norm = np.linalg.norm(matrix[split:])
+            if optics_norm == 0:
+                raise Exception("Optics response matrix has zero norm!")
+            if dispersion_norm == 0:
+                raise Exception("Dispersion response matrix has zero norm!")
+            # set dispersion weight
+            RM.output_weights[split:] = self.dispersion_weight * optics_norm / dispersion_norm
+
         #RM.output_weights[2*N:] = np.mean(np.std(matrix[:,:2*N], axis=0)) / np.mean(np.std(matrix[:,2*N:], axis=0))
         return RM
 
@@ -615,19 +595,23 @@ class Optics_tuning(BaseModel, extra="forbid"):
                 f"Only one optics measurement can be used per correction: {active_beta_phase_measurements}"
             )
 
-        if len(active_beta_phase_measurements) and self._quadrupole_response is None:
+        if len(measurements.keys()) and self._quadrupole_response is None:
             self.load_quadrupole_response()
 
         observables = []
-        beta_phase_measurement = active_beta_phase_measurements[0]
-        if beta_phase_measurement in ['beta_from_amplitude', 'beta_from_amplitude_ac', 'beta_cheat']:
-            observables.append('betx')
-            observables.append('bety')
-        if beta_phase_measurement in ['phase_advance', 'phase_advance_ac', 'phase_advance_cheat']:
-            observables.append('mux')
-            observables.append('muy')
+        if len(active_beta_phase_measurements) > 0:
+            beta_phase_measurement = active_beta_phase_measurements[0]
+            if beta_phase_measurement in ['beta_from_amplitude', 'beta_from_amplitude_ac', 'beta_cheat']:
+                observables.append('betx')
+                observables.append('bety')
+            if beta_phase_measurement in ['phase_advance', 'phase_advance_ac', 'phase_advance_cheat']:
+                observables.append('mux')
+                observables.append('muy')
         if 'dispersion' in measurements:
             observables.append('dx')
+
+        if not len(observables):
+            raise Exception("No observables were defined for the measurement.")
 
         bpm_indices = SC.bpm_system.indices
         nbpm = len(bpm_indices)

@@ -258,6 +258,7 @@ class XSuiteLattice(Lattice):
                  'dmux': tw.dmux,
                  'dmuy': tw.dmuy,
                  'ddx': tw.ddx,
+                 'alpha_c': tw.momentum_compaction_factor,
                 }
         return twiss 
 
@@ -639,4 +640,14 @@ class XSuiteLattice(Lattice):
         return emit_x, emit_y, emit_z
 
     def get_momentum_compaction(self, use_design: bool = False) -> float:
-        raise NotImplementedError
+        line = self._design if use_design else self._ring
+
+        dump = StringIO()
+        with redirect_stdout(dump):
+            if self.no_6d:
+                tw = line.twiss(method='4d')
+            else:
+                tw = line.twiss(search_for_t_rev=True,
+                                num_turns_search_t_rev=self.num_turns_search_t_rev)
+
+        return tw.momentum_compaction_factor

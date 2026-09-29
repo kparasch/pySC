@@ -247,6 +247,7 @@ class ATLattice(Lattice):
         _, ringdata, elemdata = at.get_optics(ring, refpts=indices, get_chrom=True, get_w=True, orbit=orbit0)
 
         qs = ringdata['tune'][2] if not self.no_6d else 0 # doesn't exist when ring has 6d disabled
+        alpha_c = self.get_momentum_compaction(use_design=use_design)
 
         twopi = 2*np.pi
         twiss = {'qx': elemdata.mu[-1,0]/2/np.pi,
@@ -280,6 +281,7 @@ class ATLattice(Lattice):
                  'dmux': elemdata.dmu[:, 0] / twopi,
                  'dmuy': elemdata.dmu[:, 1] / twopi,
                  'ddx': elemdata.ddispersion[:, 0],
+                 'alpha_c': alpha_c
                 }
         return twiss
 
@@ -547,7 +549,11 @@ class ATLattice(Lattice):
 
     def get_momentum_compaction(self, use_design: bool = False) -> float:
         ring = self._design if use_design else self._ring
-        ring.disable_6d()
-        mcf = ring.get_mcf()
-        ring.enable_6d()
+        try:
+            if not self.no_6d:
+                ring.disable_6d()
+            mcf = ring.get_mcf()
+        finally:
+            if not self.no_6d:
+                ring.enable_6d()
         return mcf

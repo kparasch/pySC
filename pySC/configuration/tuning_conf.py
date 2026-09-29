@@ -98,15 +98,16 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
         if 'quadrupoles' not in optics_conf:
             raise Exception("quadrupoles not found in optics configuration.")
         quad_controls = configure_family(SC, config_dict=optics_conf['quadrupoles'])
+        # quad_controls = sort_controls(SC, quad_controls)
         quad_weights = [1.] * len(quad_controls)
 
-        if 'weights' in optics_conf:
+        if 'quadrupole_weights' in optics_conf:
             control_map = {}
             for array in SC.control_arrays:
                 for control in SC.control_arrays[array]:
                     control_map[control] = array
             weights_map = {}
-            for category in optics_conf['weights']:
+            for category in optics_conf['quadrupole_weights']:
                 array_name, weight_value = category.copy().popitem()
                 weights_map[array_name] = float(weight_value)
 
@@ -115,5 +116,28 @@ def configure_tuning(SC: SimulatedCommissioning) -> None:
                 if array in weights_map:
                     quad_weights[ii] = weights_map[array]
 
+        if 'skew_quadrupoles' in optics_conf:
+            skew_quad_controls = configure_family(SC, config_dict=optics_conf['skew_quadrupoles'])
+            skew_quad_controls = sort_controls(SC, skew_quad_controls)
+            skew_quad_weights = [1.] * len(skew_quad_controls)
+
+        if 'skew_quadrupole_weights' in optics_conf:
+            control_map = {}
+            for array in SC.control_arrays:
+                for control in SC.control_arrays[array]:
+                    control_map[control] = array
+            weights_map = {}
+            for category in optics_conf['skew_quadrupole_weights']:
+                array_name, weight_value = category.copy().popitem()
+                weights_map[array_name] = float(weight_value)
+
+            for ii, quad in enumerate(skew_quad_controls):
+                array = control_map[quad]
+                if array in weights_map:
+                    skew_quad_weights[ii] = weights_map[array]
+
         SC.tuning.optics.quadrupoles = quad_controls
         SC.tuning.optics.quad_weights = quad_weights
+        if 'skew_quadrupoles' in optics_conf:
+            SC.tuning.optics.coupling.skew_quadrupoles = skew_quad_controls
+            SC.tuning.optics.coupling.skew_quad_weights = skew_quad_weights

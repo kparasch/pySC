@@ -71,7 +71,7 @@ class MagnetType(StrEnum):
 
         return MagnetType.undefined
 
-class Quadrupole_response(BaseModelWithSave):
+class QuadrupoleResponse(BaseModelWithSave):
     quadrupoles: list[str]
     betx_response: NPARRAY
     bety_response: NPARRAY
@@ -81,4 +81,15 @@ class Quadrupole_response(BaseModelWithSave):
     muy_response: NPARRAY
     qx_response: NPARRAY
     qy_response: NPARRAY
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+class SkewQuadrupoleResponse(BaseModelWithSave):
+    skew_quadrupoles: list[str]
+    dy_response: NPARRAY
+    f1001_real_response: NPARRAY
+    f1001_imag_response: NPARRAY
+    f1010_real_response: NPARRAY
+    f1010_imag_response: NPARRAY
+    c_minus_real_response: NPARRAY
+    c_minus_imag_response: NPARRAY
     model_config = ConfigDict(arbitrary_types_allowed=True)

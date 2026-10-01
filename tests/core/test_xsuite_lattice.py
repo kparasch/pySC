@@ -31,6 +31,7 @@ def test_xsuite_get_twiss_exposes_chromatic_keys():
         qs=0.01,
         dqx=1.0,
         dqy=2.0,
+        momentum_compaction_factor=1e-3,
         name=np.array(["e0", "e1", "e2"]),
         s=values,
         x=values + 0.1,
@@ -66,6 +67,8 @@ def test_xsuite_get_twiss_exposes_chromatic_keys():
     lattice.num_turns_search_t_rev = 5
 
     twiss = lattice.get_twiss(use_design=True)
+
+    assert twiss['alpha_c'] == twiss_result.momentum_compaction_factor
 
     for key in [
         'wx_chrom', 'bx_chrom', 'ax_chrom',

@@ -108,6 +108,10 @@ class ATLattice(Lattice):
         if not self.no_6d:
             self._ring.enable_6d()
             self._design.enable_6d()
+        else:
+            self._ring.disable_6d()
+            self._design.disable_6d()
+
 
         if self.orbit_guess is None:
             self.orbit_guess = [0] * 6

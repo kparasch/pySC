@@ -3,7 +3,9 @@ from .send_receive import pySCServerError, send_int, send_float
 def rf_server(conn, signal, SC):
     variable = signal.split(' ')[1]
     command = signal[:3]
-    server, device, prop = variable.strip().split('/')
+    server, _, device_prop = variable.strip().partition('/')
+    device, _, prop = device_prop.rpartition('/')
+
     device = device.lower()
     if device in SC.rf_settings.systems:
         if command == 'GET':
@@ -25,4 +27,4 @@ def rf_server(conn, signal, SC):
                 SC.rf_settings.systems[device].set_frequency(value)
             send_int(conn, 1) # 1 for set ok
     else:
-        raise pySCServerError 
+        raise pySCServerError

@@ -55,7 +55,7 @@ def start_server(SC: "SimulatedCommissioning" , port : int = 13131, refresh_rate
                             if len(signal) > 2 and signal[:3] in ['GET', 'SET']:
 
                                 variable = signal.split(' ')[1]
-                                server, device, prop = variable.strip().split('/')
+                                server = variable.strip().partition('/')[0]
 
                                 if variable == 'ORBIT/INJECTION/MODE':
                                     command = signal[:3]

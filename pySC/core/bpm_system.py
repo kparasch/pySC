@@ -17,7 +17,7 @@ BPM_FIELDS_TO_INITIALISE_ZEROS = ['offsets_x', 'offsets_y', 'rolls',
                                   'reference_x', 'reference_y']
 
 # These fields are initialized to ones (not zeros) — multiplicative corrections
-BPM_FIELDS_TO_INITIALISE_ONES = ['gain_corrections_x', 'gain_corrections_y']
+BPM_FIELDS_TO_INITIALISE_ONES = ['gain_corrections_x', 'gain_corrections_y', 'polarity_x', 'polarity_y']
 
 class BPMSystem(BaseModel, extra='forbid'):
     indices: list[int] = []
@@ -42,6 +42,10 @@ class BPMSystem(BaseModel, extra='forbid'):
     gain_corrections_x: NPARRAY = np.array([])
     gain_corrections_y: NPARRAY = np.array([])
 
+    dead: Optional[NPARRAY] = None
+    polarity_x: Optional[NPARRAY] = None
+    polarity_y: Optional[NPARRAY] = None
+
     transmission_threshold: float = 0.4
 
     _parent: Optional["SimulatedCommissioning"] = PrivateAttr(default=None)
@@ -64,8 +68,20 @@ class BPMSystem(BaseModel, extra='forbid'):
             if not len(getattr(self, field)): # array is empty
                 setattr(self, field, np.zeros(nbpm, dtype=float))
         for field in BPM_FIELDS_TO_INITIALISE_ONES:
-            if not len(getattr(self, field)): # array is empty
+            value = getattr(self, field)
+            if value is None or not len(value): # optional/unset or empty array
                 setattr(self, field, np.ones(nbpm, dtype=float))
+
+    def _overwrite_dead_bpms(self, fake_x, fake_y, noise_x, noise_y):
+        """Overwrite dead-BPM readings with amplified noise, but only where the
+        beam actually reached the BPM.  Dead BPMs downstream of a beam-loss point
+        keep their NaN reading instead of fabricating a non-NaN value that would
+        inflate transmission/reach metrics.  Modifies fake_x/fake_y in place."""
+        if self.dead is not None and self.dead.any():
+            dead_alive_x = self.dead & ~np.isnan(fake_x)
+            dead_alive_y = self.dead & ~np.isnan(fake_y)
+            fake_x[dead_alive_x] = noise_x[dead_alive_x] * 10
+            fake_y[dead_alive_y] = noise_y[dead_alive_y] * 10
 
     def update_rot_matrices(self):
         self._rot_matrices = _rotation_matrix(self.rolls)
@@ -111,10 +127,13 @@ class BPMSystem(BaseModel, extra='forbid'):
         noise_x = self._parent.rng.normal(scale=self.noise_co_x)
         noise_y = self._parent.rng.normal(scale=self.noise_co_y)
 
-        fake_orbit_x = (rotated_orbit[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
-        fake_orbit_y = (rotated_orbit[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+        pol_x = self.polarity_x if self.polarity_x is not None else 1.0
+        pol_y = self.polarity_y if self.polarity_y is not None else 1.0
+        fake_orbit_x = (rotated_orbit[0] - self.offsets_x) * (1 + self.calibration_errors_x) * pol_x + noise_x
+        fake_orbit_y = (rotated_orbit[1] - self.offsets_y) * (1 + self.calibration_errors_y) * pol_y + noise_y
         fake_orbit_x *= self.gain_corrections_x
         fake_orbit_y *= self.gain_corrections_y
+        self._overwrite_dead_bpms(fake_orbit_x, fake_orbit_y, noise_x, noise_y)
 
         if bba:
             # Apply BBA offsets
@@ -154,6 +173,8 @@ class BPMSystem(BaseModel, extra='forbid'):
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])
+        pol_x = self.polarity_x if self.polarity_x is not None else 1.0
+        pol_y = self.polarity_y if self.polarity_y is not None else 1.0
 
         for n in range(n_turns):
             one_trajectory = trajectory[:, :, n]
@@ -162,10 +183,11 @@ class BPMSystem(BaseModel, extra='forbid'):
             noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
             noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
 
-            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
-            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) * pol_x + noise_x
+            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) * pol_y + noise_y
             fake_trajectory_x *= self.gain_corrections_x
             fake_trajectory_y *= self.gain_corrections_y
+            self._overwrite_dead_bpms(fake_trajectory_x, fake_trajectory_y, noise_x, noise_y)
 
             if bba:
                 # Apply BBA offsets
@@ -211,6 +233,8 @@ class BPMSystem(BaseModel, extra='forbid'):
 
         fake_trajectory_x_tbt = np.zeros([len(self.indices), n_turns])
         fake_trajectory_y_tbt = np.zeros([len(self.indices), n_turns])
+        pol_x = self.polarity_x if self.polarity_x is not None else 1.0
+        pol_y = self.polarity_y if self.polarity_y is not None else 1.0
 
         for n in range(n_turns):
             one_trajectory = trajectory[:, :, n]
@@ -219,10 +243,11 @@ class BPMSystem(BaseModel, extra='forbid'):
             noise_x = self._parent.rng.normal(scale=self.noise_tbt_x)
             noise_y = self._parent.rng.normal(scale=self.noise_tbt_y)
 
-            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) + noise_x
-            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) + noise_y
+            fake_trajectory_x = (rotated_trajectory[0] - self.offsets_x) * (1 + self.calibration_errors_x) * pol_x + noise_x
+            fake_trajectory_y = (rotated_trajectory[1] - self.offsets_y) * (1 + self.calibration_errors_y) * pol_y + noise_y
             fake_trajectory_x *= self.gain_corrections_x
             fake_trajectory_y *= self.gain_corrections_y
+            self._overwrite_dead_bpms(fake_trajectory_x, fake_trajectory_y, noise_x, noise_y)
 
             if bba:
                 # Apply BBA offsets

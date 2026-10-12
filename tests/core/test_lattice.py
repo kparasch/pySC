@@ -1,9 +1,12 @@
 """Tests for pySC.core.lattice: ATLattice loading, tracking, optics, magnets."""
+from types import SimpleNamespace
+
 import pytest
 import numpy as np
 import at
 
 from pySC.core.lattice import ATLattice
+from pySC.core.transformations import at_rotation
 
 
 pytestmark = pytest.mark.slow
@@ -22,6 +25,60 @@ def test_lattice_loads_from_file(hmba_lattice_file):
     assert isinstance(lat.design, at.Lattice)
     assert len(lat.ring) > 0
     assert len(lat.design) == len(lat.ring)
+
+
+def test_at_lattice_warns_for_existing_misalignments(caplog):
+    """Existing AT element transform fields are reported before pySC owns them."""
+    lattice = ATLattice.model_construct(lattice_file="dummy.mat")
+    lattice._design = [
+        SimpleNamespace(
+            FamName="q1",
+            dx=1e-6,
+            dy=0.0,
+            dz=0.0,
+            tilt=0.0,
+            pitch=0.0,
+            yaw=0.0,
+            tilt_frame=0.0,
+        ),
+        SimpleNamespace(
+            FamName="q2",
+            dx=0.0,
+            dy=0.0,
+            dz=0.0,
+            tilt=2e-6,
+            pitch=0.0,
+            yaw=0.0,
+            tilt_frame=0.0,
+        ),
+    ]
+
+    lattice._warn_if_existing_misalignments()
+
+    assert "pre-existing element misalignments" in caplog.text
+    assert "0:q1(dx)" in caplog.text
+    assert "1:q2(tilt)" in caplog.text
+
+
+def test_at_lattice_misalignment_warning_ignores_zero_fields(caplog):
+    """Zero AT element transform fields do not warn."""
+    lattice = ATLattice.model_construct(lattice_file="dummy.mat")
+    lattice._design = [
+        SimpleNamespace(
+            FamName="q1",
+            dx=0.0,
+            dy=0.0,
+            dz=0.0,
+            tilt=0.0,
+            pitch=0.0,
+            yaw=0.0,
+            tilt_frame=0.0,
+        )
+    ]
+
+    lattice._warn_if_existing_misalignments()
+
+    assert "pre-existing element misalignments" not in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -269,7 +326,7 @@ def test_is_dipole(sc):
 # ---------------------------------------------------------------------------
 
 def test_update_misalignment(sc):
-    """update_misalignment(dx=0.001) modifies element T1/T2/R1/R2."""
+    """update_misalignment uses AT element.transform at the element centre."""
     ring = sc.lattice.ring
     quad_idx = next(i for i, e in enumerate(ring) if isinstance(e, at.Quadrupole))
     elem = ring[quad_idx]
@@ -279,13 +336,26 @@ def test_update_misalignment(sc):
         elem.T1 = np.zeros(6)
     t1_before = elem.T1.copy()
 
-    sc.lattice.update_misalignment(quad_idx, dx=0.001)
+    sc.lattice.update_misalignment(
+        quad_idx,
+        dx=0.001,
+        dy=0.002,
+        dz=0.003,
+        rot=at_rotation(pitch=0.004, yaw=0.005, roll=0.006),
+    )
 
     assert hasattr(elem, 'T1')
     assert hasattr(elem, 'T2')
     assert hasattr(elem, 'R1')
     assert hasattr(elem, 'R2')
     assert not np.allclose(elem.T1, t1_before), "T1 should change after misalignment"
+    assert elem.ReferencePoint is at.ReferencePoint.CENTRE
+    assert elem.dx == pytest.approx(0.001)
+    assert elem.dy == pytest.approx(0.002)
+    assert elem.dz == pytest.approx(0.003)
+    assert elem.pitch == pytest.approx(0.004)
+    assert elem.yaw == pytest.approx(0.005)
+    assert elem.tilt == pytest.approx(0.006)
 
 
 # ---------------------------------------------------------------------------

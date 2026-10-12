@@ -1,12 +1,13 @@
 from .lattice import Lattice
 from pydantic import PrivateAttr, model_validator
-from typing import Optional, Literal
+from typing import Optional, Literal, Tuple
 import re
 import numpy as np
 from numpy import array as nparray
 from contextlib import redirect_stdout
 from io import StringIO
 from scipy.constants import c as clight
+from .transformations import at_rotation, xsuite_angles_from_rotation
 
 try:
     import xtrack as xt
@@ -209,9 +210,9 @@ class XSuiteLattice(Lattice):
         Returns the twiss parameters for the specified indices.
         If no indices are provided, returns all twiss parameters.
         """
-        if indices is None:
-            indices = range(len(self._design))
         line = self._design if use_design else self._ring
+        if indices is None:
+            indices = range(len(line) + 1)
 
         dump = StringIO()
         with redirect_stdout(dump):
@@ -326,6 +327,11 @@ class XSuiteLattice(Lattice):
             return elem.length
         else: # when length is zero
             return 1
+
+    @staticmethod
+    def _element_center_anchor(line, element_name: str) -> float:
+        elem = line.element_dict[element_name]
+        return 0.5 * float(getattr(elem, 'length', 0.0) or 0.0)
 
     def ensure_max_order(self, index: int, max_order: int, use_design=True) -> None:
         """
@@ -540,10 +546,18 @@ class XSuiteLattice(Lattice):
 
     def update_misalignment(self, index: int, dx: Optional[float] = None, dy: Optional[float] = None,
                             dz: Optional[float] = None, roll: Optional[float] = None, yaw: Optional[float] = None,
-                            pitch: Optional[float] = None, use_design=False) -> None:
+                            pitch: Optional[float] = None, tilt: Optional[float] = None, rot=None,
+                            use_design=False) -> None:
         line = self._design if use_design else self._ring
         element_name = line.element_names[index]
+        element = line.element_dict[element_name]
+        if hasattr(element, 'rot_shift_anchor'):
+            element.rot_shift_anchor = self._element_center_anchor(line, element_name)
         env = line.env
+        roll = roll if roll is not None else tilt
+        if rot is None:
+            rot = at_rotation(pitch=pitch or 0.0, yaw=yaw or 0.0, roll=roll or 0.0)
+        rot_s_rad_no_frame, rot_x_rad, rot_y_rad = xsuite_angles_from_rotation(rot)
 
         if dx is not None:
             expression_name = f"pySC_dx_{index}"
@@ -566,26 +580,23 @@ class XSuiteLattice(Lattice):
                 env.ref[element_name].shift_s += env.ref['pySC'] * env.ref[expression_name]
             env[expression_name] = dz
 
-        if roll is not None:
-            expression_name = f"pySC_roll_{index}"
-            if expression_name not in env.vars:
-                env[expression_name] = 0.
-                env.ref[element_name].rot_s_rad += env.ref['pySC'] * env.ref[expression_name]
-            env[expression_name] = roll
+        expression_name = f"pySC_roll_no_frame_{index}"
+        if expression_name not in env.vars:
+            env[expression_name] = 0.
+            env.ref[element_name].rot_s_rad_no_frame += env.ref['pySC'] * env.ref[expression_name]
+        env[expression_name] = rot_s_rad_no_frame
 
-        if pitch is not None:
-            expression_name = f"pySC_pitch_{index}"
-            if expression_name not in env.vars:
-                env[expression_name] = 0.
-                env.ref[element_name].rot_x_rad += env.ref['pySC'] * env.ref[expression_name]
-            env[expression_name] = pitch
+        expression_name = f"pySC_pitch_{index}"
+        if expression_name not in env.vars:
+            env[expression_name] = 0.
+            env.ref[element_name].rot_x_rad += env.ref['pySC'] * env.ref[expression_name]
+        env[expression_name] = rot_x_rad
 
-        if yaw is not None:
-            expression_name = f"pySC_yaw_{index}"
-            if expression_name not in env.vars:
-                env[expression_name] = 0.
-                env.ref[element_name].rot_y_rad += env.ref['pySC'] * env.ref[expression_name]
-            env[expression_name] = yaw
+        expression_name = f"pySC_yaw_{index}"
+        if expression_name not in env.vars:
+            env[expression_name] = 0.
+            env.ref[element_name].rot_y_rad += env.ref['pySC'] * env.ref[expression_name]
+        env[expression_name] = rot_y_rad
 
         return
 
@@ -611,3 +622,14 @@ class XSuiteLattice(Lattice):
             raise ValueError("Xsuite lattice has no particle_ref. Cannot compute Brho.")
     
         return float(line.particle_ref.p0c[0]) / clight
+
+    def get_reference_orbit(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        survey = self.design.survey()
+
+        if not np.all(survey.Y == 0) or not np.all(survey.phi == 0) or not np.all(survey.psi == 0):
+            logger.warning("Design lattice is not planar. Vertical positions and out-of-plane angles are ignored, please make sure they are small.")
+            logger.warning(f"Minimum Y: {np.min(survey.Y)}, maximum Y: {np.max(survey.Y)}, ")
+            logger.warning(f"Minimum phi: {np.min(survey.phi)}, maximum phi: {np.max(survey.phi)}, ")
+            logger.warning(f"Minimum psi: {np.min(survey.psi)}, maximum psi: {np.max(survey.psi)}, ")
+
+        return np.asarray(survey.Z), np.asarray(survey.X), np.asarray(survey.theta)

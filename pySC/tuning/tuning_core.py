@@ -338,7 +338,10 @@ class Tuning(BaseModel, extra="forbid"):
         bba_magnet_name = bba_control_info.magnet_name
 
         quad_index = SC.magnet_settings.magnets[bba_magnet_name].sim_index
-        true_offset2 = SC.support_system.get_total_offset(quad_index) - SC.support_system.get_total_offset(bpm_index)
+        true_offset2 = (
+            SC.support_system.get_total_offset(quad_index)[:2]
+            - SC.support_system.get_total_offset(bpm_index)[:2]
+        )
         if plane is None:
            return tuple(true_offset2)
         elif plane == 'H':

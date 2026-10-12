@@ -7,11 +7,19 @@ from pydantic import BaseModel, PrivateAttr
 from typing import Optional, Union, TYPE_CHECKING
 from pathlib import Path
 import logging
+from .transformations import (
+    as_rotation,
+    at_angles_from_rotation,
+    at_rotation,
+    axis_angle_rotation,
+    rotation_from_vectors,
+)
 
 if TYPE_CHECKING:
     from .simulated_commissioning import SimulatedCommissioning
 
 logger = logging.getLogger(__name__)
+EPS = 1e-12
 
 class ElementOffset(BaseModel, extra="forbid"):
     """
@@ -27,7 +35,7 @@ class ElementOffset(BaseModel, extra="forbid"):
     supported_by: Optional[tuple[str, int]] = None  # (level, index)
     is_bpm: bool = False
     bpm_number: Optional[int] = None  # BPM number if it is a BPM
-    s: Optional[float] = None  # s position in the ring, to be filled later
+    s: Optional[float] = None  # center s position in the ring, to be filled later
 
 
 class SupportEndpoint(BaseModel, extra="forbid"):
@@ -38,7 +46,8 @@ class SupportEndpoint(BaseModel, extra="forbid"):
     supported_by: Optional[tuple[str, int]] = None  # (level, index)
     dx: float = 0.0
     dy: float = 0.0
-    s: Optional[float] = None  # s position in the ring, to be filled later
+    dz: float = 0.0
+    s: Optional[float] = None  # center s position in the ring, to be filled later
 
 
 class Support(BaseModel, extra="forbid"):
@@ -47,23 +56,9 @@ class Support(BaseModel, extra="forbid"):
     end: SupportEndpoint
     supports_elements: list[tuple[str, int]] = []  # list of (level, index) tuples
     length: float = 0.0  # to be filled in add_support
-    offset_z: float = 0.0  # not really implemented
-    roll: float = 0.0  # only for Level 1
+    roll: float = 0.0
+    rigid: bool = False
     name: Optional[str] = None  # name of the support type, e.g. 'Girder', 'Support', etc.
-
-    @property
-    def yaw(self):
-        if self.length == 0:
-            return 0.
-        else:
-            return (self.end.dx - self.start.dx ) / self.length
-
-    @property
-    def pitch(self):
-        if self.length == 0:
-            return 0.
-        else:
-            return (self.end.dy - self.start.dy ) / self.length
 
     def __repr__(self):
         return f'({self.name}: {self.start.index}-{self.end.index})'
@@ -78,6 +73,17 @@ class SupportSystem(BaseModel, extra="forbid"):
     '''
     _parent: Optional["SimulatedCommissioning"] = PrivateAttr(default=None)  # Parent object, e.g. the SC object
     data: dict[str, dict[int, Union[ElementOffset, Support]]] = { 'L0' : {} }  # Dictionary to hold the support data, structured by levels
+    _reference_X: list[float] = PrivateAttr(default=[])
+    _reference_Y: list[float] = PrivateAttr(default=[])
+    _reference_Angle: list[float] = PrivateAttr(default=[])
+
+    def initialize_reference_orbit(self) -> None:
+        SC = self._parent
+        x, y, angle = SC.lattice.get_reference_orbit()
+        self._reference_X = x
+        self._reference_Y = y
+        self._reference_Angle = np.unwrap(angle)
+        return
 
     def add_support(self, index_start, index_end, level=1, name=None):
         assert level >= 1, 'Level must be larger or equal to 1'
@@ -93,10 +99,9 @@ class SupportSystem(BaseModel, extra="forbid"):
             name = 'Support'
 
         support = Support(start=SupportEndpoint(index=index_start), end=SupportEndpoint(index=index_end), name=name)
-        SC = self._parent
-        twiss_s = SC.lattice.twiss['s']
-        support.start.s = float(twiss_s[index_start])
-        support.end.s = float(twiss_s[index_end])
+        twiss_s = self._twiss_s()
+        support.start.s = self._element_center_s(index_start)
+        support.end.s = self._element_center_s(index_end)
 
         support.length = (support.end.s - support.start.s) % float(twiss_s[-1])
 
@@ -116,7 +121,7 @@ class SupportSystem(BaseModel, extra="forbid"):
         if hasattr(self._parent, 'bpm_system') and index in self._parent.bpm_system.indices:
             new_element.is_bpm = True
             new_element.bpm_number = self._parent.bpm_system.bpm_number(index=index)
-        new_element.s = float(self._parent.lattice.twiss['s'][index])
+        new_element.s = self._element_center_s(index)
         self.data['L0'][int(index)] = new_element
 
     def look_for_support(self, my_level, my_index):
@@ -167,6 +172,11 @@ class SupportSystem(BaseModel, extra="forbid"):
         all_levels = self.sorted_levels()
         assert self.check_levels_are_sorted(), 'BUG: why are levels not sorted ?!'
 
+        for level in all_levels:
+            if level != 'L0':
+                for support in self.data[level].values():
+                    support.supports_elements.clear()
+
         ## for each element/endpoint find who it is supported by
         for level in all_levels:
             logger.info(f'Resolving supports: looping through {level}')
@@ -194,20 +204,164 @@ class SupportSystem(BaseModel, extra="forbid"):
                 else: ## level > 0, go per endpoint
                     p_level_key_start = self.data[level][key].start.supported_by
                     p_level_key_end = self.data[level][key].end.supported_by
-                    if p_level_key_start is not None or p_level_key_end is not None:
-                        if p_level_key_start == p_level_key_end:
-                            p_level, p_key = p_level_key_start
-                            self.data[p_level][p_key].supports_elements.append((level, key))
-                        elif p_level_key_start is not None:
-                            p_level, p_key = p_level_key_start
-                            self.data[p_level][p_key].supports_elements.append((level, key))
-                        elif p_level_key_end is not None:
-                            p_level, p_key = p_level_key_end
-                            self.data[p_level][p_key].supports_elements.append((level, key))
-                        else:
-                            raise Exception('Unknown case ?! should not happen.')
+                    parent_keys = {p_level_key_start, p_level_key_end}
+                    parent_keys.discard(None)
+                    for p_level, p_key in parent_keys:
+                        self.data[p_level][p_key].supports_elements.append((level, key))
 
         return
+
+    def _ensure_reference_orbit(self) -> None:
+        if len(self._reference_X) == 0 or len(self._reference_Y) == 0 or len(self._reference_Angle) == 0:
+            self.initialize_reference_orbit()
+
+    def _twiss_s(self) -> np.ndarray:
+        return np.asarray(self._parent.lattice.twiss['s'], dtype=float)
+
+    def _element_center_s(self, index: int) -> float:
+        """
+        Return the longitudinal center of an element from entrance/exit refpoints.
+        """
+        s_ref = self._twiss_s()
+        index = int(index)
+        if index < 0:
+            raise ValueError('Indices must be non-negative')
+        if index + 1 >= len(s_ref):
+            raise IndexError(
+                f'Element index {index} has no exit refpoint in lattice.twiss["s"]. '
+                'SupportSystem needs entrance and exit refpoints to compute element centers.'
+            )
+
+        entrance = float(s_ref[index])
+        exit_ = float(s_ref[index + 1])
+        circumference = float(s_ref[-1])
+        if exit_ < entrance and circumference > 0:
+            exit_ += circumference
+        center = 0.5 * (entrance + exit_)
+        if circumference > 0:
+            center = center % circumference
+        return center
+
+    def _reference_pose(self, index_or_s):
+        """
+        Return the design world pose at an element center index or longitudinal s.
+        The returned rotation maps local [dx, dy, dz] to world [X, Y, Z].
+        """
+        self._ensure_reference_orbit()
+        x_ref = np.asarray(self._reference_X, dtype=float)
+        y_ref = np.asarray(self._reference_Y, dtype=float)
+        angle_ref = np.asarray(self._reference_Angle, dtype=float)
+
+        if isinstance(index_or_s, (int, np.integer)):
+            s = self._element_center_s(int(index_or_s))
+        else:
+            s = float(index_or_s)
+
+        s_ref = self._twiss_s()
+        circumference = float(s_ref[-1])
+        if circumference > 0:
+            s = s % circumference
+            if np.isclose(s, 0.0) and float(index_or_s) > 0:
+                s = circumference
+        theta_ref = angle_ref
+        x = np.interp(s, s_ref, x_ref)
+        y = np.interp(s, s_ref, y_ref)
+        theta = np.interp(s, s_ref, theta_ref)
+
+        p = np.array([x, y, 0.0])
+        R = np.array([[-np.sin(theta), 0.0, np.cos(theta)],
+                      [ np.cos(theta), 0.0, np.sin(theta)],
+                      [           0.0, 1.0,           0.0]])
+        return p, R
+
+    def _parent_pose_at_s(self, s, parent_key):
+        if parent_key is None:
+            return self._reference_pose(float(s))
+        return self._support_pose_at_s(float(s), parent_key)
+
+    def _endpoint_parent_pose(self, endpoint):
+        if endpoint.supported_by is None:
+            return self._reference_pose(endpoint.index)
+        return self._support_pose_at_s(endpoint.s, endpoint.supported_by)
+
+    def _support_fraction(self, s, support):
+        s1 = support.start.s
+        s2 = support.end.s
+        corr_s = 0.0
+        corr_s2 = 0.0
+        circumference = float(self._twiss_s()[-1])
+        if support.start.index > support.end.index:
+            corr_s2 = circumference
+            if s < s1:
+                corr_s = circumference
+        denominator = s2 - s1 + corr_s2
+        if abs(denominator) < EPS:
+            return 0.0
+        return (s - s1 + corr_s) / denominator
+
+    def _support_endpoint_positions(self, support_level_key):
+        supp_level, supp_index = support_level_key
+        support = self.data[supp_level][supp_index]
+
+        design_start, _ = self._reference_pose(support.start.index)
+        design_end, _ = self._reference_pose(support.end.index)
+        base_start, R_start_parent = self._endpoint_parent_pose(support.start)
+        base_end, R_end_parent = self._endpoint_parent_pose(support.end)
+
+        start_offset = np.array([support.start.dx, support.start.dy, support.start.dz])
+        end_offset = np.array([support.end.dx, support.end.dy, support.end.dz])
+        start = base_start + R_start_parent @ start_offset
+        end = base_end + R_end_parent @ end_offset
+
+        if not support.rigid:
+            return design_start, design_end, start, end
+
+        nominal_length = np.linalg.norm(design_end - design_start)
+        new_length = np.linalg.norm(end - start)
+        if nominal_length < EPS or new_length < EPS:
+            return design_start, design_end, start, end
+
+        scale = nominal_length / new_length
+        center = 0.5 * (start + end)
+        start = center + scale * (start - center)
+        end = center + scale * (end - center)
+        return design_start, design_end, start, end
+
+    def _support_pose_at_s(self, s, support_level_key):
+        supp_level, supp_index = support_level_key
+        support = self.data[supp_level][supp_index]
+        p_ref, R_ref = self._reference_pose(float(s))
+        design_start, design_end, start, end = self._support_endpoint_positions(support_level_key)
+        fraction = self._support_fraction(float(s), support)
+        displacement_start = start - design_start
+        displacement_end = end - design_end
+        displacement = displacement_start + fraction * (displacement_end - displacement_start)
+        p = p_ref + displacement
+
+        design_chord = design_end - design_start
+        corrected_chord = end - start
+        R_delta = rotation_from_vectors(design_chord, corrected_chord).as_matrix()
+        axis_norm = np.linalg.norm(corrected_chord)
+        if axis_norm < EPS:
+            roll_axis = R_delta @ R_ref[:, 2]
+        else:
+            roll_axis = corrected_chord / axis_norm
+        R_roll = axis_angle_rotation(roll_axis, support.roll).as_matrix()
+        R = R_roll @ R_delta @ R_ref
+        return p, R
+
+    def _element_pose(self, index):
+        eo = self.data['L0'][index]
+        if eo.supported_by is None:
+            parent_p, parent_R = self._reference_pose(eo.index)
+        else:
+            parent_p, parent_R = self._support_pose_at_s(eo.s, eo.supported_by)
+
+        offset = np.array([eo.dx, eo.dy, eo.dz])
+        R_local = at_rotation(pitch=eo.pitch, yaw=eo.yaw, roll=eo.roll).as_matrix()
+        p = parent_p + parent_R @ offset
+        R = parent_R @ R_local
+        return p, R
 
     def get_total_offset(self, index, level='L0', endpoint=None):
         if self.level_to_int(level) > 0:
@@ -217,70 +371,44 @@ class SupportSystem(BaseModel, extra="forbid"):
             assert endpoint is None
 
         if endpoint is None:
-            this_element = self.data[level][index]
+            p_world, _ = self._element_pose(index)
+            p_ref, R_ref = self._reference_pose(self.data[level][index].index)
         elif endpoint == 'start':
-            this_element = self.data[level][index].start
+            p_ref, R_ref = self._reference_pose(self.data[level][index].start.index)
+            _, _, start, _ = self._support_endpoint_positions((level, index))
+            p_world = start
         elif endpoint == 'end':
-            this_element = self.data[level][index].end
+            p_ref, R_ref = self._reference_pose(self.data[level][index].end.index)
+            _, _, _, end = self._support_endpoint_positions((level, index))
+            p_world = end
         else:
             raise Exception(f'BUG: Unknown case ?! endpoint={endpoint}')
 
-        off2 = np.array([this_element.dx, this_element.dy])
-        p_level_key = this_element.supported_by
-        if p_level_key is not None:
-            return off2 + self.get_support_offset(this_element.s, p_level_key)
-        else:
-            return off2
+        return R_ref.T @ (p_world - p_ref)
 
     def get_support_offset(self, s, support_level_key):
-        supp_level, supp_index = support_level_key
-        support = self.data[supp_level][supp_index]
-        s1 = support.start.s
-        s2 = support.end.s
-        corr_s = 0
-        corr_s2 = 0
-
-        ## if support goes through start of ring we need to add corrections
-        SC = self._parent
-        circumference = SC.lattice.twiss['s'][-1]
-        if support.start.index > support.end.index:
-            corr_s2 = circumference
-            if s < s1:
-                corr_s = circumference
-        ####
-
-        dx1, dy1 = self.get_total_offset(supp_index, supp_level, endpoint='start')
-        dx2, dy2 = self.get_total_offset(supp_index, supp_level, endpoint='end')
-
-        if support.length == 0.: #ZERO_LENGTH_THRESHOLD here??
-            return np.array([dx1, dy1])
-
-        dx = (dx2 - dx1)/(s2 - s1 + corr_s2) * (s - s1 + corr_s) + dx1
-        dy = (dy2 - dy1)/(s2 - s1 + corr_s2) * (s - s1 + corr_s) + dy1
-        return np.array([dx, dy])
+        p_world, _ = self._support_pose_at_s(float(s), support_level_key)
+        p_ref, R_ref = self._reference_pose(float(s))
+        return R_ref.T @ (p_world - p_ref)
 
     def get_total_rotation(self, index, level='L0'):
         """
         Get the total rotation for an element.
-        Returns a tuple (roll, yaw, pitch).
+        Returns a SciPy Rotation in the local design frame.
         """
         if self.level_to_int(level) > 0:
             raise NotImplementedError('Total rotation for supports is not implemented yet') 
-        eo = self.data[level][index]
-        if eo.supported_by is not None:
-            support_level, support_key = eo.supported_by
-            support = self.data[support_level][support_key]
-            yaw = support.yaw + eo.yaw
-            pitch = support.pitch + eo.pitch
-            roll = support.roll + eo.roll
-        else:
-            yaw = eo.yaw
-            pitch = eo.pitch
-            roll = eo.roll
+        _, R_world = self._element_pose(index)
+        _, R_ref = self._reference_pose(self.data[level][index].index)
+        R_total = R_ref.T @ R_world
+        return as_rotation(R_total)
 
-        return roll, pitch, yaw
+    def _element_offset_and_rotation(self, index, level='L0'):
+        p_world, R_world = self._element_pose(index)
+        p_ref, R_ref = self._reference_pose(self.data[level][index].index)
+        return R_ref.T @ (p_world - p_ref), as_rotation(R_ref.T @ R_world)
 
-    def set_offset(self, index, level='L0', endpoint=None, dx=0, dy=0):
+    def set_offset(self, index, level='L0', endpoint=None, dx=0, dy=0, dz=0):
         """
         Set the transverse offset for an element or endpoint.
         """
@@ -293,12 +421,15 @@ class SupportSystem(BaseModel, extra="forbid"):
         if endpoint is None:
             self.data[level][index].dx = dx
             self.data[level][index].dy = dy
+            self.data[level][index].dz = dz
         elif endpoint == 'start':
             self.data[level][index].start.dx = dx
             self.data[level][index].start.dy = dy
+            self.data[level][index].start.dz = dz
         elif endpoint == 'end':
             self.data[level][index].end.dx = dx
             self.data[level][index].end.dy = dy
+            self.data[level][index].end.dz = dz
         else:
             raise Exception(f'BUG: Unknown case ?! endpoint={endpoint}')
 
@@ -317,18 +448,17 @@ class SupportSystem(BaseModel, extra="forbid"):
                 self.trigger_update(trig_level, trig_index)
         else:
             eo = self.data[level][index]
-            dx, dy = self.get_total_offset(eo.index, level)
-            dz = eo.dz
-            roll, pitch, yaw = self.get_total_rotation(eo.index, level) 
+            offset, rot = self._element_offset_and_rotation(eo.index, level)
+            dx, dy, dz = offset
 
             if eo.is_bpm:
+                roll, _, _ = at_angles_from_rotation(rot)
                 self._parent.bpm_system.offsets_x[eo.bpm_number] = dx
                 self._parent.bpm_system.offsets_y[eo.bpm_number] = dy
                 self._parent.bpm_system.rolls[eo.bpm_number] = roll
                 self._parent.bpm_system.update_rot_matrices()
             else:
-                self._parent.lattice.update_misalignment(index=eo.index, dx=dx, dy=dy, dz=dz,
-                                      roll=roll, yaw=yaw, pitch=pitch)
+                self._parent.lattice.update_misalignment(index=eo.index, dx=dx, dy=dy, dz=dz, rot=rot)
 
     def update_all(self) -> None:
         for index in self.data['L0'].keys():
@@ -339,8 +469,8 @@ class SupportSystem(BaseModel, extra="forbid"):
     def fake_align_bpms(self, bpm_indices, magnet_indices):
         logger.fatal('Function is deprecated, use the one from SC.tuning instead.')
         for bpm_index, magnet_index in zip(bpm_indices, magnet_indices):
-            magnet_dx, magnet_dy = self.get_total_offset(index=magnet_index)
-            bpm_tot_dx, bpm_tot_dy = self.get_total_offset(index=bpm_index)
+            magnet_dx, magnet_dy = self.get_total_offset(index=magnet_index)[:2]
+            bpm_tot_dx, bpm_tot_dy = self.get_total_offset(index=bpm_index)[:2]
             new_dx = magnet_dx - bpm_tot_dx
             new_dy = magnet_dy - bpm_tot_dy
             bpm_number = self._parent.bpm_system.bpm_number(index=bpm_index)

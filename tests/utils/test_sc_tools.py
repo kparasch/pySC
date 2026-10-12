@@ -1,9 +1,9 @@
-"""Tests for pySC.utils.sc_tools: rotation matrices and coordinate transformations."""
+"""Tests for pySC.utils.sc_tools: rotation matrices, coordinate transformations, and circumference scaling."""
 import numpy as np
 import pytest
 from types import SimpleNamespace
 
-from pySC.utils.sc_tools import rotation, update_transformation
+from pySC.utils.sc_tools import rotation, update_transformation, scale_circumference
 
 
 class TestRotation:
@@ -151,3 +151,86 @@ class TestUpdateTransformation:
         elem = _make_element(length=1.0)
         result = update_transformation(elem, dx=0.001, dy=0, dz=0, roll=0, yaw=0, pitch=0)
         assert result is elem
+
+
+# ---------------------------------------------------------------------------
+# scale_circumference
+# ---------------------------------------------------------------------------
+
+def _make_ring(drift_lengths, magnet_lengths):
+    """Create a list of mock elements with PassMethod and Length attributes."""
+    elements = []
+    for L in drift_lengths:
+        elements.append(SimpleNamespace(PassMethod='DriftPass', Length=L))
+    for L in magnet_lengths:
+        elements.append(SimpleNamespace(PassMethod='BndMPoleSymplectic4Pass', Length=L))
+    return elements
+
+
+class TestScaleCircumference:
+
+    def test_relative_mode_identity(self):
+        """circ=1.0 in relative mode should not change any lengths."""
+        ring = _make_ring([5.0, 3.0], [2.0])
+        scale_circumference(ring, 1.0, mode='rel')
+        assert ring[0].Length == pytest.approx(5.0)
+        assert ring[1].Length == pytest.approx(3.0)
+        assert ring[2].Length == pytest.approx(2.0)
+
+    def test_relative_mode_scales_drifts(self):
+        """Relative scaling changes total circumference by the requested factor."""
+        ring = _make_ring([5.0, 3.0], [2.0])
+        C_before = sum(e.Length for e in ring)  # 10.0
+        circ_scaling = 1 + 1e-4  # stretch by 0.01%
+        scale_circumference(ring, circ_scaling, mode='rel')
+        C_after = sum(e.Length for e in ring)
+        np.testing.assert_allclose(C_after, C_before * circ_scaling, rtol=1e-12)
+
+    def test_relative_mode_preserves_magnet_lengths(self):
+        """Only drifts are modified; magnet lengths are untouched."""
+        ring = _make_ring([5.0, 3.0], [2.0, 1.5])
+        scale_circumference(ring, 1.001, mode='rel')
+        assert ring[2].Length == pytest.approx(2.0)
+        assert ring[3].Length == pytest.approx(1.5)
+
+    def test_absolute_mode(self):
+        """Absolute mode sets total circumference to the given value."""
+        ring = _make_ring([5.0, 3.0], [2.0])
+        target_C = 10.5
+        scale_circumference(ring, target_C, mode='abs')
+        C_after = sum(e.Length for e in ring)
+        np.testing.assert_allclose(C_after, target_C, rtol=1e-12)
+
+    def test_absolute_mode_preserves_magnets(self):
+        """Absolute mode only changes drift lengths."""
+        ring = _make_ring([5.0, 3.0], [2.0])
+        scale_circumference(ring, 10.5, mode='abs')
+        assert ring[2].Length == pytest.approx(2.0)
+
+    def test_drift_amplification_factor(self):
+        """Verify the Dscale formula: drifts absorb all the circumference change.
+
+        For C=10, D=8, circ_scaling=1+1e-3:
+        Dscale = 1 - (1 - 1.001) * 10/8 = 1 + 0.001 * 10/8 = 1.00125
+        """
+        ring = _make_ring([5.0, 3.0], [2.0])
+        scale_circumference(ring, 1.001, mode='rel')
+        expected_Dscale = 1 + 0.001 * 10.0 / 8.0  # 1.00125
+        assert ring[0].Length == pytest.approx(5.0 * expected_Dscale)
+        assert ring[1].Length == pytest.approx(3.0 * expected_Dscale)
+
+    def test_invalid_mode_raises(self):
+        ring = _make_ring([5.0], [2.0])
+        with pytest.raises(ValueError, match='Unsupported'):
+            scale_circumference(ring, 1.0, mode='invalid')
+
+    def test_no_drifts_raises(self):
+        ring = [SimpleNamespace(PassMethod='BndMPoleSymplectic4Pass', Length=2.0)]
+        with pytest.raises(ValueError, match='No drift elements'):
+            scale_circumference(ring, 1.001, mode='rel')
+
+    def test_returns_same_ring(self):
+        """scale_circumference modifies in place and returns the same object."""
+        ring = _make_ring([5.0], [2.0])
+        result = scale_circumference(ring, 1.001, mode='rel')
+        assert result is ring

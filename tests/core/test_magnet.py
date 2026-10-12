@@ -85,7 +85,13 @@ def test_magnet_update_resets_to_offsets():
 
 
 def test_magnet_update_integrated_strength():
-    """Link with is_integrated=True divides link value by magnet length."""
+    """Link with is_integrated=True divides link value by magnet length.
+
+    For the order-1 B-component (PolynomB[0], the dipole/corrector term) the
+    AT sign convention applies: Δx' = -PolynomB[0]*L, so positive setpoint →
+    negative PolynomB[0] (positive physical kick).  The value is negated after
+    division for this term only.
+    """
     m, parent = _make_magnet_with_parent(max_order=1, length=2.0)
 
     ctrl = Control(name="c1", setpoint=6.0)
@@ -97,8 +103,48 @@ def test_magnet_update_integrated_strength():
     m._links = [link]
 
     m.update()
-    # 6.0 / 2.0 = 3.0
-    assert m.B[0] == pytest.approx(3.0)
+    # 6.0 / 2.0 = 3.0, negated for the order-1 B (corrector/dipole) term: -3.0
+    assert m.B[0] == pytest.approx(-3.0)
+
+
+def test_magnet_update_integrated_higher_order_b_not_negated():
+    """Integrated higher-order B strengths (e.g. B2L -> PolynomB[1], a quadrupole)
+    must NOT be sign-flipped -- only the order-1 dipole/corrector term is.
+
+    Guards against an over-broad negation that would invert integrated
+    quadrupole/sextupole strengths (focusing -> defocusing).
+    """
+    m, parent = _make_magnet_with_parent(max_order=2, length=2.0)
+
+    ctrl = Control(name="c1", setpoint=6.0)
+    parent.controls["c1"] = ctrl
+    link = ControlMagnetLink(
+        link_name="lk1", magnet_name=0, control_name="c1",
+        component="B", order=2, is_integrated=True,
+    )
+    m._links = [link]
+
+    m.update()
+    # 6.0 / 2.0 = 3.0, NOT negated for the order-2 B (quadrupole) term.
+    assert m.B[1] == pytest.approx(3.0)
+
+
+def test_magnet_update_integrated_a_not_negated():
+    """Integrated A-component (skew) strengths are never negated -- the sign
+    convention flip is specific to the normal dipole term PolynomB[0]."""
+    m, parent = _make_magnet_with_parent(max_order=1, length=2.0)
+
+    ctrl = Control(name="c1", setpoint=6.0)
+    parent.controls["c1"] = ctrl
+    link = ControlMagnetLink(
+        link_name="lk1", magnet_name=0, control_name="c1",
+        component="A", order=1, is_integrated=True,
+    )
+    m._links = [link]
+
+    m.update()
+    # 6.0 / 2.0 = 3.0, A-component is not negated.
+    assert m.A[0] == pytest.approx(3.0)
 
 
 def test_magnet_update_no_length_raises():

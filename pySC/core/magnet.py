@@ -92,6 +92,11 @@ class Magnet(BaseModel, extra="forbid"):
                         link_value = link.value(setpoint)
                         if link.is_integrated:
                             link_value = link_value / self.length
+                            # Mirror the order-1 B (dipole/corrector) sign flip
+                            # applied in update(), so this diagnostic agrees with
+                            # the stored PolynomB[0] value printed above.
+                            if link.component == "B" and link.order == 1:
+                                link_value = -link_value
                         error = link.error
                         print(
                             f"    - {link.control_name}: setpoint = {setpoint}, error = {repr(error)} -> {link_value}"
@@ -109,7 +114,15 @@ class Magnet(BaseModel, extra="forbid"):
             if link.is_integrated:
                 assert self.length is not None, f'ERROR: magnet length not specified for integrated strength link: {repr(link)}'
                 value = value / self.length
-                # if it is equal to zero then assume A and B are already integrated strengths :(
+                # AT sign convention for the dipole/corrector term: Δx' = -PolynomB[0]*L,
+                # so a positive horizontal kick requires negative PolynomB[0].  Negate the
+                # integrated B-component *only* for the order-1 term (PolynomB[0]) so that a
+                # positive corrector setpoint produces a positive physical kick, matching
+                # MATLAB's SCsetCMs2SetPoints (normBy = [-1, 1] * Length).  Higher-order
+                # integrated B strengths (e.g. an integrated quadrupole B2L -> PolynomB[1])
+                # must NOT be flipped -- that would invert focusing.
+                if link.component == "B" and link.order == 1:
+                    value = -value
             if link.component == "A":
                 self.A[link.order - 1] += value
             elif link.component == "B":

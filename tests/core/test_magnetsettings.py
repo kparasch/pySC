@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 from pySC.core.magnetsettings import MagnetSettings
 from pySC.core.magnet import Magnet, ControlMagnetLink
-from pySC.core.control import Control, LinearConv
+from pySC.core.control import Control, LinearConv, SeriesControl
 
 
 # ---------------------------------------------------------------------------
@@ -302,3 +302,41 @@ def test_add_individually_powered_captures_a_offsets():
 
     # With the fix, the uncontrolled A1 component IS captured in offset_A[0]
     assert magnet.offset_A[0] == pytest.approx(0.123)
+
+
+@pytest.mark.parametrize("magnet_names", [None, ["Q1", "Q2"]])
+def test_series_controls_update_all_magnets_and_roundtrip(magnet_names):
+    ms, mock_sc = _make_settings()
+    mock_sc.lattice.get_magnet_component.side_effect = (
+        lambda index, component_type, order:
+        0.25 if component_type == "A" and order == 0 else 0.0
+    )
+    names = magnet_names if magnet_names is not None else ["10", "20"]
+    links = ms.add_magnets_in_series(
+        sim_indices=[10, 20], controlled_components=["B2", "A2L"],
+        category_name="family", magnet_names=magnet_names,
+        magnet_lengths=[0.5, 2.0],
+    )
+    assert set(links) == {"B2", "A2L"}
+    assert len(ms.controls) == 2
+    assert len(ms.links) == 4
+    for component, link_names in links.items():
+        assert [ms.links[name].magnet_name for name in link_names] == names
+        assert all(ms.links[name].control_name == f"family/{component}"
+                   for name in link_names)
+
+    # Loading must preserve series metadata and reconnect every link.
+    restored = MagnetSettings.model_validate_json(ms.model_dump_json())
+    restored._parent = mock_sc
+    ms.connect_links()
+    for settings in (ms, restored):
+        for control in settings.controls.values():
+            assert isinstance(control.info, SeriesControl)
+            assert control.info.magnet_names == names
+        settings.set("family/B2", 3.0)
+        settings.set("family/A2L", 2.0)
+        for name, length in zip(names, [0.5, 2.0]):
+            magnet = settings.magnets[name]
+            assert magnet.B[1] == pytest.approx(3.0)
+            assert magnet.A[1] == pytest.approx(2.0 / length)
+            assert magnet.A[0] == pytest.approx(0.25)

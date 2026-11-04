@@ -373,6 +373,12 @@ class ATLattice(Lattice):
 
     def get_magnet_component(self, index: int, component_type: Literal['A', 'B'],
                              order: int, use_design=True) -> float:
+        """Return a non-integrated strength (zero-based multipole order).
+
+        B1 includes the selected element's reference curvature:
+        ``BendingAngle / Length + PolynomB[0]``. Raw AT coefficients remain
+        available through ``design`` and ``ring``.
+        """
         assert component_type in ['A', 'B']
         if use_design:
             elem = self._design[index]
@@ -392,12 +398,20 @@ class ATLattice(Lattice):
                 logger.warning('Non-corrector element has non-zero KickAngle. Be careful. Ask for help.')
 
             value =  getattr(elem, f'Polynom{component_type}')[order]
+            if component_type == 'B' and order == 0:
+                length = self.get_length(index)
+                value += getattr(elem, 'BendingAngle', 0.0) / length
 
         return value
 
     def set_magnet_component(self, index: int, value: float,
                              component_type: Literal['A', 'B'],
                              order: int, use_design=True) -> None:
+        """Set a non-integrated strength without changing the reference bend.
+
+        For B1, subtract the selected element's reference curvature before
+        writing ``PolynomB[0]``. This is the inverse of get_magnet_component.
+        """
         assert component_type in ['A', 'B']
         if use_design:
             elem = self._design[index]
@@ -418,6 +432,9 @@ class ATLattice(Lattice):
             if component_type == 'A':
                 elem.PolynomA[order] = value
             elif component_type == 'B':
+                if order == 0:
+                    length = self.get_length(index)
+                    value -= getattr(elem, 'BendingAngle', 0.0) / length
                 elem.PolynomB[order] = value
             else:
                 raise Exception('ERROR: Not supposed to happen!')

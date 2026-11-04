@@ -363,3 +363,26 @@ def test_coordinate_swap(hmba_lattice_file):
     assert not np.isclose(delta_out_a, delta_val, rtol=0.1), (
         "pySC input index 4 should be swapped to AT ct, not dp"
     )
+
+
+@pytest.mark.parametrize("use_design", [False, True])
+def test_dipole_component_includes_selected_reference_bend(hmba_lattice_file, use_design):
+    lat = ATLattice(lattice_file=hmba_lattice_file)
+    index = next(i for i, elem in enumerate(lat.design) if isinstance(elem, at.Dipole))
+    # Distinguish the ring reference from the design reference.
+    lat.ring[index].BendingAngle *= 1.2
+    elem = (lat.design if use_design else lat.ring)[index]
+    elem.PolynomB[0] = 0.02
+    angle = elem.BendingAngle
+    curvature = angle / elem.Length
+    value = lat.get_magnet_component(index, "B", 0, use_design=use_design)
+    assert value == pytest.approx(curvature + 0.02)
+    lat.set_magnet_component(index, value, "B", 0, use_design=use_design)
+    assert elem.PolynomB[0] == pytest.approx(0.02)
+    lat.set_magnet_component(index, 0.0, "B", 0, use_design=use_design)
+    assert elem.PolynomB[0] == pytest.approx(-curvature)
+    assert elem.BendingAngle == angle
+    assert lat.get_magnet_component(index, "B", 0, use_design=use_design) == pytest.approx(0.0)
+    for component, order in [("A", 0), ("B", 1)]:
+        lat.set_magnet_component(index, 0.03, component, order, use_design=use_design)
+        assert getattr(elem, f"Polynom{component}")[order] == pytest.approx(0.03)

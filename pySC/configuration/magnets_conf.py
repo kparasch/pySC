@@ -3,7 +3,6 @@ import logging
 import numpy as np
 
 from ..core.simulated_commissioning import SimulatedCommissioning
-from ..core.lattice import ATLattice
 from ..core.control import LinearConv
 from ..core.magnet import ControlMagnetLink, MAGNET_NAME_TYPE
 from ..core.multipolar_imperfections import ImperfectionsModelFactory
@@ -61,23 +60,10 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
                 factor = SC.rng.normal_trunc(1, sig)
 
             component_type, order = magnet_settings.validate_one_component(component)
-            if type(SC.lattice) is ATLattice and component == 'B1' and SC.lattice.is_dipole(index):
-                # in AT when we have a dipole with bending angle it is a special case,
-                # setpoint points to bending angle, but B1 multipole (PolynomB[0]) should be changed
-                # TODO: maybe put this on the side of ATLattice?? 
-                #   when we do get we return BendingAngle/length + PolynomB[0],
-                #   when we do set we subtract BendingAngle/length from setpoint and then set it to PolynomB[0]
-                # in XSuite, h controls the reference frame and k0 the strength of the dipole. We can just act on k0.
-                bending_angle = SC.lattice.get_bending_angle(index)
-                offset = - bending_angle / magnet_length
-                setpoint = bending_angle / magnet_length
-            else:
-                #otherwise it is just the multipole
-                offset = 0
-                setpoint = SC.lattice.get_magnet_component(index, component_type=component_type, order=order)
-                if component[-1] == 'L':
-                    length = magnet_length
-                    setpoint = setpoint * length
+            offset = 0
+            setpoint = SC.lattice.get_magnet_component(index, component_type=component_type, order=order)
+            if component[-1] == 'L':
+                setpoint *= magnet_length
 
             if component in components_to_invert:
                 factor *= -1
@@ -100,15 +86,11 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
                 raise ValueError(f"magnets/{magnet_category_name}: shifted=true requires a non-zero quadrupole component at index {index} ({magnet_name}).")
 
             k0 = SC.lattice.get_magnet_component(index, component_type='B', order=0)
-            reference_k0 = 0.0
-            if type(SC.lattice) is ATLattice:
-                reference_k0 = SC.lattice.get_bending_angle(index) / magnet_length
-                k0 += reference_k0
             design_shift = k0 / k1
 
             scale = magnet_length if source_link.is_integrated else 1.0
             factor = design_shift * source_link.error.factor / scale
-            offset = design_shift * source_link.error.offset / scale - reference_k0
+            offset = design_shift * source_link.error.offset / scale
             target_name = f'{magnet_name}/B1'
             magnet_settings.add_link(ControlMagnetLink(
                 link_name=f'{control_name}->{target_name}',
@@ -192,23 +174,10 @@ def generate_magnet_in_series_controls(SC: SimulatedCommissioning, indices: list
                     factor = SC.rng.normal_trunc(1, sig)
 
                 component_type, order = magnet_settings.validate_one_component(component)
-                if type(SC.lattice) is ATLattice and component == 'B1' and SC.lattice.is_dipole(index):
-                    # in AT when we have a dipole with bending angle it is a special case,
-                    # setpoint points to bending angle, but B1 multipole (PolynomB[0]) should be changed
-                    # TODO: maybe put this on the side of ATLattice?? 
-                    #   when we do get we return BendingAngle/length + PolynomB[0],
-                    #   when we do set we subtract BendingAngle/length from setpoint and then set it to PolynomB[0]
-                    # in XSuite, h controls the reference frame and k0 the strength of the dipole. We can just act on k0.
-                    bending_angle = SC.lattice.get_bending_angle(index)
-                    offset = - bending_angle / magnet_length
-                    setpoint = bending_angle / magnet_length
-                else:
-                    #otherwise it is just the multipole
-                    offset = 0
-                    setpoint = SC.lattice.get_magnet_component(index, component_type=component_type, order=order)
-                    if component[-1] == 'L':
-                        length = magnet_length
-                        setpoint = setpoint * length
+                offset = 0
+                setpoint = SC.lattice.get_magnet_component(index, component_type=component_type, order=order)
+                if component[-1] == 'L':
+                    setpoint *= magnet_length
 
                 if component in components_to_invert:
                     factor *= -1

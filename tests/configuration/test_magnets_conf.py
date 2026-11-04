@@ -93,37 +93,41 @@ def test_configure_magnets_design_has_unity_factor(hmba_lattice_file):
 
 
 @pytest.mark.slow
-def test_configure_magnets_dipole_convention(hmba_lattice_file):
-    """B1 on a dipole with BendingAngle uses the special offset convention."""
+@pytest.mark.parametrize("component", ["B1", "B1L"])
+@pytest.mark.parametrize("series", [False, True])
+def test_configure_magnets_dipole_convention(hmba_lattice_file, component, series):
     lattice = ATLattice(lattice_file=hmba_lattice_file, naming="FamName")
-
-    # Use DQ1B which is a unique dipole name in the HMBA lattice (index 50)
-    dip_name = "DQ1B"
-    dip_index = 50
-    # Verify it is indeed a dipole with bending angle
-    assert lattice.is_dipole(dip_index), f"{dip_name} should be a dipole"
-
-    config = {
-        "error_table": {"dip_cal": "0.01"},
-        "magnets": {
-            "dipoles": {
-                "regex": f"^{dip_name}$",
-                "components": [{"B1": "dip_cal"}],
-            },
-        },
-    }
+    config = {"magnets": {"dipoles": {
+        "regex": "^(DQ1B|DQ2C_1)$", "series": series,
+        "components": [{component: None}],
+    }}}
     SC = SimulatedCommissioning(lattice=lattice, configuration=config, seed=42)
+    indices = SC.lattice.find_with_regex("^(DQ1B|DQ2C_1)$")
+    assert len(indices) == 2
+    # Equal control strengths allow the series case to preserve both magnets.
+    initial_setpoint = 0.08
+    raw_initial = {}
+    for index in indices:
+        elem = SC.lattice.design[index]
+        scale = elem.Length if component.endswith("L") else 1.0
+        elem.PolynomB[0] = initial_setpoint / scale - elem.BendingAngle / elem.Length
+        raw_initial[index] = elem.PolynomB[0]
     configure_magnets(SC)
-
-    # Check the link for this dipole has a non-zero offset (the special convention)
-    dip_control = f"{dip_name}/B1"
-    link_name = f"{dip_control}->{dip_control}"
-    link = SC.magnet_settings.links[link_name]
-
-    bending_angle = lattice.get_bending_angle(dip_index)
-    magnet_length = lattice.get_length(dip_index)
-    expected_offset = -bending_angle / magnet_length
-    assert link.error.offset == pytest.approx(expected_offset, rel=1e-6)
+    for settings, use_design in (
+        (SC.magnet_settings, False), (SC.design_magnet_settings, True)
+    ):
+        for control_name in SC.control_arrays["dipoles"]:
+            assert settings.get(control_name) == pytest.approx(initial_setpoint)
+        for index in indices:
+            elem = (SC.lattice.design if use_design else SC.lattice.ring)[index]
+            assert elem.PolynomB[0] == pytest.approx(raw_initial[index])
+        assert all(link.error.offset == 0 for link in settings.links.values())
+        for control_name in SC.control_arrays["dipoles"]:
+            settings.set(control_name, 0.12)
+        for index in indices:
+            elem = (SC.lattice.design if use_design else SC.lattice.ring)[index]
+            scale = elem.Length if component.endswith("L") else 1.0
+            assert elem.PolynomB[0] == pytest.approx(0.12 / scale - elem.BendingAngle / elem.Length)
 
 
 @pytest.mark.slow
@@ -136,7 +140,7 @@ def test_configure_shifted_quadrupole_feed_down(hmba_lattice_file, component):
     initial_b0 = lattice.get_magnet_component(dip_index, "B", 0)
     initial_k1 = lattice.get_magnet_component(dip_index, "B", 1)
     length = lattice.get_length(dip_index)
-    design_shift = (initial_angle / length + initial_b0) / initial_k1
+    design_shift = initial_b0 / initial_k1
 
     config = {
         "error_table": {"quad_cal": "0"},
@@ -284,3 +288,28 @@ def test_configure_series_uses_mean_initial_strength(hmba_lattice_file):
             assert SC.lattice.get_magnet_component(
                 index, "B", 1, use_design=use_design
             ) == pytest.approx(3.0)
+
+
+@pytest.mark.slow
+def test_uncontrolled_dipole_strength_and_imperfection_reference(hmba_lattice_file):
+    from pySC.core.multipolar_imperfections import ImperfectionsModel, MultipolarImperfectionTable
+
+    lattice = ATLattice(lattice_file=hmba_lattice_file, naming="FamName")
+    SC = SimulatedCommissioning(lattice=lattice, configuration={"magnets": {
+        "dipoles": {"regex": "^DQ1B$", "components": [{"B2": None}]}
+    }}, seed=42)
+    index = SC.lattice.find_with_regex("^DQ1B$")[0]
+    elem = SC.lattice.design[index]
+    elem.PolynomB[0] = 0.02
+    strength = elem.BendingAngle / elem.Length + 0.02
+    configure_magnets(SC)
+    magnet = SC.magnet_settings.magnets["DQ1B"]
+    assert magnet.offset_B[0] == pytest.approx(strength)
+    assert SC.lattice.ring[index].PolynomB[0] == pytest.approx(0.02)
+    magnet.imperfections = ImperfectionsModel(list_of_imperfections=[
+        MultipolarImperfectionTable(reference_radius=0.01, reference_type=("B", 1),
+                                   bn=[100.0], an=[0.0])
+    ])
+    magnet.update()
+    assert SC.lattice.get_magnet_component(index, "B", 0, use_design=False) == pytest.approx(1.01 * strength)
+    assert SC.lattice.ring[index].PolynomB[0] == pytest.approx(0.02 + 0.01 * strength)

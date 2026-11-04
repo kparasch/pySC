@@ -173,7 +173,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
                               category_name: str,
                               magnet_names: Optional[list[str]] = None,
                               magnet_lengths: Optional[list[float]] = None,
-                              to_design: bool = False) -> list[str]:
+                              to_design: bool = False) -> dict[str,list[str]]:
         """
         Add a magnet with individually powered components.
         Each component must be controlled by a separate control.
@@ -245,9 +245,10 @@ class MagnetSettings(BaseModel, extra="forbid"):
 
             self.add_control(control)
 
-        link_names = []
+        link_names_by_component = {}
         # Create links for each component
         for component in controlled_components:
+            link_names_by_component[component] = []
             control_name = f"{category_name}/{component}"
             for magnet in magnets:
                 link_name = f"{control_name}->{magnet.name}/{component}"
@@ -262,8 +263,8 @@ class MagnetSettings(BaseModel, extra="forbid"):
                     is_integrated=is_integrated
                 )
                 self.add_link(link)
-                link_names.append(link_name)
-        return link_names
+                link_names_by_component[component].append(link_name)
+        return link_names_by_component
 
 
     def add_knob(self, knob_name: str, control_names: list, weights: Optional[list[float]] = None) -> None:

@@ -40,6 +40,14 @@ def generate_default_magnet_control(SC: SimulatedCommissioning, index: int, magn
             components.append(component)
             cal_errors.append(cal_error)
 
+        if is_shifted:
+            if any(component in ("B1", "B1L") for component in components):
+                raise ValueError(
+                    f"magnets/{magnet_category_name}: shifted=true does not allow "
+                    "an independent B1 or B1L control; the dipole strength "
+                    "comes from quadrupole feed-down."
+                )
+
         magnet_settings.add_individually_powered_magnet(
             sim_index=index, 
             controlled_components=components,

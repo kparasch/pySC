@@ -94,6 +94,18 @@ class MagnetSettings(BaseModel, extra="forbid"):
 
         return max_order
 
+    def validate_unique_components(self, components: list[str]) -> None:
+        found = {}
+        for component in components:
+            key = self.validate_one_component(component)  # (type, order)
+            if key in found:
+                raise ValueError(
+                    f"Components '{found[key]}' and '{component}' control "
+                    "the same multipole; declare it only once."
+                )
+            found[key] = component
+
+
     def add_individually_powered_magnet(self,
                                         sim_index: int,
                                         controlled_components: list[str],
@@ -111,6 +123,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
             magnet_name = sim_index  # Use sim_index as the default name if not provided
 
         max_order = self.validate_components_and_get_max_order(components=controlled_components, magnet_name=magnet_name)
+        self.validate_unique_components(components=controlled_components)
 
         # Create a new Magnet instance with the specified components
         magnet = Magnet(name=magnet_name,
@@ -191,6 +204,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
         max_orders = [self.validate_components_and_get_max_order(
             components=controlled_components, magnet_name=magnet_name) for magnet_name in magnet_names]
 
+        self.validate_unique_components(components=controlled_components)
         N_mag = len(sim_indices)
         if len(magnet_names) != N_mag:
             raise ValueError(f"Inconsistent number of magnet_names ({len(magnet_names)}) and indices ({N_mag}).")

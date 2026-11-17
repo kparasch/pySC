@@ -1,5 +1,5 @@
 from ..core.simulated_commissioning import SimulatedCommissioning
-from ..core.control import IndivControl
+from ..core.control import IndivControl, SeriesControl
 from .general import get_indices_and_names
 import numpy as np
 
@@ -9,6 +9,8 @@ def sort_controls(SC: SimulatedCommissioning, control_names: list[str]) -> list[
         control = SC.magnet_settings.controls[control_name]
         if type(control.info) is IndivControl:
             magnet_name = control.info.magnet_name
+        elif type(control.info) is SeriesControl:
+            magnet_name = control.info.magnet_names[0]
         else:
             raise NotImplementedError(f"{control} is of type {type(control.info).__name__} which is not implemented.")
         magnet_names.append(magnet_name)

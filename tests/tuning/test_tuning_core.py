@@ -304,10 +304,6 @@ def test_correct_orbit_reduces_rms(sc_tuning):
 @pytest.mark.slow
 def test_correct_injection_basic(sc_tuning):
     """Injection correction runs the full pipeline without error.
-
-    Note: HMBA single-cell ring is too small for corrections to have measurable
-    effect on corrector setpoints (see xfail on test_correct_orbit_reduces_rms).
-    This test verifies the code path executes without exceptions.
     """
     sc = sc_tuning
 
@@ -323,10 +319,6 @@ def test_correct_injection_basic(sc_tuning):
 @pytest.mark.slow
 def test_correct_orbit_basic(sc_tuning):
     """Orbit correction runs the full pipeline without error.
-
-    Note: HMBA single-cell ring is too small for corrections to have measurable
-    effect on corrector setpoints (see xfail on test_correct_orbit_reduces_rms).
-    This test verifies the code path executes without exceptions.
     """
     sc = sc_tuning
 

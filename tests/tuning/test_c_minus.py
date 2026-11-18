@@ -14,9 +14,6 @@ def sc_with_coupling(sc_tuning):
     """SC with skew quadrupole controls for coupling correction.
 
     Uses sextupole A1 (skew quad) components as coupling correctors.
-
-    Note: with the HMBA single-cell fixture, knob creation can fail because the
-    c_minus response matrix is not SVD-invertible.
     """
     sc = sc_tuning
     ring = sc.lattice.design
@@ -44,12 +41,6 @@ def sc_with_coupling(sc_tuning):
 
     return sc
 
-
-# The HMBA single-cell c_minus response matrix is numerically unusable for
-# pseudoinversion, so these integration tests are expected to fail until a
-# better-conditioned fixture is available.
-
-@pytest.mark.xfail(reason="HMBA single-cell c_minus response matrix SVD does not converge", strict=False)
 def test_c_minus_response(sc_with_coupling):
     """c_minus_response returns complex array of correct length."""
     sc = sc_with_coupling
@@ -59,7 +50,6 @@ def test_c_minus_response(sc_with_coupling):
     assert delta_c.dtype == complex
 
 
-@pytest.mark.xfail(reason="HMBA single-cell c_minus response matrix SVD does not converge", strict=False)
 def test_c_minus_cheat_measurement(sc_with_coupling):
     """cheat() returns a complex c_minus value."""
     sc = sc_with_coupling
@@ -67,7 +57,6 @@ def test_c_minus_cheat_measurement(sc_with_coupling):
     assert isinstance(c_minus, (complex, np.complexfloating, float))
 
 
-@pytest.mark.xfail(reason="HMBA single-cell c_minus response matrix SVD does not converge", strict=False)
 def test_c_minus_correct_cheat(sc_with_coupling):
     """Coupling correction with 'cheat' measurement runs without error."""
     sc = sc_with_coupling

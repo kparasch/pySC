@@ -278,7 +278,6 @@ def test_generate_orbit_bba_config_forwards_sextupole_options():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.slow
-@pytest.mark.xfail(reason="HMBA single-cell closed orbit near numerical floor — correction has no measurable effect")
 def test_correct_orbit_reduces_rms(sc_tuning):
     """One correction iteration with exact RM reduces RMS orbit."""
     sc = sc_tuning

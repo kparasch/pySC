@@ -1,9 +1,7 @@
 """Tests for pySC.tuning.tune: tune measurement and correction."""
 import pytest
 import numpy as np
-
-from pySC.tuning.tune import Tune
-
+import at
 
 pytestmark = pytest.mark.slow
 
@@ -18,7 +16,6 @@ def sc_with_tune_knobs(sc_tuning):
     """
     sc = sc_tuning
     ring = sc.lattice.design
-    import at
 
     quad_names = [ring[i].FamName for i, e in enumerate(ring) if isinstance(e, at.Quadrupole)]
     focusing = [f"{name}/B2" for name in quad_names if name.startswith("QF")]
@@ -46,7 +43,6 @@ def sc_with_tune_knobs(sc_tuning):
     return sc
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring is unstable for tune computation")
 def test_tune_response_matrix(sc_with_tune_knobs):
     """build_tune_response_matrix returns a 2x2 matrix."""
     sc = sc_with_tune_knobs
@@ -56,7 +52,6 @@ def test_tune_response_matrix(sc_with_tune_knobs):
     assert np.all(np.abs(TRM) > 0)
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring is unstable for tune computation")
 def test_tune_trim(sc_with_tune_knobs):
     """Tune trim changes the setpoints of knobs without error."""
     sc = sc_with_tune_knobs
@@ -69,7 +64,6 @@ def test_tune_trim(sc_with_tune_knobs):
     assert qy_sp == pytest.approx(-0.001)
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring is unstable for tune computation")
 def test_tune_correct_cheat(sc_with_tune_knobs):
     """Tune correction with 'cheat' measurement runs without error."""
     sc = sc_with_tune_knobs

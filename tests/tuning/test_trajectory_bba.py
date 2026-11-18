@@ -109,15 +109,14 @@ def test_generate_trajectory_bba_config_raises_when_filter_leaves_no_magnets(sc_
         sc.tuning.bba_magnets = original_bba_magnets
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring lacks sufficient BPMs downstream for trajectory BBA")
 def test_trajectory_bba_single_bpm(sc_with_traj_rm):
     """trajectory_bba runs without error on a single BPM."""
     sc = sc_with_traj_rm
-    bpm_name = sc.bpm_system.names[0]
+    bpm_name = sc.bpm_system.names[1]
 
     # Run trajectory BBA for horizontal plane
     offset, offset_err = trajectory_bba(
-        sc, bpm_name, plane='H', shots_per_trajectory=1, n_corr_steps=3,
+        sc, bpm_name, plane='H', shots_per_trajectory=1, n_corr_steps=3, n_downstream_bpms=10
     )
     assert isinstance(offset, float)
     assert isinstance(offset_err, float)

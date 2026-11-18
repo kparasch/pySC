@@ -263,6 +263,20 @@ Supported magnet-family options are:
    the mean integrated strength. Combining ``series: true`` with
    ``shifted: true`` is not supported.
 
+``trim_coils``
+   For series families only, a list of additional individually powered
+   components, each mapped to a calibration-error entry or ``null``. Every
+   selected magnet receives its own trim control named ``<magnet>/<component>``.
+   Trim setpoints start at zero and add to the magnet's existing strength.
+   A component may appear in both ``components`` and ``trim_coils``, but may
+   not be repeated within either list. Trim components can also differ from
+   the shared components, for example an ``A2`` trim on a ``B2`` family.
+
+``trim_limits``
+   Optional limits for components declared in ``trim_coils``, referencing
+   the top-level ``parameters`` table. These apply separately to each trim;
+   ``limits`` continues to apply to the shared controls.
+
 ``invert``
    List of declared components whose sign should be inverted.
 

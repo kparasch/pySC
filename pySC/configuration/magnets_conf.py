@@ -223,6 +223,58 @@ def generate_magnet_in_series_controls(SC: SimulatedCommissioning, indices: list
 
     return new_control_list
 
+def generate_trim_coil_controls(SC: SimulatedCommissioning, magnet_name: MAGNET_NAME_TYPE,
+                               magnet_category_conf: dict[str, Any], magnet_category_name: str,
+                               to_design: bool = False) -> list[str]:
+    """Configure calibration errors and limits for one series magnet's trims."""
+    error_table = dict.get(SC.configuration, 'error_table', {})
+    new_control_list = []
+
+    if to_design:
+        magnet_settings = SC.design_magnet_settings
+    else:
+        magnet_settings = SC.magnet_settings
+
+    components = []
+    cal_errors = []
+    for comp_dict in magnet_category_conf.get('trim_coils', []):
+        if not isinstance(comp_dict, dict) or len(comp_dict) != 1:
+            raise ValueError(f"magnets/{magnet_category_name}/trim_coils: expected component: error pairs.")
+        component, cal_error = comp_dict.copy().popitem()
+        components.append(component)
+        cal_errors.append(cal_error)
+
+    magnet_settings.add_trim_coils(magnet_name=magnet_name, controlled_components=components)
+
+    for component, cal_error in zip(components, cal_errors):
+        control_name = f'{magnet_name}/{component}'
+        link_name = f'{control_name}->{control_name}'
+        new_control_list.append(control_name)
+        if to_design:
+            factor = 1
+        else:
+            sig = get_error(cal_error, error_table)
+            factor = SC.rng.normal_trunc(1, sig)
+        magnet_settings.controls[control_name].setpoint = 0.0
+        magnet_settings.links[link_name].error.factor = factor
+        magnet_settings.links[link_name].error.offset = 0.0
+
+    parameters_table = dict.get(SC.configuration, 'parameters', {})
+    for comp_dict in magnet_category_conf.get('trim_limits', []):
+        if not isinstance(comp_dict, dict) or len(comp_dict) != 1:
+            raise ValueError(f"magnets/{magnet_category_name}/trim_limits: expected component: parameter pairs.")
+        component, limit_name = comp_dict.copy().popitem()
+        if component not in components:
+            raise ValueError(f"magnets/{magnet_category_name}/trim_limits: {component} is not declared in trim_coils.")
+        if limit_name not in parameters_table:
+            raise ValueError(f"magnets/{magnet_category_name}/trim_limits: parameter {limit_name} was not found.")
+        limit = float(parameters_table[limit_name])
+        control_name = f'{magnet_name}/{component}'
+        magnet_settings.controls[control_name].limits = (-abs(limit), abs(limit))
+
+    return new_control_list
+
+
 def configure_magnets(SC: SimulatedCommissioning):
     # get magnets configuration, return empty dict if not there
     magnet_conf = dict.get(SC.configuration, 'magnets', {})
@@ -235,6 +287,11 @@ def configure_magnets(SC: SimulatedCommissioning):
 
     for magnet_category_name in magnet_conf.keys():
         magnet_category_conf = magnet_conf[magnet_category_name]
+        if 'trim_coils' in magnet_category_conf or 'trim_limits' in magnet_category_conf:
+            if not magnet_category_conf.get('series', False):
+                raise ValueError(f'magnets/{magnet_category_name}: trim_coils and trim_limits require series=true.')
+            if not magnet_category_conf.get('components'):
+                raise ValueError(f'magnets/{magnet_category_name}: trim coils require shared components.')
         magnet_list = []
         control_list = []
 
@@ -248,6 +305,10 @@ def configure_magnets(SC: SimulatedCommissioning):
                 generate_element_misalignments(SC, index, magnet_category_conf)
             new_controls = generate_magnet_in_series_controls(SC, indices, magnet_names, magnet_category_conf, magnet_category_name=magnet_category_name)
             _ = generate_magnet_in_series_controls(SC, indices, magnet_names, magnet_category_conf, magnet_category_name=magnet_category_name, to_design=True)
+            if 'trim_coils' in magnet_category_conf or 'trim_limits' in magnet_category_conf:
+                for magnet_name in magnet_names:
+                    new_controls += generate_trim_coil_controls(SC, magnet_name, magnet_category_conf, magnet_category_name)
+                    _ = generate_trim_coil_controls(SC, magnet_name, magnet_category_conf, magnet_category_name, to_design=True)
             control_list = control_list + new_controls
         else:
             for index, magnet_name in zip(indices, magnet_names):

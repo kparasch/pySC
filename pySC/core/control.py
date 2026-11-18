@@ -21,6 +21,7 @@ class IndivControl(BaseModel, extra="forbid"):
     component: Literal["A", "B"]
     order: PositiveInt
     is_integrated: bool
+    is_trim_coil: bool = False
 
     @property
     def magnet_type(self) -> MagnetType:

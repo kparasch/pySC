@@ -230,6 +230,92 @@ def _make_sc_with_series_config(hmba_lattice_file, component="B2"):
     return SC
 
 
+@pytest.mark.parametrize('trim_component', ['B2', 'B2L', 'A2', 'A4L'])
+def test_series_trim_coils_add_independently_and_roundtrip(hmba_lattice_file, tmp_path, trim_component):
+    sc = _make_sc_with_series_config(hmba_lattice_file)
+    category = sc.configuration['magnets']['quadrupoles']
+    category['trim_coils'] = [{trim_component: 'quad_cal'}]
+    category['trim_limits'] = [{trim_component: 'trim_limit'}]
+    sc.configuration['parameters']['trim_limit'] = '0.1'
+    with patch.object(type(sc.rng), 'normal_trunc', side_effect=[1.1, 0.9, 1.2, 0.8]):
+        configure_magnets(sc)
+    assert sc.control_arrays['quadrupoles'] == [
+        'quadrupoles/B2', f'QF1A/{trim_component}', f'QF1E/{trim_component}']
+    for settings, elements, shared_factors, trim_factors in (
+        (sc.magnet_settings, sc.lattice.ring, [1.1, 0.9], [1.2, 0.8]),
+        (sc.design_magnet_settings, sc.lattice.design, [1., 1.], [1., 1.]),
+    ):
+        settings.set('quadrupoles/B2', 1.5)
+        component_type, order = settings.validate_one_component(trim_component)
+        for name in ('QF1A', 'QF1E'):
+            control = settings.controls[f'{name}/{trim_component}']
+            assert control.setpoint == 0.0
+            assert control.info.is_trim_coil
+            assert control.limits == (-0.1, 0.1)
+        settings.set(f'QF1A/{trim_component}', 1.0)  # Clip only this trim.
+        for i, name in enumerate(('QF1A', 'QF1E')):
+            magnet = settings.magnets[name]
+            element = elements[magnet.sim_index]
+            base = 1.5 * shared_factors[i] if component_type == 'B' and order == 1 else 0.0
+            scale = magnet.length if trim_component.endswith('L') else 1.0
+            trim = 0.1 * trim_factors[i] / scale if i == 0 else 0.0
+            assert getattr(element, f'Polynom{component_type}')[order] == pytest.approx(base + trim)
+        assert settings.get('quadrupoles/B2') == 1.5
+        assert settings.controls['quadrupoles/B2'].limits == (-100., 100.)
+
+    path = tmp_path / 'trims.json'
+    sc.to_json(path)
+    restored = SimulatedCommissioning.from_json(path)
+    for key in ('magnet_settings', 'design_magnet_settings'):
+        assert getattr(restored, key).model_dump() == getattr(sc, key).model_dump()
+        for obj in (sc, restored):
+            getattr(obj, key).set(f'QF1E/{trim_component}', -0.03)
+        for name in ('QF1A', 'QF1E'):
+            original = getattr(sc, key).magnets[name]
+            reloaded = getattr(restored, key).magnets[name]
+            np.testing.assert_allclose(reloaded.A, original.A)
+            np.testing.assert_allclose(reloaded.B, original.B)
+
+
+def test_higher_order_trim_preserves_existing_strength(hmba_lattice_file):
+    sc = _make_sc_with_series_config(hmba_lattice_file)
+    sc.configuration['magnets']['quadrupoles']['trim_coils'] = [{'A4': None}]
+    index = sc.lattice.find_with_regex('^QF1A$')[0]
+    sc.lattice.ensure_max_order(index, 3)
+    sc.lattice.design[index].PolynomA[3] = 0.002
+    configure_magnets(sc)
+    for settings, elements in ((sc.magnet_settings, sc.lattice.ring),
+                               (sc.design_magnet_settings, sc.lattice.design)):
+        assert elements[index].PolynomA[3] == pytest.approx(0.002)
+        settings.set('QF1A/A4', 0.003)
+        assert elements[index].PolynomA[3] == pytest.approx(0.005)
+
+
+@pytest.mark.parametrize('updates,match', [
+    ({'series': False, 'trim_coils': [{'B2': None}]}, 'require series=true'),
+    ({'trim_coils': [{'B2': None}, {'B2L': None}]}, 'same multipole'),
+    ({'trim_coils': [{'B2': None}, {'B2': None}]}, 'same multipole'),
+    ({'trim_limits': [{'B2': 'quad_limit'}]}, 'not declared in trim_coils'),
+    ({'trim_coils': [{'B2': None}], 'trim_limits': [{'B2': 'missing'}]}, 'was not found'),
+    ({'trim_coils': [{'B2': 'missing'}]}, 'not found in error_table'),
+    ({'components': [], 'trim_coils': [{'B2': None}]}, 'require shared components'),
+])
+def test_invalid_trim_configuration(hmba_lattice_file, updates, match):
+    sc = _make_sc_with_series_config(hmba_lattice_file)
+    sc.configuration['magnets']['quadrupoles'].update(updates)
+    with pytest.raises(Exception, match=match):
+        configure_magnets(sc)
+
+
+def test_trim_name_collision(hmba_lattice_file):
+    sc = _make_sc_with_series_config(hmba_lattice_file)
+    category = sc.configuration['magnets'].pop('quadrupoles')
+    category['trim_coils'] = [{'B2': None}]
+    sc.configuration['magnets']['QF1A'] = category
+    with pytest.raises(ValueError, match='collide'):
+        configure_magnets(sc)
+
+
 @pytest.mark.slow
 @pytest.mark.parametrize("component", ["B2", "B2L"])
 def test_configure_series_updates_lattice_and_applies_limits(hmba_lattice_file, component):

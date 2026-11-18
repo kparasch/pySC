@@ -281,6 +281,43 @@ class MagnetSettings(BaseModel, extra="forbid"):
         return link_names_by_component
 
 
+    def add_trim_coils(self, magnet_name: MAGNET_NAME_TYPE,
+                       controlled_components: list[str]) -> None:
+        """Add individual, additive trim controls to an existing series magnet."""
+        self.validate_unique_components(controlled_components)
+        magnet = self.magnets[magnet_name]
+        for component in controlled_components:
+            if f'{magnet_name}/{component}' in self.controls:
+                raise ValueError(f"Trim control names collide with existing controls: '{magnet_name}/{component}'.")
+
+        max_order = self.validate_components_and_get_max_order(controlled_components, magnet_name)
+        old_order = magnet.max_order
+        if max_order > old_order:
+            lattice = self._parent.lattice
+            lattice.ensure_max_order(magnet.sim_index, max_order, use_design=True)
+            magnet.ensure_max_order(max_order)
+            # Preserve design strengths exposed by higher-order trims. Trims
+            # add to those strengths rather than replacing them.
+            for order in range(old_order + 1, max_order + 1):
+                for component_type in ('A', 'B'):
+                    getattr(magnet, f'offset_{component_type}')[order] = lattice.get_magnet_component(
+                        magnet.sim_index, component_type, order)
+
+        for component in controlled_components:
+            component_type, order = self.validate_one_component(component)
+            control_name = f'{magnet_name}/{component}'
+            is_integrated = component.endswith('L')
+            control = Control(name=control_name, setpoint=0.0)
+            control.info = IndivControl(magnet_name=magnet_name, component=component_type,
+                                        order=order + 1, is_integrated=is_integrated,
+                                        is_trim_coil=True)
+            self.add_control(control)
+            self.add_link(ControlMagnetLink(
+                link_name=f'{control_name}->{control_name}', magnet_name=magnet_name,
+                control_name=control_name, component=component_type, order=order + 1,
+                is_integrated=is_integrated,
+            ))
+
     def add_knob(self, knob_name: str, control_names: list, weights: Optional[list[float]] = None) -> None:
         knob = Control(name=knob_name, setpoint=0)
         knob.info = KnobControl(control_names=control_names, weights=weights)

@@ -254,6 +254,15 @@ Supported magnet-family options are:
    List of controlled multipole components. Each component maps to an
    ``error_table`` entry or ``null``.
 
+``series``
+   Optional boolean, defaulting to ``false``. When ``true``, all selected
+   magnets share one control per declared component, named
+   ``<group>/<component>``. Calibration errors remain individual to each magnet.
+   The initial shared setpoint is the mean of the selected magnets' strengths;
+   pySC logs a warning when those strengths differ. Integrated components use
+   the mean integrated strength. Combining ``series: true`` with
+   ``shifted: true`` is not supported.
+
 ``invert``
    List of declared components whose sign should be inverted.
 
@@ -551,10 +560,86 @@ Supported injection options are:
    tuning algorithms.
 
 The tuning section does not create new controls. It selects from controls
-already declared under ``magnets``. The keys on the left, such as
-``sextupoles`` and ``quadrupoles``, must match groups declared under
-``magnets``. The values, such as ``B1L`` and ``B2``, must match components
-declared in those groups.
+already declared under ``magnets``. All of the following accept the same
+selection formats: ``HCORR``, ``VCORR``, ``multipoles``, ``bba_magnets``,
+``tune.controls_1``, ``tune.controls_2``, and ``c_minus.controls``.
+
+**Select by magnet group:** provide a list of ``{group: component}`` entries.
+Each group must have been declared under ``magnets``. Several groups can be
+combined in the same list.
+
+.. code-block:: yaml
+
+   tuning:
+     tune:
+       controls_1:
+         - defocusing_quadrupoles: B2
+       controls_2:
+         - focusing_quadrupoles: B2
+     c_minus:
+       controls:
+         - cxysf: A2
+
+**Select by lattice elements:** provide a dictionary containing ``component``
+and exactly one of ``regex`` or ``mapping``. A regex selects lattice elements;
+pySC then finds the registered magnets and their associated controls for the
+requested component. It does not match control names. A mapping file uses the
+same name-to-lattice-index format as magnet configuration. An optional
+``exclude`` regex can narrow a regex selection.
+
+.. code-block:: yaml
+
+   tuning:
+     tune:
+       controls_1:
+         regex: ^QD0U|^QD0A|^QD0D|^QD2U|^QD2A|^QD2D
+         component: B2
+       controls_2:
+         regex: ^QF1U|^QF1A|^QF1D
+         component: B2
+     c_minus:
+       controls:
+         regex: ^CXYSF
+         component: A2
+
+For a mapping selection, replace ``regex`` with, for example,
+``mapping: ./skew_quadrupoles.yaml`` and keep ``component: A2``.
+The two selection formats can be mixed independently within one configuration.
+Components must match exactly: ``B2`` and ``B2L`` select different controls.
+Regex patterns use regular-expression syntax, not shell wildcards; for example,
+``^CC`` matches names starting with ``CC``.
+
+Selections include individual and series controls, exclude knobs, remove
+duplicate controls, and sort the result by lattice position. A series control
+is ordered using its first registered magnet. Selecting even one member of a
+series selects the shared control, which acts on every magnet in that series;
+excluding another member does not remove it from the shared power supply.
+For example:
+
+.. code-block:: yaml
+
+   magnets:
+     focusing_quadrupoles:
+       regex: ^QF1
+       series: true
+       components:
+         - B2: null
+
+   tuning:
+     multipoles:
+       regex: ^QF1A$
+       component: B2
+
+This selects ``focusing_quadrupoles/B2`` once, provided ``QF1A`` is a member
+of that group. Changing it affects all magnets selected by ``^QF1``.
+Selection support does not change individual algorithms' restrictions; for
+example, BBA workflows still require individually powered BBA magnets.
+
+pySC logs the number of unique controls found for each tuning setting. A
+selection with no matching controls returns an empty list and logs zero;
+check this count when configuring a new machine.
+
+A broader tuning configuration can combine these settings:
 
 .. code-block:: yaml
 
@@ -588,9 +673,8 @@ declared in those groups.
          - sextupoles: A2
 
 ``HCORR`` and ``VCORR``
-   Horizontal and vertical corrector families. These are lists because a machine
-   may use several magnet families as correctors. The selected controls are
-   sorted by lattice position.
+   Horizontal and vertical corrector families. Use a group list or a
+   regex/mapping selection as described above.
 
 ``model_RM_folder``
    Folder used when loading or saving model response matrices.
@@ -605,14 +689,14 @@ declared in those groups.
    families.
 
 ``tune``
-   Defines two quadrupole control families for tune correction. Each family uses
-   a ``regex`` or ``mapping`` selector plus a ``component``. The resulting
-   controls must already exist from the ``magnets`` section.
+   Defines two quadrupole control families for tune correction. Both
+   ``controls_1`` and ``controls_2`` are required, and each accepts either
+   selection format.
 
 ``c_minus``
-   Defines skew-quadrupole-like controls used for coupling correction. As with
-   the other tuning families, the listed magnet groups and components must have
-   been declared under ``magnets``.
+   Defines controls used for coupling correction, typically skew quadrupole
+   ``A2`` components. Its ``controls`` entry accepts either selection format.
+   The selected components must have been declared under ``magnets``.
 
 The HMBA example configuration is a compact template:
 

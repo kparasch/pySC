@@ -2,6 +2,9 @@ from ..core.simulated_commissioning import SimulatedCommissioning
 from ..core.control import IndivControl, SeriesControl
 from .general import get_indices_and_names
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 def sort_controls(SC: SimulatedCommissioning, control_names: list[str]) -> list[str]:
     magnet_names = []
@@ -31,6 +34,47 @@ def configure_family(SC: SimulatedCommissioning, config_dict: dict) -> list[str]
             if component == control_component:
                 family.append(control_name)
     return family
+
+def resolve_controls(SC: SimulatedCommissioning, config_name: str, config: dict | list) -> list[str]:
+    """Resolve category/component entries or a regex/mapping plus component.
+
+    Selecting any member of a series selects its shared control. Knobs are
+    excluded. Results are unique and sorted by the existing lattice ordering.
+    """
+    if isinstance(config, list):
+        for entry in config:
+            if not isinstance(entry, dict) or len(entry) != 1:
+                raise ValueError("Each controls entry must contain one category: component pair.")
+        controls = configure_family(SC, config)
+    elif isinstance(config, dict):
+        if 'component' not in config:
+            raise ValueError("component is missing from controls selection.")
+        if ('regex' in config) == ('mapping' in config):
+            raise ValueError("Controls selection requires exactly one of regex or mapping.")
+        component = config['component']
+        indices, _ = get_indices_and_names(SC, "", config, verbose=False)
+        settings = SC.magnet_settings
+        controls = []
+        for index in indices:
+            magnet_name = settings.index_mapping.get(index)
+            if magnet_name is None:
+                continue
+            for control in settings.magnets[magnet_name].controls:
+                info = control.info
+                if not isinstance(info, (IndivControl, SeriesControl)):
+                    continue
+                control_component = f"{info.component}{info.order}"
+                if info.is_integrated:
+                    control_component += 'L'
+                if control_component == component:
+                    controls.append(control.name)
+    else:
+        raise TypeError("Controls selection must be a dictionary or a list.")
+
+    controls = list(dict.fromkeys(controls)) # remove duplicate controls
+    controls = sort_controls(SC, controls)
+    logger.info(f"Found {len(controls)} controls for tuning/{config_name}.")
+    return controls
 
 def configure_tuning(SC: SimulatedCommissioning) -> None:
     tuning_conf = dict.get(SC.configuration, 'tuning', {})

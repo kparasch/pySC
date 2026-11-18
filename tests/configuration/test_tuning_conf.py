@@ -4,7 +4,7 @@ import pytest
 from pySC.core.lattice import ATLattice
 from pySC.core.simulated_commissioning import SimulatedCommissioning
 from pySC.configuration.magnets_conf import configure_magnets
-from pySC.configuration.tuning_conf import configure_tuning
+from pySC.configuration.tuning_conf import configure_tuning, resolve_controls
 
 
 def _make_sc_with_tuning_config(hmba_lattice_file):
@@ -95,3 +95,44 @@ def test_configure_tuning(hmba_lattice_file):
         assert "/B2" in name
     for name in SC.tuning.tune.controls_2:
         assert "/B2" in name
+
+
+@pytest.mark.parametrize("form", ["list", "regex", "mapping"])
+def test_resolve_controls_shared_and_integrated(hmba_lattice_file, tmp_path, form):
+    sc = _make_sc_with_tuning_config(hmba_lattice_file)
+    sc.configuration['magnets']['quadrupoles'].update(
+        series=True, components=[{'B2': None}, {'A2L': None}])
+    configure_magnets(sc)
+    sc.magnet_settings.add_knob('skew_knob', ['quadrupoles/A2L'])
+    if form == 'list':
+        selection = [{'quadrupoles': 'A2L'}, {'quadrupoles': 'A2L'}]
+    elif form == 'regex':
+        # A subset of a series still resolves to its single shared control.
+        selection = {'regex': '^QF1', 'component': 'A2L'}
+    else:
+        path = tmp_path / 'mapping.yaml'
+        magnet = sc.magnet_settings.magnets['QF1A']
+        path.write_text(f'QF1A: {magnet.sim_index}\n')
+        selection = {'mapping': str(path), 'component': 'A2L'}
+    assert resolve_controls(sc, 'c_minus/controls', selection) == ['quadrupoles/A2L']
+    assert resolve_controls(sc, 'c_minus/controls', {'regex': '^QF1', 'component': 'A2'}) == []
+
+
+def test_resolve_controls_deduplicates_and_sorts(hmba_lattice_file):
+    sc = _make_sc_with_tuning_config(hmba_lattice_file)
+    configure_magnets(sc)
+    sc.control_arrays['reversed'] = list(reversed(sc.control_arrays['quadrupoles']))
+    expected = sc.control_arrays['quadrupoles']
+    assert resolve_controls(sc, 'tune/controls_1', [{'reversed': 'B2'}, {'quadrupoles': 'B2'}]) == expected
+    assert resolve_controls(sc, 'tune/controls_1', {'regex': '^Q', 'component': 'B2'}) == expected
+
+
+@pytest.mark.parametrize('selection', [
+    {'regex': '^Q'}, {'component': 'B2'},
+    {'regex': '^Q', 'mapping': 'unused.yaml', 'component': 'B2'},
+    [{'quadrupoles': 'B2', 'sextupoles': 'B3'}],
+])
+def test_resolve_controls_rejects_invalid_selection(hmba_lattice_file, selection):
+    sc = _make_sc_with_tuning_config(hmba_lattice_file)
+    with pytest.raises(ValueError):
+        resolve_controls(sc, 'tune/controls_1', selection)

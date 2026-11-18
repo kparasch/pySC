@@ -110,7 +110,7 @@ def test_generate_trajectory_bba_config_raises_when_filter_leaves_no_magnets(sc_
 
 
 def test_trajectory_bba_single_bpm(sc_with_traj_rm):
-    """trajectory_bba runs without error on a single BPM."""
+    """Trajectory BBA returns a finite offset and non-negative finite uncertainty."""
     sc = sc_with_traj_rm
     bpm_name = sc.bpm_system.names[1]
 
@@ -120,6 +120,9 @@ def test_trajectory_bba_single_bpm(sc_with_traj_rm):
     )
     assert isinstance(offset, float)
     assert isinstance(offset_err, float)
+    assert np.isfinite(offset), "Trajectory BBA returned a non-finite offset"
+    assert np.isfinite(offset_err), "Trajectory BBA returned a non-finite uncertainty"
+    assert offset_err >= 0, "Trajectory BBA returned a negative uncertainty"
 
 
 def test_get_mag_s_pos(sc_with_traj_rm):

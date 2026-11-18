@@ -195,7 +195,7 @@ def test_generate_orbit_bba_config_raises_when_filter_leaves_no_magnets(sc_with_
 
 
 def test_orbit_bba_single_bpm(sc_with_orbit_rm):
-    """orbit_bba runs without error on a single BPM."""
+    """Orbit BBA returns a finite offset and non-negative finite uncertainty."""
     sc = sc_with_orbit_rm
     bpm_name = sc.bpm_system.names[0]
 
@@ -205,6 +205,9 @@ def test_orbit_bba_single_bpm(sc_with_orbit_rm):
     )
     assert isinstance(offset, float)
     assert isinstance(offset_err, float)
+    assert np.isfinite(offset), "Orbit BBA returned a non-finite offset"
+    assert np.isfinite(offset_err), "Orbit BBA returned a non-finite uncertainty"
+    assert offset_err >= 0, "Orbit BBA returned a negative uncertainty"
 
 
 def test_orbit_bba_get_mag_s_pos(sc_with_orbit_rm):

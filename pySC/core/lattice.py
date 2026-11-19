@@ -350,7 +350,7 @@ class ATLattice(Lattice):
 
         Raises
         ------
-        Exception
+        ValueError
             If the element is an AT Corrector and ``max_order`` is larger than
             zero.
         """
@@ -359,9 +359,10 @@ class ATLattice(Lattice):
         else:
             elem = self._ring[index]
 
-        if type(elem) is at.Corrector:
+        if isinstance(elem, at.Corrector):
             if max_order > 0:
-                raise Exception('ERROR: max_order cannot be extended for at.Corrector.')
+                raise ValueError('at.Corrector supports only dipole components (max_order=0).')
+            return
 
         for component_type in ['A', 'B']:
             attribute = f'Polynom{component_type}'

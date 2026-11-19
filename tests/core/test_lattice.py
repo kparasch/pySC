@@ -192,6 +192,25 @@ def test_set_get_magnet_component_roundtrip(sc):
     sc.lattice.set_magnet_component(quad_idx, original, 'B', order=1, use_design=True)
 
 
+@pytest.mark.parametrize('use_design', [False, True])
+@pytest.mark.parametrize('max_order', [0, 1])
+def test_ensure_max_order_corrector(hmba_lattice_file, use_design, max_order):
+    lat = ATLattice(lattice_file=hmba_lattice_file)
+    corrector = at.Corrector('TESTCOR', 0.1, [0.001, -0.002])
+    ring = lat.design if use_design else lat.ring
+    ring.insert(1, corrector)
+
+    if max_order == 0:
+        lat.ensure_max_order(1, max_order, use_design=use_design)
+    else:
+        with pytest.raises(ValueError, match='supports only dipole components'):
+            lat.ensure_max_order(1, max_order, use_design=use_design)
+
+    np.testing.assert_array_equal(corrector.KickAngle, [0.001, -0.002])
+    assert not hasattr(corrector, 'PolynomA')
+    assert not hasattr(corrector, 'PolynomB')
+
+
 def test_corrector_kickangle_convention(hmba_lattice_file):
     """For at.Corrector, B component maps to negative KickAngle[0]."""
     lat = ATLattice(lattice_file=hmba_lattice_file)

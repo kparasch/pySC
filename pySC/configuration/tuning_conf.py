@@ -38,9 +38,22 @@ def configure_family(SC: SimulatedCommissioning, config_dict: dict) -> list[str]
 def resolve_controls(SC: SimulatedCommissioning, config_name: str, config: dict | list) -> list[str]:
     """Resolve category/component entries or a regex/mapping plus component.
 
-    Selecting any member of a series selects its shared control. Knobs are
-    excluded. Results are unique and sorted by the existing lattice ordering.
+    By default, selects main controls only. ``use_trim_coils: true`` selects
+    trims instead of series controls, retaining ordinary individual controls. Group lists can be wrapped in ``components`` to supply
+    this option. Knobs are excluded; results are unique and sorted.
     """
+    use_trim_coils = False
+    if isinstance(config, dict):
+        use_trim_coils = config.get('use_trim_coils', False)
+        if not isinstance(use_trim_coils, bool):
+            raise ValueError(f'tuning/{config_name}: use_trim_coils must be a boolean.')
+        if 'components' in config:
+            if any(key in config for key in ('regex', 'mapping', 'component')):
+                raise ValueError(f'tuning/{config_name}: components cannot be combined with regex, mapping or component.')
+            config = config['components']
+            if not isinstance(config, list):
+                raise ValueError(f'tuning/{config_name}: components must be a list of category: component pairs.')
+
     if isinstance(config, list):
         for entry in config:
             if not isinstance(entry, dict) or len(entry) != 1:
@@ -71,6 +84,12 @@ def resolve_controls(SC: SimulatedCommissioning, config_name: str, config: dict 
     else:
         raise TypeError("Controls selection must be a dictionary or a list.")
 
+    if use_trim_coils:
+        controls = [name for name in controls
+                    if not isinstance(SC.magnet_settings.controls[name].info, SeriesControl)]
+    else:
+        controls = [name for name in controls
+                    if not getattr(SC.magnet_settings.controls[name].info, 'is_trim_coil', False)]
     controls = list(dict.fromkeys(controls)) # remove duplicate controls
     controls = sort_controls(SC, controls)
     logger.info(f"Found {len(controls)} controls for tuning/{config_name}.")

@@ -255,27 +255,16 @@ Supported magnet-family options are:
    ``error_table`` entry or ``null``.
 
 ``series``
-   Optional boolean, defaulting to ``false``. When ``true``, all selected
-   magnets share one control per declared component, named
-   ``<group>/<component>``. Calibration errors remain individual to each magnet.
-   The initial shared setpoint is the mean of the selected magnets' strengths;
-   pySC logs a warning when those strengths differ. Integrated components use
-   the mean integrated strength. Combining ``series: true`` with
-   ``shifted: true`` is not supported.
+   Optional boolean, defaulting to ``false``. When enabled, the family shares
+   one control per component. See :ref:`series-and-trim-coils` for details.
 
 ``trim_coils``
-   For series families only, a list of additional individually powered
-   components, each mapped to a calibration-error entry or ``null``. Every
-   selected magnet receives its own trim control named ``<magnet>/<component>``.
-   Trim setpoints start at zero and add to the magnet's existing strength.
-   A component may appear in both ``components`` and ``trim_coils``, but may
-   not be repeated within either list. Trim components can also differ from
-   the shared components, for example an ``A2`` trim on a ``B2`` family.
+   Optional individually powered trim components for a series family.
+   See :ref:`series-and-trim-coils` for details and examples.
 
 ``trim_limits``
-   Optional limits for components declared in ``trim_coils``, referencing
-   the top-level ``parameters`` table. These apply separately to each trim;
-   ``limits`` continues to apply to the shared controls.
+   Optional limits for the trim controls, referencing the top-level
+   ``parameters`` table. See :ref:`series-and-trim-coils` for details.
 
 ``invert``
    List of declared components whose sign should be inverted.
@@ -299,6 +288,9 @@ Supported magnet-family options are:
 ``dx``, ``dy``, ``dz``, ``roll``, ``yaw``, ``pitch``
    Optional element misalignment entries. Each value must reference an
    ``error_table`` entry.
+
+For shared power supplies and optional trim coils, see
+:ref:`series-and-trim-coils`.
 
 Components without an ``L`` suffix are interpreted as non-integrated strengths.
 Append ``L`` to use integrated strengths instead:
@@ -623,31 +615,9 @@ Components must match exactly: ``B2`` and ``B2L`` select different controls.
 Regex patterns use regular-expression syntax, not shell wildcards; for example,
 ``^CC`` matches names starting with ``CC``.
 
-Selections include individual and series controls, exclude knobs, remove
-duplicate controls, and sort the result by lattice position. A series control
-is ordered using its first registered magnet. Selecting even one member of a
-series selects the shared control, which acts on every magnet in that series;
-excluding another member does not remove it from the shared power supply.
-For example:
-
-.. code-block:: yaml
-
-   magnets:
-     focusing_quadrupoles:
-       regex: ^QF1
-       series: true
-       components:
-         - B2: null
-
-   tuning:
-     multipoles:
-       regex: ^QF1A$
-       component: B2
-
-This selects ``focusing_quadrupoles/B2`` once, provided ``QF1A`` is a member
-of that group. Changing it affects all magnets selected by ``^QF1``.
-Selection support does not change individual algorithms' restrictions; for
-example, BBA workflows still require individually powered BBA magnets.
+Selections exclude knobs, remove duplicate controls, and sort the result by
+lattice position. For selecting shared supplies or individual trims, see
+:ref:`series-and-trim-coils`.
 
 pySC logs the number of unique controls found for each tuning setting. A
 selection with no matching controls returns an empty list and logs zero;
@@ -717,3 +687,127 @@ The HMBA example configuration is a compact template:
 .. literalinclude:: ../../../examples/hmba_config.yaml
    :language: yaml
    :caption: examples/hmba_config.yaml
+
+
+.. _series-and-trim-coils:
+
+Magnets in series and trim coils
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This optional configuration is for magnets connected to a shared power supply.
+Ordinary individually powered families do not need these options. The examples
+below cover both declaring the shared controls and selecting them for tuning.
+
+**Magnet configuration**
+
+``series``
+   Optional boolean, defaulting to ``false``. When ``true``, all selected
+   magnets share one control per declared component, named
+   ``<group>/<component>``. Calibration errors remain individual to each magnet.
+   The initial shared setpoint is the mean of the selected magnets' strengths;
+   pySC logs a warning when those strengths differ. Integrated components use
+   the mean integrated strength. Combining ``series: true`` with
+   ``shifted: true`` is not supported.
+
+``trim_coils``
+   For series families only, a list of additional individually powered
+   components, each mapped to a calibration-error entry or ``null``. Every
+   selected magnet receives its own trim control named ``<magnet>/<component>``.
+   Trim setpoints start at zero and add to the magnet's existing strength.
+   A component may appear in both ``components`` and ``trim_coils``, but may
+   not be repeated within either list. Trim components can also differ from
+   the shared components, for example an ``A2`` trim on a ``B2`` family.
+
+``trim_limits``
+   Optional limits for components declared in ``trim_coils``, referencing
+   the top-level ``parameters`` table. These apply separately to each trim;
+   ``limits`` continues to apply to the shared controls.
+
+For example, declare a shared quadrupole supply with an individual trim on
+each magnet:
+
+.. code-block:: yaml
+
+   magnets:
+     focusing_quadrupoles:
+       regex: ^QF1
+       series: true
+       components:
+         - B2: null
+       trim_coils:
+         - B2: null
+
+This creates ``focusing_quadrupoles/B2`` for the shared supply and controls
+such as ``QF1A/B2`` and ``QF1B/B2`` for the individual trims. Omit
+``trim_coils`` if the family has only a shared supply. Calibration-error
+references can replace ``null`` independently in either list.
+
+**Tuning selection**
+
+By default, selections include main individual and series controls and exclude
+trim coils. Set ``use_trim_coils: true`` to select trims instead of series
+controls while retaining ordinary individual controls. For a group list,
+place the list under ``components``:
+
+.. code-block:: yaml
+
+   tuning:
+     tune:
+       controls_1:
+         components:
+           - focusing_quadrupoles: B2
+         use_trim_coils: true
+       controls_2:
+         regex: ^QD
+         component: B2
+         use_trim_coils: true
+
+The same flag works with ``mapping`` selectors and with all other tuning
+settings described above. It must be a YAML boolean, such as ``true`` or
+``false``, rather than a quoted string. Omitting it or setting it to ``false``
+selects main controls only. Bare group lists retain this default behavior.
+There is no fallback to series controls when no matching trims are found.
+Ordinary individual controls remain selected in either mode. A regex selecting
+one magnet selects only that magnet's trim,
+even when its main supply is shared with other magnets.
+
+A series control is ordered using its first registered magnet. With the default main-control
+selection, selecting even one member of a
+series selects the shared control, which acts on every magnet in that series;
+excluding another member does not remove it from the shared power supply.
+For example:
+
+.. code-block:: yaml
+
+   magnets:
+     focusing_quadrupoles:
+       regex: ^QF1
+       series: true
+       components:
+         - B2: null
+
+   tuning:
+     multipoles:
+       regex: ^QF1A$
+       component: B2
+
+This selects ``focusing_quadrupoles/B2`` once, provided ``QF1A`` is a member
+of that group. Changing it affects all magnets selected by ``^QF1``.
+Selection support does not change individual algorithms' restrictions; for
+example, BBA workflows still require individually powered BBA magnets.
+
+To combine ordinary individual correctors with trims from a different family,
+select both groups and enable ``use_trim_coils``:
+
+.. code-block:: yaml
+
+   tuning:
+     HCORR:
+       components:
+         - individual_correctors: B1
+         - series_correctors: B1
+       use_trim_coils: true
+
+Here both groups must already be declared under ``magnets``, with ``B1`` trims
+on ``series_correctors``. Setting ``use_trim_coils: false`` instead selects
+the ordinary individual correctors and the shared series control.

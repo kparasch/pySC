@@ -20,28 +20,33 @@ def scale_error_table(error_table: dict, scale: float = 1) -> dict:
         scaled[key] = str(scale * get_error(error_name=key, error_table=error_table))
     return scaled
 
-def get_indices_with_regex(SC: SimulatedCommissioning, category_name: str, category_conf: dict[str, Any]) -> list[int]:
+def get_indices_with_regex(SC: SimulatedCommissioning, category_name: str, category_conf: dict[str, Any],
+                           verbose: bool = True) -> list[int]:
     indices = SC.lattice.find_with_regex(category_conf['regex'])
 
     if 'exclude' in category_conf:
         exclude_indices = SC.lattice.find_with_regex(category_conf['exclude']) 
         indices = sorted(list(set(indices) - set(exclude_indices)))
-        logger.info(f"Found {len(indices)} ({category_name}) matching regex '{category_conf['regex']}', excluding regex '{category_conf['exclude']}'")
+        if verbose:
+            logger.info(f"Found {len(indices)} ({category_name}) matching regex '{category_conf['regex']}', excluding regex '{category_conf['exclude']}'")
     else:
-        logger.info(f"Found {len(indices)} ({category_name}) matching regex '{category_conf['regex']}'")
+        if verbose:
+            logger.info(f"Found {len(indices)} ({category_name}) matching regex '{category_conf['regex']}'")
     return indices
 
-def get_indices_and_names(SC: SimulatedCommissioning, category_name: str, category_conf: dict[str, Any]) -> tuple[list[int], list[MAGNET_NAME_TYPE]]:
+def get_indices_and_names(SC: SimulatedCommissioning, category_name: str, category_conf: dict[str, Any],
+                          verbose: bool = True) -> tuple[list[int], list[MAGNET_NAME_TYPE]]:
     if 'regex' in category_conf:
         assert 'mapping' not in category_conf, 'Only one of regex and mapping must be defined!'
-        indices = get_indices_with_regex(SC, category_name, category_conf)
+        indices = get_indices_with_regex(SC, category_name, category_conf, verbose=verbose)
         names = list(map(SC.lattice.get_name_from_index, indices))
     elif 'mapping' in category_conf:
         mapping = load_yaml(category_conf['mapping'])
 
         indices = list(mapping.values())
         names = list(mapping.keys())
-        logger.info(f"Mapped {len(indices)} ({category_name}) from '{category_conf['mapping']}'")
+        if verbose:
+            logger.info(f"Mapped {len(indices)} ({category_name}) from '{category_conf['mapping']}'")
     else:
         raise NotImplementedError("Only regex search and mapping is implemented.")
 

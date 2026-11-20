@@ -70,8 +70,8 @@ def generate_SC(yaml_filepath: str, seed: int = 1, scale_errors: Optional[int] =
         expand_multipolar_imperfection_models(config_dict)
 
     # Create the SimulatedCommissioning instance
-    SC = SimulatedCommissioning(lattice=lattice, configuration=config_dict, seed=seed)
-    SC.version = pySC_version
+    SC = SimulatedCommissioning(lattice=lattice, configuration=config_dict, seed=seed,
+                               version=pySC_version)
     SC.rng.default_truncation = sigma_truncate
 
     logger.info('Configuring magnets...')

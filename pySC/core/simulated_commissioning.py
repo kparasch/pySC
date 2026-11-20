@@ -1,4 +1,5 @@
 from pydantic import BaseModel, model_validator, Field, PrivateAttr
+from packaging.version import Version
 from typing import Optional
 import json
 import numpy as np
@@ -16,11 +17,13 @@ from .injection import InjectionSettings
 from .rng import RNG
 from ..control_system.server import start_server as _start_server
 from .control import KnobData
+from ..version import __version__
+from .migration import _TOTAL_DIPOLE_STRENGTH_VERSION, migrate_dipole_settings
 
 logger = logging.getLogger(__name__)
 
 class SimulatedCommissioning(BaseModel, extra="forbid"):
-    version: Optional[str] = None
+    version: str = __version__
     lattice: ATLattice | XSuiteLattice
     magnet_settings: MagnetSettings = MagnetSettings()
     design_magnet_settings: MagnetSettings = MagnetSettings()
@@ -45,6 +48,8 @@ class SimulatedCommissioning(BaseModel, extra="forbid"):
             self._initialized = True
 
             self.propagate_parents()
+            if Version(self.version) < Version(_TOTAL_DIPOLE_STRENGTH_VERSION):
+                migrate_dipole_settings(self)
             if self.rng is None:
                 self.rng = RNG(seed=self.seed)
             self.support_system.update_all()

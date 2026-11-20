@@ -12,6 +12,81 @@ from pySC.core.rng import RNG
 pytestmark = pytest.mark.slow
 
 
+@pytest.mark.parametrize("component,shifted,knob", [
+    ("B1", False, False), ("B1L", False, False),
+    ("B2", True, False), ("B2", False, False),
+    ("B1", False, True),
+])
+def test_legacy_dipole_migration_roundtrip(
+    hmba_lattice_file, tmp_path, caplog, component, shifted, knob
+):
+    from pySC.configuration.magnets_conf import configure_magnets
+
+    sc = SimulatedCommissioning(
+        lattice=ATLattice(lattice_file=hmba_lattice_file, naming="FamName"),
+        configuration={"magnets": {"dipoles": {
+            "regex": "^DQ1B$", "components": [{component: None}],
+            "shifted": shifted,
+        }}},
+    )
+    configure_magnets(sc)
+    control_name = f"DQ1B/{component}"
+    expected = {}
+    # Construct a saved legacy state: its summed B1 is the raw AT coefficient.
+    for key in ("magnet_settings", "design_magnet_settings"):
+        settings = getattr(sc, key)
+        if knob:
+            settings.add_knob("trim", [control_name], weights=[0.3])
+        settings.controls[control_name].setpoint = 0.04
+        magnet = settings.magnets["DQ1B"]
+        magnet.offset_B[0] = 0.002
+        for link in magnet._links:
+            link.error.factor *= 1.07
+            if link.component == "B" and link.order == 1:
+                link.error.offset = -0.01
+        expected[key] = magnet.offset_B[0] + sum(
+            link.value(settings.controls[link.control_name].setpoint)
+            / (magnet.length if link.is_integrated else 1)
+            for link in magnet._links
+            if link.component == "B" and link.order == 1
+        )
+
+    state = sc.model_dump()
+    state["version"] = "1.5.6"
+    legacy_path = tmp_path / "legacy.json"
+    legacy_path.write_text(json.dumps(state))
+    migrated = SimulatedCommissioning.from_json(legacy_path)
+    assert migrated.version == "1.6.0"
+    assert sum("Migrating saved AT dipole" in r.message for r in caplog.records) == 1
+
+    for key, elements in (("magnet_settings", migrated.lattice.ring),
+                          ("design_magnet_settings", migrated.lattice.design)):
+        settings = getattr(migrated, key)
+        magnet = settings.magnets["DQ1B"]
+        assert elements[magnet.sim_index].PolynomB[0] == pytest.approx(expected[key])
+        assert settings.controls[control_name].setpoint == 0.04
+        for name, link in settings.links.items():
+            assert link.error.factor == state[key]["links"][name]["error"]["factor"]
+        if any(link.component == "B" and link.order == 1 for link in magnet._links):
+            assert magnet.offset_B[0] == 0.002
+
+    caplog.clear()
+    migrated_path = tmp_path / "migrated.json"
+    migrated.to_json(migrated_path)
+    reloaded = SimulatedCommissioning.from_json(migrated_path)
+    assert not any("Migrating saved AT dipole" in r.message for r in caplog.records)
+    for key in ("magnet_settings", "design_magnet_settings"):
+        assert getattr(migrated, key).model_dump() == getattr(reloaded, key).model_dump()
+        for value in (0.04, 0.06):
+            for obj in (migrated, reloaded):
+                getattr(obj, key).set(control_name, value)
+            use_design = key == "design_magnet_settings"
+            ring_a = migrated.lattice.design if use_design else migrated.lattice.ring
+            ring_b = reloaded.lattice.design if use_design else reloaded.lattice.ring
+            index = getattr(migrated, key).magnets["DQ1B"].sim_index
+            np.testing.assert_allclose(ring_a[index].PolynomB, ring_b[index].PolynomB)
+
+
 # ---------------------------------------------------------------------------
 # Construction
 # ---------------------------------------------------------------------------

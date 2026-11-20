@@ -2,6 +2,7 @@
 import pytest
 import numpy as np
 import at
+from unittest.mock import patch
 
 from pySC.core.lattice import ATLattice
 from pySC.core.simulated_commissioning import SimulatedCommissioning
@@ -92,37 +93,41 @@ def test_configure_magnets_design_has_unity_factor(hmba_lattice_file):
 
 
 @pytest.mark.slow
-def test_configure_magnets_dipole_convention(hmba_lattice_file):
-    """B1 on a dipole with BendingAngle uses the special offset convention."""
+@pytest.mark.parametrize("component", ["B1", "B1L"])
+@pytest.mark.parametrize("series", [False, True])
+def test_configure_magnets_dipole_convention(hmba_lattice_file, component, series):
     lattice = ATLattice(lattice_file=hmba_lattice_file, naming="FamName")
-
-    # Use DQ1B which is a unique dipole name in the HMBA lattice (index 50)
-    dip_name = "DQ1B"
-    dip_index = 50
-    # Verify it is indeed a dipole with bending angle
-    assert lattice.is_dipole(dip_index), f"{dip_name} should be a dipole"
-
-    config = {
-        "error_table": {"dip_cal": "0.01"},
-        "magnets": {
-            "dipoles": {
-                "regex": f"^{dip_name}$",
-                "components": [{"B1": "dip_cal"}],
-            },
-        },
-    }
+    config = {"magnets": {"dipoles": {
+        "regex": "^(DQ1B|DQ2C_1)$", "series": series,
+        "components": [{component: None}],
+    }}}
     SC = SimulatedCommissioning(lattice=lattice, configuration=config, seed=42)
+    indices = SC.lattice.find_with_regex("^(DQ1B|DQ2C_1)$")
+    assert len(indices) == 2
+    # Equal control strengths allow the series case to preserve both magnets.
+    initial_setpoint = 0.08
+    raw_initial = {}
+    for index in indices:
+        elem = SC.lattice.design[index]
+        scale = elem.Length if component.endswith("L") else 1.0
+        elem.PolynomB[0] = initial_setpoint / scale - elem.BendingAngle / elem.Length
+        raw_initial[index] = elem.PolynomB[0]
     configure_magnets(SC)
-
-    # Check the link for this dipole has a non-zero offset (the special convention)
-    dip_control = f"{dip_name}/B1"
-    link_name = f"{dip_control}->{dip_control}"
-    link = SC.magnet_settings.links[link_name]
-
-    bending_angle = lattice.get_bending_angle(dip_index)
-    magnet_length = lattice.get_length(dip_index)
-    expected_offset = -bending_angle / magnet_length
-    assert link.error.offset == pytest.approx(expected_offset, rel=1e-6)
+    for settings, use_design in (
+        (SC.magnet_settings, False), (SC.design_magnet_settings, True)
+    ):
+        for control_name in SC.control_arrays["dipoles"]:
+            assert settings.get(control_name) == pytest.approx(initial_setpoint)
+        for index in indices:
+            elem = (SC.lattice.design if use_design else SC.lattice.ring)[index]
+            assert elem.PolynomB[0] == pytest.approx(raw_initial[index])
+        assert all(link.error.offset == 0 for link in settings.links.values())
+        for control_name in SC.control_arrays["dipoles"]:
+            settings.set(control_name, 0.12)
+        for index in indices:
+            elem = (SC.lattice.design if use_design else SC.lattice.ring)[index]
+            scale = elem.Length if component.endswith("L") else 1.0
+            assert elem.PolynomB[0] == pytest.approx(0.12 / scale - elem.BendingAngle / elem.Length)
 
 
 @pytest.mark.slow
@@ -135,7 +140,7 @@ def test_configure_shifted_quadrupole_feed_down(hmba_lattice_file, component):
     initial_b0 = lattice.get_magnet_component(dip_index, "B", 0)
     initial_k1 = lattice.get_magnet_component(dip_index, "B", 1)
     length = lattice.get_length(dip_index)
-    design_shift = (initial_angle / length + initial_b0) / initial_k1
+    design_shift = initial_b0 / initial_k1
 
     config = {
         "error_table": {"quad_cal": "0"},
@@ -211,3 +216,186 @@ def test_configure_magnets_invert(hmba_lattice_file):
     link = SC.magnet_settings.links[link_name]
     # With zero calibration error, factor is normal_trunc(1, 0) = 1.0 then * -1 = -1.0
     assert link.error.factor == pytest.approx(-1.0)
+
+
+def _make_sc_with_series_config(hmba_lattice_file, component="B2"):
+    SC = _make_sc_with_magnet_config(hmba_lattice_file)
+    category = SC.configuration["magnets"]["quadrupoles"]
+    category.update(
+        regex="^QF1[AE]$", series=True,
+        components=[{component: "quad_cal"}],
+        limits=[{component: "quad_limit"}],
+    )
+    SC.configuration["magnets"] = {"quadrupoles": category}
+    return SC
+
+
+@pytest.mark.parametrize('trim_component', ['B2', 'B2L', 'A2', 'A4L'])
+def test_series_trim_coils_add_independently_and_roundtrip(hmba_lattice_file, tmp_path, trim_component):
+    sc = _make_sc_with_series_config(hmba_lattice_file)
+    category = sc.configuration['magnets']['quadrupoles']
+    category['trim_coils'] = [{trim_component: 'quad_cal'}]
+    category['trim_limits'] = [{trim_component: 'trim_limit'}]
+    sc.configuration['parameters']['trim_limit'] = '0.1'
+    with patch.object(type(sc.rng), 'normal_trunc', side_effect=[1.1, 0.9, 1.2, 0.8]):
+        configure_magnets(sc)
+    assert sc.control_arrays['quadrupoles'] == [
+        'quadrupoles/B2', f'QF1A/{trim_component}', f'QF1E/{trim_component}']
+    for settings, elements, shared_factors, trim_factors in (
+        (sc.magnet_settings, sc.lattice.ring, [1.1, 0.9], [1.2, 0.8]),
+        (sc.design_magnet_settings, sc.lattice.design, [1., 1.], [1., 1.]),
+    ):
+        settings.set('quadrupoles/B2', 1.5)
+        component_type, order = settings.validate_one_component(trim_component)
+        for name in ('QF1A', 'QF1E'):
+            control = settings.controls[f'{name}/{trim_component}']
+            assert control.setpoint == 0.0
+            assert control.info.is_trim_coil
+            assert control.limits == (-0.1, 0.1)
+        settings.set(f'QF1A/{trim_component}', 1.0)  # Clip only this trim.
+        for i, name in enumerate(('QF1A', 'QF1E')):
+            magnet = settings.magnets[name]
+            element = elements[magnet.sim_index]
+            base = 1.5 * shared_factors[i] if component_type == 'B' and order == 1 else 0.0
+            scale = magnet.length if trim_component.endswith('L') else 1.0
+            trim = 0.1 * trim_factors[i] / scale if i == 0 else 0.0
+            assert getattr(element, f'Polynom{component_type}')[order] == pytest.approx(base + trim)
+        assert settings.get('quadrupoles/B2') == 1.5
+        assert settings.controls['quadrupoles/B2'].limits == (-100., 100.)
+
+    path = tmp_path / 'trims.json'
+    sc.to_json(path)
+    restored = SimulatedCommissioning.from_json(path)
+    for key in ('magnet_settings', 'design_magnet_settings'):
+        assert getattr(restored, key).model_dump() == getattr(sc, key).model_dump()
+        for obj in (sc, restored):
+            getattr(obj, key).set(f'QF1E/{trim_component}', -0.03)
+        for name in ('QF1A', 'QF1E'):
+            original = getattr(sc, key).magnets[name]
+            reloaded = getattr(restored, key).magnets[name]
+            np.testing.assert_allclose(reloaded.A, original.A)
+            np.testing.assert_allclose(reloaded.B, original.B)
+
+
+def test_higher_order_trim_preserves_existing_strength(hmba_lattice_file):
+    sc = _make_sc_with_series_config(hmba_lattice_file)
+    sc.configuration['magnets']['quadrupoles']['trim_coils'] = [{'A4': None}]
+    index = sc.lattice.find_with_regex('^QF1A$')[0]
+    sc.lattice.ensure_max_order(index, 3)
+    sc.lattice.design[index].PolynomA[3] = 0.002
+    configure_magnets(sc)
+    for settings, elements in ((sc.magnet_settings, sc.lattice.ring),
+                               (sc.design_magnet_settings, sc.lattice.design)):
+        assert elements[index].PolynomA[3] == pytest.approx(0.002)
+        settings.set('QF1A/A4', 0.003)
+        assert elements[index].PolynomA[3] == pytest.approx(0.005)
+
+
+@pytest.mark.parametrize('updates,match', [
+    ({'series': False, 'trim_coils': [{'B2': None}]}, 'require series=true'),
+    ({'trim_coils': [{'B2': None}, {'B2L': None}]}, 'same multipole'),
+    ({'trim_coils': [{'B2': None}, {'B2': None}]}, 'same multipole'),
+    ({'trim_limits': [{'B2': 'quad_limit'}]}, 'not declared in trim_coils'),
+    ({'trim_coils': [{'B2': None}], 'trim_limits': [{'B2': 'missing'}]}, 'was not found'),
+    ({'trim_coils': [{'B2': 'missing'}]}, 'not found in error_table'),
+    ({'components': [], 'trim_coils': [{'B2': None}]}, 'require shared components'),
+])
+def test_invalid_trim_configuration(hmba_lattice_file, updates, match):
+    sc = _make_sc_with_series_config(hmba_lattice_file)
+    sc.configuration['magnets']['quadrupoles'].update(updates)
+    with pytest.raises(Exception, match=match):
+        configure_magnets(sc)
+
+
+def test_trim_name_collision(hmba_lattice_file):
+    sc = _make_sc_with_series_config(hmba_lattice_file)
+    category = sc.configuration['magnets'].pop('quadrupoles')
+    category['trim_coils'] = [{'B2': None}]
+    sc.configuration['magnets']['QF1A'] = category
+    with pytest.raises(ValueError, match='collide'):
+        configure_magnets(sc)
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("component", ["B2", "B2L"])
+def test_configure_series_updates_lattice_and_applies_limits(hmba_lattice_file, component):
+    SC = _make_sc_with_series_config(hmba_lattice_file, component)
+    # Distinct factors catch accidentally configuring only the final link.
+    with patch.object(type(SC.rng), "normal_trunc", side_effect=[1.1, 0.9]):
+        configure_magnets(SC)
+
+    names = SC.magnet_arrays["quadrupoles"]
+    control_name = f"quadrupoles/{component}"
+    assert names == ["QF1A", "QF1E"]
+    assert SC.control_arrays["quadrupoles"] == [control_name]
+    for settings, use_design, factors in (
+        (SC.magnet_settings, False, [1.1, 0.9]),
+        (SC.design_magnet_settings, True, [1.0, 1.0]),
+    ):
+        assert settings.controls[control_name].limits == (-100.0, 100.0)
+        for requested, expected in [(1.5, 1.5), (101.0, 100.0)]:
+            settings.set(control_name, requested)
+            assert settings.get(control_name) == pytest.approx(expected)
+            for name, factor in zip(names, factors):
+                magnet = settings.magnets[name]
+                scale = magnet.length if component.endswith("L") else 1.0
+                assert SC.lattice.get_magnet_component(
+                    magnet.sim_index, "B", 1, use_design=use_design
+                ) == pytest.approx(expected * factor / scale)
+
+
+@pytest.mark.slow
+def test_configure_series_empty_selection_creates_no_controls(hmba_lattice_file):
+    SC = _make_sc_with_series_config(hmba_lattice_file)
+    SC.configuration["magnets"]["quadrupoles"]["regex"] = "^NO_SUCH_MAGNET$"
+    configure_magnets(SC)
+    assert SC.magnet_arrays["quadrupoles"] == []
+    assert SC.control_arrays["quadrupoles"] == []
+    for settings in (SC.magnet_settings, SC.design_magnet_settings):
+        assert not settings.magnets
+        assert not settings.controls
+        assert not settings.links
+
+
+@pytest.mark.slow
+def test_configure_series_uses_mean_initial_strength(hmba_lattice_file):
+    SC = _make_sc_with_series_config(hmba_lattice_file)
+    SC.configuration["error_table"]["quad_cal"] = "0"
+    indices = SC.lattice.find_with_regex("^QF1[AE]$")
+    assert len(indices) == 2
+    for index, strength in zip(indices, [2.0, 4.0]):
+        SC.lattice.set_magnet_component(index, strength, "B", 1, use_design=True)
+    configure_magnets(SC)
+    for settings, use_design in (
+        (SC.magnet_settings, False), (SC.design_magnet_settings, True)
+    ):
+        assert settings.get("quadrupoles/B2") == pytest.approx(3.0)
+        for index in indices:
+            assert SC.lattice.get_magnet_component(
+                index, "B", 1, use_design=use_design
+            ) == pytest.approx(3.0)
+
+
+@pytest.mark.slow
+def test_uncontrolled_dipole_strength_and_imperfection_reference(hmba_lattice_file):
+    from pySC.core.multipolar_imperfections import ImperfectionsModel, MultipolarImperfectionTable
+
+    lattice = ATLattice(lattice_file=hmba_lattice_file, naming="FamName")
+    SC = SimulatedCommissioning(lattice=lattice, configuration={"magnets": {
+        "dipoles": {"regex": "^DQ1B$", "components": [{"B2": None}]}
+    }}, seed=42)
+    index = SC.lattice.find_with_regex("^DQ1B$")[0]
+    elem = SC.lattice.design[index]
+    elem.PolynomB[0] = 0.02
+    strength = elem.BendingAngle / elem.Length + 0.02
+    configure_magnets(SC)
+    magnet = SC.magnet_settings.magnets["DQ1B"]
+    assert magnet.offset_B[0] == pytest.approx(strength)
+    assert SC.lattice.ring[index].PolynomB[0] == pytest.approx(0.02)
+    magnet.imperfections = ImperfectionsModel(list_of_imperfections=[
+        MultipolarImperfectionTable(reference_radius=0.01, reference_type=("B", 1),
+                                   bn=[100.0], an=[0.0])
+    ])
+    magnet.update()
+    assert SC.lattice.get_magnet_component(index, "B", 0, use_design=False) == pytest.approx(1.01 * strength)
+    assert SC.lattice.ring[index].PolynomB[0] == pytest.approx(0.02 + 0.01 * strength)

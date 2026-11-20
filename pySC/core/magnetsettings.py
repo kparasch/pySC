@@ -1,7 +1,7 @@
 from typing import Dict, Optional, TYPE_CHECKING
 from pydantic import BaseModel, Field, model_validator, PrivateAttr
 from .magnet import Magnet, ControlMagnetLink, MAGNET_NAME_TYPE
-from .control import Control, LinearConv, IndivControl, KnobControl
+from .control import Control, LinearConv, IndivControl, KnobControl, SeriesControl
 
 if TYPE_CHECKING:
     from .simulated_commissioning import SimulatedCommissioning
@@ -94,6 +94,18 @@ class MagnetSettings(BaseModel, extra="forbid"):
 
         return max_order
 
+    def validate_unique_components(self, components: list[str]) -> None:
+        found = {}
+        for component in components:
+            key = self.validate_one_component(component)  # (type, order)
+            if key in found:
+                raise ValueError(
+                    f"Components '{found[key]}' and '{component}' control "
+                    "the same multipole; declare it only once."
+                )
+            found[key] = component
+
+
     def add_individually_powered_magnet(self,
                                         sim_index: int,
                                         controlled_components: list[str],
@@ -111,6 +123,7 @@ class MagnetSettings(BaseModel, extra="forbid"):
             magnet_name = sim_index  # Use sim_index as the default name if not provided
 
         max_order = self.validate_components_and_get_max_order(components=controlled_components, magnet_name=magnet_name)
+        self.validate_unique_components(components=controlled_components)
 
         # Create a new Magnet instance with the specified components
         magnet = Magnet(name=magnet_name,
@@ -166,6 +179,144 @@ class MagnetSettings(BaseModel, extra="forbid"):
                 is_integrated=is_integrated
             )
             self.add_link(link)
+
+    def add_magnets_in_series(self,
+                              sim_indices: list[int],
+                              controlled_components: list[str],
+                              category_name: str,
+                              magnet_names: Optional[list[str]] = None,
+                              magnet_lengths: Optional[list[float]] = None,
+                              to_design: bool = False) -> dict[str,list[str]]:
+        """
+        Add a magnet with individually powered components.
+        Each component must be controlled by a separate control.
+        """
+        if magnet_names is not None:
+            for magnet_name in magnet_names:
+                if magnet_name in self.magnets:
+                    raise ValueError(f"Magnet '{magnet_name}' already exists")
+        else:
+            magnet_names = list(map(str, sim_indices)) # Use sim_index as the default name if not provided
+
+        if magnet_lengths is None:
+            magnet_lengths = [None] * len(magnet_names)
+
+        max_orders = [self.validate_components_and_get_max_order(
+            components=controlled_components, magnet_name=magnet_name) for magnet_name in magnet_names]
+
+        self.validate_unique_components(components=controlled_components)
+        N_mag = len(sim_indices)
+        if len(magnet_names) != N_mag:
+            raise ValueError(f"Inconsistent number of magnet_names ({len(magnet_names)}) and indices ({N_mag}).")
+        if len(magnet_lengths) != N_mag:
+            raise ValueError(f"Inconsistent number of magnet_lengths ({len(max_orders)}) and indices ({N_mag}).")
+        if len(max_orders) != N_mag:
+            raise ValueError(f"Inconsistent number of max_orders ({len(max_orders)}) and indices ({N_mag}).")
+        # Create a new Magnet instance with the specified components for each magnet
+        magnets = []
+        for i in range(N_mag):
+            magnet_name = magnet_names[i]
+            sim_index = sim_indices[i]
+            max_order = max_orders[i]
+            magnet_length = magnet_lengths[i]
+
+            magnet = Magnet(name=magnet_name,
+                            sim_index=sim_index,
+                            max_order=max_order,
+                            to_design=to_design,
+                            length=magnet_length)
+            magnet._parent = self  # Set the parent to the current settings instance
+
+            # check non-zero components that are not controlled and put them in offset_A/B.
+            for order in range(max_order+1):
+                for component_type in ["A", "B"]:
+                    comp = f"{component_type}{order+1}"
+                    if not (comp in controlled_components or f"{comp}L" in controlled_components):
+                        value = self._parent.lattice.get_magnet_component(index=sim_index,
+                                                                          component_type=component_type,
+                                                                          order=order)
+                        if value != 0:
+                            # found a non-zero component that is not controlled!
+                            getattr(magnet, f"offset_{component_type}")[order] = value
+                            # this is equivalent to:
+                            # magnet.offset_A[order] = value or
+                            # magnet.offset_B[order] = value
+
+            self.add_magnet(magnet)
+            magnets.append(magnet)
+
+        # Create one control for each component
+        for component in controlled_components:
+            control_name = f"{category_name}/{component}"
+            control = Control(name=control_name, setpoint=0.0)
+
+            # attach information which describes what the control is supposed to do 
+            # (to be used by tuning algorithms)
+            is_integrated = True if component[-1] == 'L' else False
+            order = int(component[1:-1]) if is_integrated else int(component[1:])
+            control.info = SeriesControl(magnet_names=magnet_names, component=component[0],
+                                        order=order, is_integrated=is_integrated)
+
+            self.add_control(control)
+
+        link_names_by_component = {}
+        # Create links for each component
+        for component in controlled_components:
+            link_names_by_component[component] = []
+            control_name = f"{category_name}/{component}"
+            for magnet in magnets:
+                link_name = f"{control_name}->{magnet.name}/{component}"
+                is_integrated = True if component[-1] == 'L' else False
+                order = int(component[1:-1]) if is_integrated else int(component[1:])
+                link = ControlMagnetLink(
+                    link_name=link_name,
+                    magnet_name=magnet.name,
+                    control_name=control_name,
+                    component=component[0],
+                    order=order,
+                    is_integrated=is_integrated
+                )
+                self.add_link(link)
+                link_names_by_component[component].append(link_name)
+        return link_names_by_component
+
+
+    def add_trim_coils(self, magnet_name: MAGNET_NAME_TYPE,
+                       controlled_components: list[str]) -> None:
+        """Add individual, additive trim controls to an existing series magnet."""
+        self.validate_unique_components(controlled_components)
+        magnet = self.magnets[magnet_name]
+        for component in controlled_components:
+            if f'{magnet_name}/{component}' in self.controls:
+                raise ValueError(f"Trim control names collide with existing controls: '{magnet_name}/{component}'.")
+
+        max_order = self.validate_components_and_get_max_order(controlled_components, magnet_name)
+        old_order = magnet.max_order
+        if max_order > old_order:
+            lattice = self._parent.lattice
+            lattice.ensure_max_order(magnet.sim_index, max_order, use_design=True)
+            magnet.ensure_max_order(max_order)
+            # Preserve design strengths exposed by higher-order trims. Trims
+            # add to those strengths rather than replacing them.
+            for order in range(old_order + 1, max_order + 1):
+                for component_type in ('A', 'B'):
+                    getattr(magnet, f'offset_{component_type}')[order] = lattice.get_magnet_component(
+                        magnet.sim_index, component_type, order)
+
+        for component in controlled_components:
+            component_type, order = self.validate_one_component(component)
+            control_name = f'{magnet_name}/{component}'
+            is_integrated = component.endswith('L')
+            control = Control(name=control_name, setpoint=0.0)
+            control.info = IndivControl(magnet_name=magnet_name, component=component_type,
+                                        order=order + 1, is_integrated=is_integrated,
+                                        is_trim_coil=True)
+            self.add_control(control)
+            self.add_link(ControlMagnetLink(
+                link_name=f'{control_name}->{control_name}', magnet_name=magnet_name,
+                control_name=control_name, component=component_type, order=order + 1,
+                is_integrated=is_integrated,
+            ))
 
     def add_knob(self, knob_name: str, control_names: list, weights: Optional[list[float]] = None) -> None:
         knob = Control(name=knob_name, setpoint=0)

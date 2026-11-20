@@ -88,6 +88,29 @@ def configure_bpms(SC: SimulatedCommissioning) -> None:
 
     SC.bpm_system.initialize_empty_arrays()
 
+    # Dead / wrong-polarity BPM error model, applied per BPM category.
+    SC.bpm_system.dead = np.zeros(len(bpms_indices), dtype=bool)
+
+    for bpm_category_name, cat_conf in bpms_conf.items():
+        cat_indices = np.array([i for i, c in enumerate(bpms_categories) if c == bpm_category_name])
+        if len(cat_indices) == 0:
+            continue
+
+        fraction_dead = cat_conf.get('fraction_dead', 0.0)
+        if fraction_dead > 0:
+            n_dead = max(1, round(len(cat_indices) * fraction_dead))
+            dead_idx = SC.rng.choice(len(cat_indices), size=n_dead, replace=False)
+            SC.bpm_system.dead[cat_indices[dead_idx]] = True
+            SC.tuning.bad_bpms.extend(cat_indices[dead_idx].tolist())
+
+        fraction_polarity = cat_conf.get('fraction_wrong_polarity', 0.0)
+        if fraction_polarity > 0:
+            n_flip = max(1, round(len(cat_indices) * fraction_polarity))
+            flip_x = cat_indices[SC.rng.choice(len(cat_indices), size=n_flip, replace=False)]
+            flip_y = cat_indices[SC.rng.choice(len(cat_indices), size=n_flip, replace=False)]
+            SC.bpm_system.polarity_x[flip_x] = -1.0
+            SC.bpm_system.polarity_y[flip_y] = -1.0
+
     for index, bpm_category in zip(bpms_indices, bpms_categories):
         generate_element_misalignments(SC, index, bpms_conf[bpm_category])
     SC.bpm_system.update_rot_matrices()

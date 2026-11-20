@@ -190,3 +190,88 @@ def test_configure_bpms_multi_category_noise(hmba_lattice_file):
                 f"BPM {name} should have cat_b orbit noise"
             assert SC.bpm_system.noise_tbt_x[i] == pytest.approx(5e-3), \
                 f"BPM {name} should have cat_b tbt noise"
+
+
+# ---------------------------------------------------------------------------
+# dead BPMs / wrong polarity (fraction_dead, fraction_wrong_polarity)
+# ---------------------------------------------------------------------------
+
+# Single "standard" category matching all 10 HMBA BPMs. With n = 10:
+#   fraction_dead = 0.2           -> n_dead = max(1, round(10 * 0.2)) = 2
+#   fraction_wrong_polarity = 0.3 -> n_flip = max(1, round(10 * 0.3)) = 3
+_FRACTION_DEAD = 0.2
+_FRACTION_POLARITY = 0.3
+_SEED = 42
+
+
+def _make_sc_with_dead_and_polarity(hmba_lattice_file):
+    """Fresh SC whose single BPM category configures dead + wrong-polarity fractions."""
+    lattice = ATLattice(lattice_file=hmba_lattice_file, naming="FamName")
+    config = {
+        "error_table": {},
+        "bpms": {
+            "standard": {
+                "regex": "^BPM",
+                "fraction_dead": _FRACTION_DEAD,
+                "fraction_wrong_polarity": _FRACTION_POLARITY,
+            },
+        },
+    }
+    return SimulatedCommissioning(lattice=lattice, configuration=config, seed=_SEED)
+
+
+@pytest.mark.slow
+@pytest.mark.regression
+def test_configure_bpms_dead_count_and_membership(hmba_lattice_file):
+    """Dead-BPM count matches the formula and every dead BPM is in bad_bpms.
+
+    Draw-order robust: asserts only on the total dead count and on set
+    membership of dead indices within SC.tuning.bad_bpms — never on which
+    specific indices were drawn.
+    """
+    SC = _make_sc_with_dead_and_polarity(hmba_lattice_file)
+    configure_bpms(SC)
+
+    n = len(SC.bpm_system.indices)
+    assert n == 10, "Expected all 10 HMBA BPMs in the single 'standard' category"
+
+    expected_n_dead = max(1, round(n * _FRACTION_DEAD))
+    dead_positions = np.flatnonzero(SC.bpm_system.dead)
+    assert dead_positions.size == expected_n_dead, \
+        f"Expected {expected_n_dead} dead BPMs, got {dead_positions.size}"
+
+    # Every dead BPM position must be recorded in tuning.bad_bpms (set membership).
+    bad_bpms = set(SC.tuning.bad_bpms)
+    for pos in dead_positions.tolist():
+        assert pos in bad_bpms, f"Dead BPM position {pos} missing from tuning.bad_bpms"
+
+
+@pytest.mark.slow
+@pytest.mark.regression
+def test_configure_bpms_wrong_polarity_counts(hmba_lattice_file):
+    """Exactly n_flip polarity_x and n_flip polarity_y entries are -1.0; rest +1.0.
+
+    Draw-order robust: asserts only on the number of flipped (-1.0) entries and
+    that all remaining entries are +1.0 — never on which indices were flipped.
+    """
+    SC = _make_sc_with_dead_and_polarity(hmba_lattice_file)
+    configure_bpms(SC)
+
+    n = len(SC.bpm_system.indices)
+    expected_n_flip = max(1, round(n * _FRACTION_POLARITY))
+
+    polarity_x = np.asarray(SC.bpm_system.polarity_x)
+    polarity_y = np.asarray(SC.bpm_system.polarity_y)
+
+    # Every entry is either +1.0 (unflipped) or -1.0 (flipped) — nothing else.
+    assert set(np.unique(polarity_x).tolist()) <= {-1.0, 1.0}
+    assert set(np.unique(polarity_y).tolist()) <= {-1.0, 1.0}
+
+    assert np.count_nonzero(polarity_x == -1.0) == expected_n_flip, \
+        f"Expected {expected_n_flip} flipped polarity_x entries"
+    assert np.count_nonzero(polarity_y == -1.0) == expected_n_flip, \
+        f"Expected {expected_n_flip} flipped polarity_y entries"
+
+    # All non-flipped entries equal +1.0.
+    assert np.count_nonzero(polarity_x == 1.0) == n - expected_n_flip
+    assert np.count_nonzero(polarity_y == 1.0) == n - expected_n_flip

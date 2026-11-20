@@ -45,6 +45,7 @@ dependencies = [
     "matplotlib>=3.7.3",
     "accelerator-toolbox>=0.6.1",
     "pydantic",
+    "packaging",
     "PyYAML>=6.0.2",
     "rich",
     "h5py"
@@ -66,7 +67,7 @@ markers = [
     "slow: tests that involve AT tracking (deselect with '-m \"not slow\"')",
     "regression: regression tests for known bugs",
 ]
-addopts = "--tb=short -q"
+# addopts = "--tb=short -q"
 
 [project.urls]
 Homepage = "https://github.com/kparasch/pySC"

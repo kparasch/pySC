@@ -76,8 +76,18 @@ def sc(hmba_lattice_file):
             sim_index=idx, controlled_components=["B3", "B1", "A1"],
             magnet_name=name, magnet_length=length, to_design=True)
 
-    SC.magnet_settings.sendall()
-    SC.design_magnet_settings.sendall()
+    # Preserve the lattice strengths instead of sending the controls' default zeros.
+    for settings in (SC.magnet_settings, SC.design_magnet_settings):
+        for control in settings.controls.values():
+            info = control.info
+            magnet = settings.magnets[info.magnet_name]
+            strength = SC.lattice.get_magnet_component(
+                magnet.sim_index, info.component, info.order - 1)
+            if info.is_integrated:
+                strength *= magnet.length
+            control.setpoint = strength
+        settings.connect_links()
+        settings.sendall()
 
     # --- Configure BPMs ---
     n_bpms = len(bpm_indices)

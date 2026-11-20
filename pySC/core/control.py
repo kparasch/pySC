@@ -21,6 +21,17 @@ class IndivControl(BaseModel, extra="forbid"):
     component: Literal["A", "B"]
     order: PositiveInt
     is_integrated: bool
+    is_trim_coil: bool = False
+
+    @property
+    def magnet_type(self) -> MagnetType:
+        return MagnetType.from_component_order(component=self.component, order=self.order)
+
+class SeriesControl(BaseModel, extra="forbid"):
+    magnet_names: list[str]
+    component: Literal["A", "B"]
+    order: PositiveInt
+    is_integrated: bool
 
     @property
     def magnet_type(self) -> MagnetType:
@@ -36,7 +47,7 @@ class KnobData(BaseModelWithSave, extra="forbid"):
 class Control(BaseModel, extra="forbid"):
     name: str
     setpoint: float
-    info: Optional[Union[IndivControl, KnobControl]] = None
+    info: Optional[Union[IndivControl, SeriesControl, KnobControl]] = None
     # calibration: LinearConv = LinearConv() # for future use, if needed
     limits: Optional[tuple[float, float]] = None
     _links: Optional[list[ControlMagnetLink]] = PrivateAttr(default=[])

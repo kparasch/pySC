@@ -109,18 +109,20 @@ def test_generate_trajectory_bba_config_raises_when_filter_leaves_no_magnets(sc_
         sc.tuning.bba_magnets = original_bba_magnets
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring lacks sufficient BPMs downstream for trajectory BBA")
 def test_trajectory_bba_single_bpm(sc_with_traj_rm):
-    """trajectory_bba runs without error on a single BPM."""
+    """Trajectory BBA returns a finite offset and non-negative finite uncertainty."""
     sc = sc_with_traj_rm
-    bpm_name = sc.bpm_system.names[0]
+    bpm_name = sc.bpm_system.names[1]
 
     # Run trajectory BBA for horizontal plane
     offset, offset_err = trajectory_bba(
-        sc, bpm_name, plane='H', shots_per_trajectory=1, n_corr_steps=3,
+        sc, bpm_name, plane='H', shots_per_trajectory=1, n_corr_steps=3, n_downstream_bpms=10
     )
     assert isinstance(offset, float)
     assert isinstance(offset_err, float)
+    assert np.isfinite(offset), "Trajectory BBA returned a non-finite offset"
+    assert np.isfinite(offset_err), "Trajectory BBA returned a non-finite uncertainty"
+    assert offset_err >= 0, "Trajectory BBA returned a negative uncertainty"
 
 
 def test_get_mag_s_pos(sc_with_traj_rm):

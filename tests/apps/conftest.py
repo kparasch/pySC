@@ -1,6 +1,7 @@
 """Apps-layer fixtures: MockInterface for measurement algorithm tests."""
 import numpy as np
 import pytest
+from pydantic import ConfigDict
 
 from pySC.apps.interface import AbstractInterface
 
@@ -18,8 +19,7 @@ class MockInterface(AbstractInterface):
     _rf_frequency: float = 500e6
     _response_scale: float = 1e-3
 
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, n_bpms: int = 10, response_scale: float = 1e-3, **kwargs):
         super().__init__(**kwargs)

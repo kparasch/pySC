@@ -23,7 +23,6 @@ def sc_with_orbit_rm(sc_tuning):
     return sc
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring has near-zero response in some BPM/corrector pairs")
 def test_generate_orbit_bba_config(sc_with_orbit_rm):
     """Orbit_BBA_Configuration.generate_config runs and produces config for each BPM."""
     sc = sc_with_orbit_rm
@@ -142,7 +141,6 @@ def test_generate_orbit_bba_config_empty_filter_unit():
         Orbit_BBA_Configuration.generate_config(SC=sc, ignore_sextupoles=True)
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring has near-zero response in some BPM/corrector pairs")
 def test_generate_orbit_bba_config_supports_sextupole_magnets(sc_with_orbit_rm):
     """Orbit BBA config labels normal sextupole BBA magnets."""
     sc = sc_with_orbit_rm
@@ -163,7 +161,6 @@ def test_generate_orbit_bba_config_supports_sextupole_magnets(sc_with_orbit_rm):
     assert {entry["magnet_type"] for entry in config.config.values()} == {"normal_sextupole"}
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring has near-zero response in some BPM/corrector pairs")
 def test_generate_orbit_bba_config_ignore_sextupoles(sc_with_orbit_rm):
     """ignore_sextupoles removes normal sextupole BBA magnets from config selection."""
     sc = sc_with_orbit_rm
@@ -197,9 +194,8 @@ def test_generate_orbit_bba_config_raises_when_filter_leaves_no_magnets(sc_with_
         sc.tuning.bba_magnets = original_bba_magnets
 
 
-@pytest.mark.xfail(reason="HMBA single-cell ring has near-zero response in some BPM/corrector pairs")
 def test_orbit_bba_single_bpm(sc_with_orbit_rm):
-    """orbit_bba runs without error on a single BPM."""
+    """Orbit BBA returns a finite offset and non-negative finite uncertainty."""
     sc = sc_with_orbit_rm
     bpm_name = sc.bpm_system.names[0]
 
@@ -209,6 +205,9 @@ def test_orbit_bba_single_bpm(sc_with_orbit_rm):
     )
     assert isinstance(offset, float)
     assert isinstance(offset_err, float)
+    assert np.isfinite(offset), "Orbit BBA returned a non-finite offset"
+    assert np.isfinite(offset_err), "Orbit BBA returned a non-finite uncertainty"
+    assert offset_err >= 0, "Orbit BBA returned a negative uncertainty"
 
 
 def test_orbit_bba_get_mag_s_pos(sc_with_orbit_rm):

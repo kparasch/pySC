@@ -9,7 +9,7 @@ from .tune import Tune
 from .chromaticity import Chromaticity
 from .c_minus import CMinus
 from .rf_tuning import RF_tuning
-from ..core.control import IndivControl
+from ..core.control import IndivControl, SeriesControl
 from .pySC_interface import pySCInjectionInterface, pySCOrbitInterface
 from ..apps import orbit_correction
 
@@ -74,7 +74,7 @@ class Tuning(BaseModel, extra="forbid"):
         input_planes = []
         for corr in control_names:
             control = SC.magnet_settings.controls[corr]
-            if type(control.info) is not IndivControl:
+            if type(control.info) not in [IndivControl, SeriesControl]:
                 raise NotImplementedError(f'Unsupported control type for {corr} of type {type(control.info).__name__}.')
             if control.info.component == 'B':
                 input_planes.append('H')
